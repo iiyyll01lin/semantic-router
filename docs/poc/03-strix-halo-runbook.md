@@ -513,12 +513,14 @@ Run the offline static validation first (no GPU/router needed; runs on any box),
 python deploy/recipes/strix-halo-poc/validate_poc_config.py \
   deploy/recipes/strix-halo-poc/poc-strix.yaml
 
-# 1. Go DSL 驗證 / Go DSL validation
-cd src/semantic-router
-go run ./cmd/dsl validate ../../deploy/recipes/balance.dsl
+# 1. 由 poc-strix.yaml 產生並驗證 poc-strix.dsl（需要 Go）/ generate and validate
+#    poc-strix.dsl from poc-strix.yaml (requires Go)
+bash deploy/recipes/strix-halo-poc/gen-dsl.sh
 ```
 
-若你也維護一份 PoC 專屬的 `.dsl`，請把上面的路徑換成 `poc-strix.dsl`。DSL CLI 進入點見 [cmd/dsl/main.go](../../src/semantic-router/cmd/dsl/main.go)。
+`gen-dsl.sh` 會從 `src/semantic-router` 執行 `go run ./cmd/dsl decompile` 由 `poc-strix.yaml` 產生 `poc-strix.dsl`，再執行 `go run ./cmd/dsl validate` 驗證它。`.dsl` 是產生物，不入庫（在有 Go 的 Strix Halo 上即時產生）。DSL 只編碼 `routing.*`，providers/global 仍留在 YAML。DSL CLI 進入點見 [cmd/dsl/main.go](../../src/semantic-router/cmd/dsl/main.go)，腳本見 [gen-dsl.sh](../../deploy/recipes/strix-halo-poc/gen-dsl.sh)。
+
+`gen-dsl.sh` runs `go run ./cmd/dsl decompile` from `src/semantic-router` to generate `poc-strix.dsl` from `poc-strix.yaml`, then `go run ./cmd/dsl validate` to validate it. The `.dsl` is a generated artifact and is not committed (it is produced on the Strix Halo where Go exists). The DSL encodes only `routing.*`; providers/global stay in YAML. The DSL CLI entry is [cmd/dsl/main.go](../../src/semantic-router/cmd/dsl/main.go), and the script is [gen-dsl.sh](../../deploy/recipes/strix-halo-poc/gen-dsl.sh).
 
 If you also maintain a PoC-specific `.dsl`, replace the path above with `poc-strix.dsl`. The DSL CLI entry is [cmd/dsl/main.go](../../src/semantic-router/cmd/dsl/main.go).
 
@@ -548,10 +550,13 @@ Follow the demo script in section 8 of [02-poc-plan.md](02-poc-plan.md): send re
 | --- | --- | --- |
 | 1 | 簡單問答 / an easy question | 路由到 SIMPLE 本地模型、成本 ~$0 / routes to the SIMPLE local model at ~$0 |
 | 2 | 困難推理問題 / a hard reasoning question | 升級到 COMPLEX/REASONING/PREMIUM、開啟 reasoning / escalates to COMPLEX/REASONING/PREMIUM with reasoning on |
-| 3 | 含 PII 的請求 / a request with PII | 遮罩或政策拒絕（`pii_policy_denied`）/ masking or policy denial (`pii_policy_denied`) |
-| 4 | jailbreak 嘗試 / a jailbreak attempt | 輸入/回應端攔截（HTTP 403、`jailbreak_block`）/ input/response blocking (HTTP 403, `jailbreak_block`) |
+| 3 | 含 PII 的請求 / a request with PII | 命中 `contains_pii` 訊號，路由到 `security_guard`，由 fast_response 即時拒絕：HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`（可另觀察 `x-vsr-matched-pii`）/ matches the `contains_pii` signal, routes to `security_guard`, and fast_response refuses immediately: HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard` (optionally also `x-vsr-matched-pii`) |
+| 4 | jailbreak 嘗試 / a jailbreak attempt | 命中 `jailbreak_attempt` 訊號，路由到 `security_guard`，由 fast_response 即時拒絕（HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`，可另觀察 `x-vsr-matched-jailbreak`）；若仍打到模型，第二層 `response_jailbreak` 對被標記的輸出回 HTTP 403 / matches the `jailbreak_attempt` signal, routes to `security_guard`, and fast_response refuses immediately (HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`, optionally also `x-vsr-matched-jailbreak`); if a model is still hit, the `response_jailbreak` second layer returns HTTP 403 on the flagged output |
 | 5 | 開啟 Grafana / open Grafana | 成本下降數字、本地承載率、token 用量、TTFT/TPOT、快取命中 / cost-reduction number, local-served ratio, token usage, TTFT/TPOT, cache hit |
 | 6（選配 / optional）| 跑 calibration loop / run the calibration loop | 路由準確率報表 / a routing-accuracy report |
+
+> 安全攔截的真實機制 / How security blocking actually works：在此訊號驅動的 router 中，`pii` 與 `jailbreak` 是**訊號**，只負責把請求路由到 `security_guard` 決策，本身不會攔截。輸入端的攔截來自該決策上的 `fast_response` plugin（回 HTTP 200 + 制式拒絕訊息 + `x-vsr-fast-response: true`）；`response_jailbreak` 是第二層，只在 LLM **輸出**被標記時回 HTTP 403。路由路徑中**沒有**內聯 PII 遮罩，遮罩只在 `/api` 分類服務提供。
+> How security blocking actually works: in this signal-driven router, `pii` and `jailbreak` are signals that only route a request to the `security_guard` decision; they do not block by themselves. The input-side block comes from the `fast_response` plugin on that decision (HTTP 200 + a canned refusal + `x-vsr-fast-response: true`), and `response_jailbreak` is the second layer that returns HTTP 403 only when the LLM output is flagged. There is no inline PII masking in the routing path; masking is available only via the `/api` classification service.
 
 成本節省的來源 / Where savings come from：即使全部都在本地服務，dashboard 仍以設定檔的 `pricing` 對比「全部走最貴模型」基準計算省錢數字。完全離線示範 frontier 升級時，可用 mock 伺服器 `llm-katan` 取代真實雲端 API（見 [e2e/testing/llm-katan/README.md](../../e2e/testing/llm-katan/README.md)）。
 
@@ -570,7 +575,7 @@ Mapped to the measurable success criteria in section 1 of [02-poc-plan.md](02-po
 | Token 成本下降 / token cost reduction | 相對全 frontier 基準下降 50%–80% / 50%–80% vs an all-frontier baseline | dashboard cost savings + Grafana |
 | 本地承載率 / local-served ratio | 60%–80% 由本地 tier 服務 / 60%–80% served by local tiers | model distribution 指標 / metric |
 | 路由準確率 / routing accuracy | 標註 probe 集 >= 90% / >= 90% on the labeled probe set | calibration loop + [balance.probes.yaml](../../deploy/recipes/balance.probes.yaml) |
-| 安全攔截 / security blocking | PII 政策 + jailbreak 可即時示範 / live PII policy + jailbreak block | `pii_policy_denied` / `jailbreak_block` 指標 |
+| 安全攔截 / security blocking | PII + jailbreak 可即時示範 / live PII + jailbreak block | 輸入端 fast_response（`x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`）+ 輸出端 `response_jailbreak` 回 HTTP 403 / input-side fast_response (`x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`) + output-side `response_jailbreak` HTTP 403 |
 | 延遲 / latency | 本地 tier TTFT/TPOT 可接受、路由額外開銷低 / acceptable local-tier TTFT/TPOT, low routing overhead | Grafana P95 面板 |
 | 品質維持 / quality retention | 困難請求不低於全 frontier 基準 / hard requests match the all-frontier baseline | 抽樣人評 + probe 期望 / sampled human eval + probe expectations |
 

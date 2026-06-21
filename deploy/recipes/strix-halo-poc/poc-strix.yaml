@@ -96,6 +96,18 @@ routing:
           use_reasoning: false
       name: security_guard
       plugins:
+        # Input-side block (primary). A PII or jailbreak signal match routes the
+        # request here, and fast_response returns an immediate canned refusal
+        # (HTTP 200 + x-vsr-fast-response: true + x-vsr-selected-decision:
+        # security_guard) WITHOUT calling any upstream model. PII/jailbreak are
+        # signals: matching only selects this decision, so the block must come
+        # from a plugin. fast_response takes only `message`
+        # (FastResponsePluginConfig in src/semantic-router/pkg/config/plugin_config.go).
+        - configuration:
+            message: This request was blocked by the security guard because it tripped a PII or jailbreak signal. Remove sensitive personal data and any prompt-injection content, then try again.
+          type: fast_response
+        # Output-side second layer. If a request still reaches a model, scan the
+        # LLM response and return HTTP 403 when jailbreak content is detected.
         - configuration:
             action: block          # block -> HTTP 403 when jailbreak is detected in the response
             enabled: true

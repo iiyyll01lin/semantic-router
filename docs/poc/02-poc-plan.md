@@ -241,14 +241,17 @@ The script is [router_calibration_loop.py](../../tools/agent/scripts/router_cali
    Send an easy question and show it route to the SIMPLE local Ryzen model at ~$0.
 2. 送一個困難推理問題 → 顯示升級到 **COMPLEX/REASONING/PREMIUM** frontier 模型，並開啟 reasoning。
    Send a hard reasoning question and show escalation to a COMPLEX/REASONING/PREMIUM frontier model with reasoning on.
-3. 送含 PII 的請求 → 顯示遮罩或政策拒絕（`pii_policy_denied`）。
-   Send a request with PII and show masking or policy denial (`pii_policy_denied`).
-4. 送 jailbreak 嘗試 → 顯示輸入/回應端攔截 (HTTP 403, `jailbreak_block`)。
-   Send a jailbreak attempt and show input/response blocking (HTTP 403, `jailbreak_block`).
+3. 送含 PII 的請求 → 命中 `contains_pii` 訊號，路由到 `security_guard`，由 fast_response 即時拒絕（HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`）。
+   Send a request with PII; it matches the `contains_pii` signal, routes to `security_guard`, and fast_response refuses immediately (HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`).
+4. 送 jailbreak 嘗試 → 同樣由 fast_response 即時拒絕（HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`）；若仍打到模型，第二層 `response_jailbreak` 對被標記的輸出回 HTTP 403。
+   Send a jailbreak attempt; fast_response refuses it the same way (HTTP 200 + `x-vsr-fast-response: true` + `x-vsr-selected-decision: security_guard`); if a model is still hit, the `response_jailbreak` second layer returns HTTP 403 on the flagged output.
 5. 打開 Grafana → 展示「成本下降數字、本地承載率、token 用量、延遲」。
    Open Grafana and show the cost-reduction number, local-served ratio, token usage, and latency.
 6. （選配）跑一次 calibration loop → 展示路由準確率報表。
    (Optional) run the calibration loop and show the routing-accuracy report.
+
+> 註：`pii` 與 `jailbreak` 是路由**訊號**，只把請求導向 `security_guard` 決策；輸入端的攔截來自該決策上的 `fast_response` plugin，`response_jailbreak` 只在 LLM 輸出被標記時回 HTTP 403。路由路徑中沒有內聯 PII 遮罩，遮罩只在 `/api` 分類服務提供。
+> Note: `pii` and `jailbreak` are routing signals that only steer a request to the `security_guard` decision; the input-side block comes from the `fast_response` plugin on that decision, and `response_jailbreak` returns HTTP 403 only when the LLM output is flagged. There is no inline PII masking in the routing path; masking is available only via the `/api` classification service.
 
 ---
 
