@@ -72,6 +72,30 @@ The full live-validation and calibration steps are in sections 7 and 8 of the ru
 
 ---
 
+## 本機 CPU 煙霧測試（Linux/WSL2）/ Local CPU Smoke (Linux/WSL2)
+
+用途：一個免 GPU 的端到端開發檢查，使用 [`cpu-smoke.yaml`](cpu-smoke.yaml)（所有 tier 都指向同一個 `llm-katan` echo 後端）搭配 [`cpu-smoke.sh`](cpu-smoke.sh)，證明 classify -> decide -> route -> security 的管線能完整跑通，無需任何模型下載或 GPU。
+
+Purpose: a GPU-free end-to-end dev check that uses [`cpu-smoke.yaml`](cpu-smoke.yaml) (all tiers point at a single `llm-katan` echo backend) together with [`cpu-smoke.sh`](cpu-smoke.sh) to prove the classify -> decide -> route -> security pipeline runs end to end, with no model download and no GPU.
+
+快速開始 / Quickstart：
+
+```bash
+bash cpu-smoke.sh
+```
+
+腳本會建立 Docker 網路、啟動 `llm-katan` echo 後端、確保 `vllm-sr` CLI 已安裝、以 CPU 執行 `vllm-sr serve --config cpu-smoke.yaml --minimal`，最後對 listener 跑 `python smoke_test.py`。
+
+The script creates the Docker network, starts the `llm-katan` echo backend, ensures the `vllm-sr` CLI is installed, runs `vllm-sr serve --config cpu-smoke.yaml --minimal` on CPU, then fires `python smoke_test.py` at the listener.
+
+> 重要平台限制：`vllm-sr serve` 無法在原生 Windows 上執行（CLI 會以 "Run from WSL2 or another Linux environment with Docker" 拒絕），請從 WSL2 或 Linux 執行本流程。在原生 Windows 上仍可做靜態驗證（`python validate_poc_config.py cpu-smoke.yaml`）並啟動 `llm-katan` 後端，但無法跑 router。
+> IMPORTANT platform note: `vllm-sr serve` does NOT run on native Windows (the CLI refuses with "Run from WSL2 or another Linux environment with Docker"); run this flow from WSL2 or Linux. On native Windows you can still validate statically (`python validate_poc_config.py cpu-smoke.yaml`) and run the `llm-katan` backend, but not the router.
+>
+> 已於 Windows 驗證：`cpu-smoke.yaml` 通過驗證器，且 `llm-katan` echo 後端可啟動並提供 `test-model`；完整即時執行確認需要 Linux/WSL2。
+> Verified on Windows: `cpu-smoke.yaml` passes the validator and the `llm-katan` echo backend runs and serves `test-model`; the full live run was confirmed to require Linux/WSL2.
+
+---
+
 ## 參考連結 / Reference Links
 
 - 操作手冊 / Runbook: [docs/poc/03-strix-halo-runbook.md](../../../docs/poc/03-strix-halo-runbook.md)
