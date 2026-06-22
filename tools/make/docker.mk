@@ -331,9 +331,9 @@ vllm-sr-dev:
 		echo "  Dockerfile: $(VLLM_SR_DOCKERFILE)"; \
 		echo "  Image: $(VLLM_SR_IMAGE)"; \
 		echo ""; \
-		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_IMAGE) -f $(VLLM_SR_DOCKERFILE) .; \
-		echo ""; \
-		echo "Router image built: $(VLLM_SR_IMAGE)"; \
+		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_IMAGE) -f $(VLLM_SR_DOCKERFILE) . && \
+		echo "" && \
+		echo "Router image built: $(VLLM_SR_IMAGE)" && \
 		echo ""; \
 	fi
 	@if [ "$(VLLM_SR_TOPOLOGY_NORMALIZED)" = "split" ]; then \
@@ -348,10 +348,10 @@ vllm-sr-dev:
 		echo "  Dockerfile: $(VLLM_SR_DASHBOARD_DOCKERFILE)"; \
 		echo "  Image: $(VLLM_SR_DASHBOARD_IMAGE)"; \
 		echo ""; \
-		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_DASHBOARD_IMAGE) -f $(VLLM_SR_DASHBOARD_DOCKERFILE) .; \
-		echo ""; \
-		echo "Dashboard image built: $(VLLM_SR_DASHBOARD_IMAGE)"; \
-		echo ""; \
+		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_DASHBOARD_IMAGE) -f $(VLLM_SR_DASHBOARD_DOCKERFILE) . && \
+		echo "" && \
+		echo "Dashboard image built: $(VLLM_SR_DASHBOARD_IMAGE)" && \
+		echo "" && \
 		echo "5. Building vLLM-SR-Sim service image..."; \
 	else \
 		echo "3. Building vLLM-SR-Sim service image..."; \

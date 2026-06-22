@@ -346,6 +346,7 @@ def log_runtime_summary(
         if isinstance(port, int):
             port += stack_layout.port_offset
         log.info(f"  - {name}: http://localhost:{port}")
+    log.info(f"  - Router API: {stack_layout.api_url}")
     log.info(f"  - Metrics: {stack_layout.metrics_url}")
     if fleet_sim_enabled:
         log.info(f"  - Fleet Sim: {stack_layout.fleet_sim_url}")

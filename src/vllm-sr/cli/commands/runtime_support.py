@@ -51,6 +51,14 @@ PASSTHROUGH_ENV_RULES = (
     ("SR_LOG_ENCODING", False),
     ("SR_LOG_DEVELOPMENT", False),
     ("SR_LOG_ADD_CALLER", False),
+    # AMD GPU-placement controls must reach the container so that in-container
+    # runtime config sync (triggered by PUT /config/router and other reloads)
+    # makes the same CPU/GPU classifier-placement decision as the host-side
+    # serve-time config generation. Without this, `--platform amd` reloads
+    # re-flip classifier `use_cpu` to GPU and concurrently re-create ROCm ONNX
+    # sessions, which crashes the router.
+    ("VLLM_SR_AMD_PRESERVE_CPU", False),
+    ("VLLM_SR_AMD_FORCE_GPU", False),
 )
 
 

@@ -37,3 +37,6 @@ onnx-binding/target/
 src/training/model_classifier/verified_single_judge_*/
 dashboard/frontend/node_modules/
 dashboard/frontend/dist/
+
+# Local runtime state created by `vllm-sr serve` (milvus/etcd data is root-owned)
+**/.vllm-sr/
