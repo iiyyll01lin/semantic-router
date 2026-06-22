@@ -66,6 +66,12 @@ Every debt entry should include:
 - [TD042 FFI Embedding File Carries Pre-Existing Structure-Rules Debt](td-042-ffi-embedding-structure-debt.md)
 - [TD043 candle-binding/semantic-router.go Carries Pre-Existing Cyclomatic Complexity Debt](td-043-semantic-router-go-cyclop-debt.md)
 
+### PL0035 Strix PoC PII Hardening
+
+- [TD044 onnx-binding PII Token Classifier Registers as bert_token but Inference Looks Up pii](td-044-onnx-binding-pii-name-registration.md)
+- [TD045 mmBERT-32K PII Detector (mmbert32k-pii-detector-merged) Returns Zero Entities](td-045-mmbert32k-pii-detector-zero-entities.md)
+- [TD046 onnx-binding Concurrent ROCm ONNX Session Creation Segfaults on Classifier (Re)Initialization](td-046-onnx-binding-concurrent-rocm-session-init-segfault.md)
+
 ## Retired Debt Policy
 
 Retired TD files are removed from this directory. Keep the ID in commit history
