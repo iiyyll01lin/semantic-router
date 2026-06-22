@@ -9,7 +9,8 @@
 #   1. Creates the shared Docker network `vllm-sr-network` (router default).
 #   2. Starts `ollama/ollama:rocm` with AMD GPU passthrough, named `ollama`.
 #   3. Pulls the five tier models into the container.
-#   4. Serves the router with poc-strix.yaml on the amd platform, keeping the
+#   4. Exports the ModernBERT PII detector to ONNX (one-time) when it is missing.
+#   5. Serves the router with poc-strix.yaml on the amd platform, keeping the
 #      built-in classifiers on CPU (VLLM_SR_AMD_PRESERVE_CPU=1).
 #
 # Prerequisites (see runbook section 1): Ubuntu x86_64, ROCm for gfx1151,
@@ -37,10 +38,19 @@ TIER_TAGS=(
   "qwen2.5:32b"   # PREMIUM (offline, largest local model)
 )
 
-echo "==> [1/4] Ensuring Docker network '${NETWORK}' exists"
+# Local HF security model that needs an ONNX export (runbook section 6 / Gate B).
+# The ROCm router loads token classifiers via ONNX Runtime, but the published
+# ModernBERT presidio detector ships safetensors only, so model.onnx must be
+# generated once from the safetensors before serve.
+PII_MODEL_DIR="${SCRIPT_DIR}/models/pii_classifier_modernbert-base_presidio_token_model"
+PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
+# One-time export venv kept outside the repo tree so it never pollutes git.
+ONNX_EXPORT_VENV="${TMPDIR:-/tmp}/vllm-sr-pii-onnx-export-venv"
+
+echo "==> [1/5] Ensuring Docker network '${NETWORK}' exists"
 docker network create "${NETWORK}" 2>/dev/null || true
 
-echo "==> [2/4] Starting Ollama (ROCm) container '${OLLAMA_CONTAINER}' on ${NETWORK}"
+echo "==> [2/5] Starting Ollama (ROCm) container '${OLLAMA_CONTAINER}' on ${NETWORK}"
 if docker ps -a --format '{{.Names}}' | grep -qx "${OLLAMA_CONTAINER}"; then
   echo "    container '${OLLAMA_CONTAINER}' already exists; (re)starting it"
   docker start "${OLLAMA_CONTAINER}"
@@ -60,13 +70,52 @@ else
     "${OLLAMA_IMAGE}"
 fi
 
-echo "==> [3/4] Pulling tier models into the '${OLLAMA_CONTAINER}' container"
+echo "==> [3/5] Pulling tier models into the '${OLLAMA_CONTAINER}' container"
 for tag in "${TIER_TAGS[@]}"; do
   echo "    pulling ${tag}"
   docker exec "${OLLAMA_CONTAINER}" ollama pull "${tag}"
 done
 
-echo "==> [4/4] Serving the router with $(basename "${CONFIG_PATH}") (platform amd)"
+echo "==> [4/5] Ensuring the ModernBERT PII detector has an exported ONNX model"
+# Idempotent: skip when model.onnx already exists; export it once otherwise. We
+# call the venv binaries directly (no `source activate`) so the step is safe
+# under `set -euo pipefail`.
+if [[ -f "${PII_ONNX_MODEL}" ]]; then
+  echo "    onnx/model.onnx already present; skipping export"
+elif [[ ! -d "${PII_MODEL_DIR}" ]]; then
+  echo "    WARNING: PII model dir is missing:" >&2
+  echo "      ${PII_MODEL_DIR}" >&2
+  echo "    Download it first (see REHEARSAL.md Gate B), then re-run this script." >&2
+else
+  echo "    exporting ONNX from safetensors via optimum (one-time, may take a while)"
+  PY_BIN="python3"
+  command -v "${PY_BIN}" >/dev/null 2>&1 || PY_BIN="python"
+  if [[ ! -x "${ONNX_EXPORT_VENV}/bin/python" ]]; then
+    "${PY_BIN}" -m venv "${ONNX_EXPORT_VENV}"
+  fi
+  "${ONNX_EXPORT_VENV}/bin/pip" install --quiet --upgrade pip
+  "${ONNX_EXPORT_VENV}/bin/pip" install --quiet \
+    "transformers>=4.48" "optimum[onnxruntime]" onnx torch
+  "${ONNX_EXPORT_VENV}/bin/python" - "${PII_MODEL_DIR}" <<'PY'
+import sys
+
+from optimum.onnxruntime import ORTModelForTokenClassification
+from transformers import AutoTokenizer
+
+src = sys.argv[1]
+out = src + "/onnx"
+ORTModelForTokenClassification.from_pretrained(src, export=True).save_pretrained(out)
+AutoTokenizer.from_pretrained(src).save_pretrained(out)
+print("    exported ONNX to", out)
+PY
+  if [[ ! -f "${PII_ONNX_MODEL}" ]]; then
+    echo "    ERROR: export finished but ${PII_ONNX_MODEL} is still missing" >&2
+    exit 1
+  fi
+  echo "    onnx/model.onnx exported successfully"
+fi
+
+echo "==> [5/5] Serving the router with $(basename "${CONFIG_PATH}") (platform amd)"
 # Keep the mmBERT/embedding classifiers on CPU so the iGPU is reserved for the
 # LLM backends (see runbook section 7).
 export VLLM_SR_AMD_PRESERVE_CPU=1

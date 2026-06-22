@@ -51,21 +51,58 @@ groups | tr ' ' '\n' | grep -E 'video|render'
 
 ### 關卡 B：安全模組模型已就位或可下載 / Gate B: security module models present or downloadable
 
-`poc-strix.yaml` 的 `global.model_catalog` 需要兩個本地安全模型：`models/mmbert32k-jailbreak-detector-merged`（prompt_guard）與 `models/mmbert32k-pii-detector-merged`（pii 分類器）。兩者在第一次 serve 時會下載（需網路，私有 repo 需 `HF_TOKEN`）。
+`poc-strix.yaml` 的 `global.model_catalog` 需要兩個本地安全模型：`models/mmbert32k-jailbreak-detector-merged`（prompt_guard）與 `models/pii_classifier_modernbert-base_presidio_token_model`（pii 分類器，公開於 HF `LLM-Semantic-Router`）。兩者在第一次 serve 時會下載（需網路；私有 repo 才需 `HF_TOKEN`）。
 
-The `global.model_catalog` in `poc-strix.yaml` needs two local security models: `models/mmbert32k-jailbreak-detector-merged` (prompt_guard) and `models/mmbert32k-pii-detector-merged` (pii classifier). Both are downloaded on first serve (network required; a private repo needs `HF_TOKEN`).
+The `global.model_catalog` in `poc-strix.yaml` needs two local security models: `models/mmbert32k-jailbreak-detector-merged` (prompt_guard) and `models/pii_classifier_modernbert-base_presidio_token_model` (pii classifier, public on HF `LLM-Semantic-Router`). Both are downloaded on first serve (network required; only a private repo needs `HF_TOKEN`).
 
 ```bash
 # 若已預先放好 / if pre-staged:
-ls -d models/mmbert32k-jailbreak-detector-merged models/mmbert32k-pii-detector-merged
+ls -d models/mmbert32k-jailbreak-detector-merged models/pii_classifier_modernbert-base_presidio_token_model
+
+# 若需手動預先下載 PII 模型 / if pre-staging the PII model manually:
+hf download LLM-Semantic-Router/pii_classifier_modernbert-base_presidio_token_model \
+  --local-dir models/pii_classifier_modernbert-base_presidio_token_model
 
 # 若需從 Hugging Face 下載私有模型 / if downloading a private model from Hugging Face:
 export HF_TOKEN=hf_xxx
 ```
 
+> 重要 / Important：ROCm router 透過 ONNX Runtime 載入 token 分類器，但 HF 上的
+> `pii_classifier_modernbert-base_presidio_token_model` 只發佈 safetensors，需要先匯出成
+> `models/.../onnx/model.onnx`（mmBERT 模型自帶 `onnx/`，此模型沒有）。**此步驟已自動化**：
+> [bring-up.sh](bring-up.sh) 的步驟 `[4/5]` 會在 `onnx/model.onnx` 不存在時，用 optimum 由
+> safetensors 匯出（自建一次性 venv 安裝 `transformers>=4.48`、`optimum[onnxruntime]`、
+> `onnx`、`torch`）；若已存在則略過，因此可重複執行而不會重做匯出。
+> The ROCm router loads token classifiers via ONNX Runtime, but
+> `pii_classifier_modernbert-base_presidio_token_model` on HF ships safetensors only and
+> must first be exported to `models/.../onnx/model.onnx` (the mmBERT models bundle their
+> own `onnx/`; this one does not). **This is now automated**: step `[4/5]` of
+> [bring-up.sh](bring-up.sh) exports it from the safetensors via optimum (in a one-time
+> venv that installs `transformers>=4.48`, `optimum[onnxruntime]`, `onnx`, `torch`) when
+> `onnx/model.onnx` is missing, and skips when it already exists — so bring-up is
+> idempotent and re-running it never re-exports.
+
+```bash
+# bring-up.sh 步驟 [4/5] 已自動處理；若要手動驗證匯出結果 / bring-up.sh step [4/5]
+# handles this automatically; to verify the exported artifact manually:
+ls models/pii_classifier_modernbert-base_presidio_token_model/onnx/model.onnx
+```
+
+> 注意 / Note：在 ONNX/ROCm binding 中，PII token 分類器只有「mmBERT-32K」路徑會把模型
+> 註冊／查詢為名稱 `pii`（init 與 inference 一致），其載入器與模型無關，會載入該模型目錄下
+> 的任何 ONNX；因此 `modules.classifier.pii` 用 `use_mmbert_32k: true` 搭配 ModernBERT
+> `model_id` 才能正確服務。`use_mmbert_32k: false` 路徑在此 binding 會註冊成 `bert_token`、
+> 但 inference 仍查 `pii`，導致請求時 `PII classifier 'pii' not found`。
+> In the ONNX/ROCm binding, only the "mmBERT-32K" PII path registers and looks up the
+> token classifier under the name `pii` consistently; its loader is model-agnostic and
+> loads whatever ONNX lives in the model dir. So `modules.classifier.pii` must use
+> `use_mmbert_32k: true` together with the ModernBERT `model_id`. The
+> `use_mmbert_32k: false` path registers `bert_token` but inference still looks up `pii`,
+> producing `PII classifier 'pii' not found` at request time.
+
 - [ ] B 通過 / Gate B passes
-  - 通過條件 / Pass: 兩個模型目錄已存在，或具備網路與（必要時）`HF_TOKEN` 可在首次 serve 時下載。/ both model directories exist, or network plus (if needed) `HF_TOKEN` is in place so they download on first serve.
-  - 證據 / Evidence: `ls` 列出兩個目錄，或第一次 serve 的下載日誌。/ `ls` listing both directories, or the first-serve download logs.
+  - 通過條件 / Pass: 兩個模型目錄已存在，且 PII 模型含 `onnx/model.onnx`（由 [bring-up.sh](bring-up.sh) 步驟 `[4/5]` 自動匯出，已存在則略過）；或具備網路與（必要時）`HF_TOKEN` 可下載，後續 bring-up 會自動完成 ONNX 匯出。/ both model directories exist and the PII model has `onnx/model.onnx` (auto-exported by [bring-up.sh](bring-up.sh) step `[4/5]`, skipped when already present); or network plus (if needed) `HF_TOKEN` is in place to download, after which bring-up performs the ONNX export automatically.
+  - 證據 / Evidence: `ls` 列出兩個目錄與 PII `onnx/model.onnx`，或 bring-up 步驟 `[4/5]` 的匯出／略過日誌。/ `ls` listing both directories and the PII `onnx/model.onnx`, or the bring-up step `[4/5]` export/skip log.
 
 ### 關卡 C：DSL 產生並驗證通過 / Gate C: DSL generated and validated
 
