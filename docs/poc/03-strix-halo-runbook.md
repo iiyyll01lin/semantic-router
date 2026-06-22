@@ -562,6 +562,31 @@ Follow the demo script in section 8 of [02-poc-plan.md](02-poc-plan.md): send re
 
 Where savings come from: even when everything is served locally, the dashboard computes savings from the config `pricing` against an all-most-expensive-model baseline. For a fully offline demo of frontier escalation, replace the real cloud API with the mock server `llm-katan` (see [e2e/testing/llm-katan/README.md](../../e2e/testing/llm-katan/README.md)).
 
+### Agentic 多輪 demo 指令 / Agentic Multi-turn Demo Commands
+
+單筆 Playground demo 之後，用 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 對運作中的 router 打多輪 session 流量，證明 session 內 selected-model 連續性與 tool-loop 治理（對應 [04-dashboard-tour.md](04-dashboard-tour.md) POC Demo 動線第 6 步「Agentic 多輪 + ClawOS」與 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md) 的 Slide 34 OpenClaw 對齊）。
+
+After the single-shot Playground demo, drive multi-turn session traffic at the live router with [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) to prove in-session selected-model continuity and tool-loop governance (this is step 6 "Agentic multi-turn + ClawOS" of the POC Demo Flow in [04-dashboard-tour.md](04-dashboard-tour.md) and the Slide 34 OpenClaw alignment in [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)).
+
+```bash
+# 多 session、多輪、工具迴圈情境，打運作中的 router（經 Envoy listener）
+# multiple sessions, multiple turns, tool-loop scenario, against the live router (via the Envoy listener)
+python3 bench/agentic_routing_live_benchmark.py \
+  --base-url http://<host>:8899/v1 \
+  --metrics-url http://<host>:9279/metrics \
+  --model auto \
+  --scenario tool-heavy \
+  --sessions 8 \
+  --turns 12 \
+  --concurrency 2 \
+  --require-router-diagnostics \
+  --max-tool-loop-violations 0
+```
+
+旗標說明 / Flag notes：`--sessions` / `--turns` / `--concurrency` 控制 session 數、每 session 輪數與併發；`--scenario tool-heavy` 模擬工具迴圈（其他可選 `idle-heavy` / `stateful-heavy` / `drift-heavy` 等，見 [bench/README.md](../../bench/README.md)）。輸出寫到 `.agent-harness/experiments/live-agentic-routing/`，含 success rate、latency 百分位、selected-model 切換次數、tool-loop 違規數與 `x-vsr-*` 決策標頭。打完流量後在 dashboard 開 **ClawOS（`/clawos`）** 對映簡報 Slide 34 的 OpenClaw。
+
+Flag notes: `--sessions` / `--turns` / `--concurrency` set the session count, turns per session, and concurrency; `--scenario tool-heavy` emulates a tool loop (other choices include `idle-heavy` / `stateful-heavy` / `drift-heavy`; see [bench/README.md](../../bench/README.md)). Output is written under `.agent-harness/experiments/live-agentic-routing/` with success rate, latency percentiles, selected-model switches, tool-loop violations, and `x-vsr-*` decision headers. After the traffic, open **ClawOS (`/clawos`)** in the dashboard to map to OpenClaw on deck Slide 34.
+
 ---
 
 ## 10. 驗收清單 / Acceptance Checklist

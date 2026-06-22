@@ -17,6 +17,10 @@ This document focuses on how to run the PoC: objectives, scenario, architecture,
 
 Demonstrate to enterprise customers (e.g. TSMC, who raised this during the Ryzen AI Max+ pitch) that semantic tiered routing with vLLM Semantic Router can keep most routine traffic on local AMD hardware and escalate only hard requests to frontier cloud models, substantially cutting token spend without sacrificing quality on the requests that matter, while adding PII/jailbreak security governance.
 
+第三方佐證 / Third-party validation：這不是供應商單方面的主張。AMD CIO 自家「Enterprise AI at AMD / TSMC」簡報的 future-state tokenomics（Slide 35–37）就提出 `Intelligent Token Routing`——`Premium Tokens → Frontier Model`、`Local Tokens → MI350P AMD Servers / Local LLMs`，並下結論「Agentic AI 讓 token 需求倍增，唯有混合策略能把上升成本變成可控方程式」。本 PoC 正是把客戶自家 CIO 已背書的這張圖，變成可量測、可 demo 的系統；逐 slide 對照見 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)。
+
+Third-party validation: this is not a one-sided vendor claim. AMD's own CIO deck "Enterprise AI at AMD / TSMC" already proposes `Intelligent Token Routing` in its future-state tokenomics (Slides 35–37)—`Premium Tokens → Frontier Model`, `Local Tokens → MI350P AMD Servers / Local LLMs`—and concludes that "agentic AI multiplies token demand, and only a hybrid strategy turns rising costs into a manageable equation." This PoC turns that customer-CIO-endorsed diagram into a measurable, demoable system; for the slide-by-slide mapping see [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md).
+
 ### 可量測成功標準 / Measurable success criteria
 
 以下為提案目標值，kickoff 時與客戶共同定案。

@@ -38,14 +38,16 @@ The navigation structure was verified against source: [LayoutNavSupport.ts](../.
 3. **Config — Models / Decisions / Signals（`/config`）** — 攤開 PoC 設定：5 個 tier 與其 pricing、14 條決策（含優先序 300 的 `security_guard`）、`pii` 與 `jailbreak` 等訊號。/ Open the PoC config: the 5 tiers with their pricing, the 14 decisions (including the priority-300 `security_guard`), and the `pii` / `jailbreak` signals.
 4. **Brain / Topology（`/topology`）** — 不打模型先講路由：用 dry-run 測試框送一筆查詢，看 signal → decision → model 路徑高亮與每條規則的命中數。/ Explain routing before hitting a model: use the dry-run test box to send a query and watch the signal → decision → model path highlight with per-rule match counts.
 5. **Playground（`/playground` 或 `/playground/fullscreen`）** — 核心現場 demo：依序送「簡單 / 困難推理 / PII / jailbreak」四筆請求，每筆用 HeaderReveal 浮層秀出被選的 model、decision 與命中訊號。/ The core live demo: send the easy / hard-reasoning / PII / jailbreak requests in order; each pops the HeaderReveal overlay showing the chosen model, decision, and matched signals.
-6. **Monitoring（`/monitoring`）** — 成本與分佈證據：Grafana 顯示成本下降數字、本地承載率（model distribution）、token 用量、TTFT/TPOT、快取命中。/ Cost and distribution evidence: Grafana shows the cost-reduction number, the local-served ratio (model distribution), token usage, TTFT/TPOT, and cache hits.
-7. **Tracing（`/tracing`）** — 延遲與路由開銷證據：Jaeger 以 `service=vllm-sr` 展開單筆請求的 span，佐證路由額外開銷低。/ Latency and routing-overhead evidence: Jaeger expands a single request's spans for `service=vllm-sr`, backing the low-routing-overhead claim.
-8. **Insight（`/insights`）（選配 / optional）** — 逐筆回放：用 router_replay 紀錄檢視每筆請求的決策與成本。/ Per-request replay: inspect each request's decision and cost from the router_replay records.
-9. **校準迴圈報表（選配 / optional calibration-loop report）** — 用 [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) 證明路由準確率（最近一次 51/58，87.9%）。/ Prove routing accuracy with [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) (most recent run 51/58, 87.9%).
+6. **Agentic 多輪 + ClawOS（`/clawos`）** — agentic 主軸：用 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 打多輪 session 流量，證明 session 內 selected-model 連續性與 tool-loop 治理，並把 ClawOS 頁面對映到簡報 Slide 34 的 OpenClaw / LLM Gateway。/ The agentic thread: drive multi-turn session traffic with [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) to prove in-session selected-model continuity and tool-loop governance, mapping the ClawOS page to OpenClaw / LLM Gateway on deck Slide 34.
+7. **Monitoring（`/monitoring`）** — 成本與分佈證據：Grafana 顯示成本下降數字、本地承載率（model distribution）、token 用量、TTFT/TPOT、快取命中。/ Cost and distribution evidence: Grafana shows the cost-reduction number, the local-served ratio (model distribution), token usage, TTFT/TPOT, and cache hits.
+8. **Tracing（`/tracing`）** — 延遲與路由開銷證據：Jaeger 以 `service=vllm-sr` 展開單筆請求的 span，佐證路由額外開銷低。/ Latency and routing-overhead evidence: Jaeger expands a single request's spans for `service=vllm-sr`, backing the low-routing-overhead claim.
+9. **Insight（`/insights`）（選配 / optional）** — 逐筆回放：用 router_replay 紀錄檢視每筆請求的決策與成本，這份 trace 即下一步 fleet-sim 的輸入。/ Per-request replay: inspect each request's decision and cost from the router_replay records; this trace is the input to the fleet-sim step next.
+10. **Fleet Sim（`/fleet-sim` Overview / `/fleet-sim/runs` Runs）** — TCO 收尾：把上一步的 router-replay trace 餵進 fleet-sim，在部署機群**之前**先證明 MI350P 機群的容量／成本，對齊簡報 Slide 36 的 future-state tokenomics。/ The TCO closer: feed the previous router-replay trace into fleet-sim to prove the MI350P fleet's capacity/cost *before* deploying it, aligned to future-state tokenomics on deck Slide 36.
+11. **校準迴圈報表（選配 / optional calibration-loop report）** — 用 [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) 證明路由準確率（最近一次 51/58，87.9%）。/ Prove routing accuracy with [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) (most recent run 51/58, 87.9%).
 
-收尾話術 / Closing line：依 [02-poc-plan.md](02-poc-plan.md) 第 1 節的「成功定義」，demo 結束時能在 dashboard 同時指出「成本下降數字（Monitoring）」「路由分佈（Monitoring）」「安全攔截（Playground）」三個畫面，並用校準報表證明路由準確率。
+收尾話術 / Closing line：依 [02-poc-plan.md](02-poc-plan.md) 第 1 節的「成功定義」，demo 結束時能在 dashboard 同時指出「成本下降數字（Monitoring）」「路由分佈（Monitoring）」「安全攔截（Playground）」三個畫面，並用校準報表證明路由準確率；最後用 Fleet Sim 把 router-replay trace 推成機群 TCO，作為「部署機群前先證明 TCO」的收尾。整段動線逐 slide 對齊 AMD 簡報的對照見 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)。
 
-Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), by the end of the demo you can point to the cost-reduction number (Monitoring), the routing distribution (Monitoring), and security blocking (Playground) at the same time, and prove routing accuracy with the calibration report.
+Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), by the end of the demo you can point to the cost-reduction number (Monitoring), the routing distribution (Monitoring), and security blocking (Playground) at the same time, prove routing accuracy with the calibration report, and finally turn the router-replay trace into fleet TCO with Fleet Sim as a "prove TCO before deploying the fleet" closer. For how the whole flow maps slide-by-slide to the AMD deck, see [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md).
 
 ---
 
@@ -149,6 +151,22 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
 
 - `POST /api/router/v1/chat/completions`（經 Envoy listener `:8899`）。浮層欄位定義見 [HeaderReveal.tsx](../../dashboard/frontend/src/components/HeaderReveal.tsx)；聊天邏輯見 [ChatComponent.tsx](../../dashboard/frontend/src/components/ChatComponent.tsx)；頁面見 [PlaygroundPage.tsx](../../dashboard/frontend/src/pages/PlaygroundPage.tsx) 與 [PlaygroundFullscreenPage.tsx](../../dashboard/frontend/src/pages/PlaygroundFullscreenPage.tsx)。/ `POST /api/router/v1/chat/completions` (through the Envoy listener `:8899`). The overlay fields are defined in [HeaderReveal.tsx](../../dashboard/frontend/src/components/HeaderReveal.tsx); chat logic in [ChatComponent.tsx](../../dashboard/frontend/src/components/ChatComponent.tsx); pages in [PlaygroundPage.tsx](../../dashboard/frontend/src/pages/PlaygroundPage.tsx) and [PlaygroundFullscreenPage.tsx](../../dashboard/frontend/src/pages/PlaygroundFullscreenPage.tsx).
 
+### Agentic 多輪 + ClawOS（`/clawos`）[POC Demo] — Agentic 多輪流量與 OpenClaw 對齊 / Agentic Multi-turn Traffic and OpenClaw Alignment
+
+要展示什麼與點擊步驟 / What to show and click steps：
+
+- 在 Playground 的單筆 demo 之後，切到「agentic 多輪」：用 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 對運作中的 router 打多個 session、每個 session 多輪（旗標 `--sessions` / `--turns` / `--concurrency`，`--scenario tool-heavy` 模擬工具迴圈），執行指令見 [03-strix-halo-runbook.md](03-strix-halo-runbook.md) 第 9 節。/ After the single-shot Playground demo, switch to "agentic multi-turn": drive the live router with [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) across multiple sessions, multiple turns each (flags `--sessions` / `--turns` / `--concurrency`, `--scenario tool-heavy` to emulate tool loops); the command is in section 9 of [03-strix-halo-runbook.md](03-strix-halo-runbook.md).
+- 打完流量後開 **ClawOS（`/clawos`）**，在 Overview / Claw Console / Claw Team 各分頁講「多代理（claw team）操作主控台」，並明說：這個頁面對映簡報 Slide 34 的 **AMD OpenClaw**——企業端與外部雲以 LLM Gateway 分隔，AI Agent 容器由 Human Manager 治理。router 就是那個 LLM Gateway。/ After the traffic, open **ClawOS (`/clawos`)** and narrate the multi-agent (claw team) console across the Overview / Claw Console / Claw Team tabs, stating explicitly: this page maps to **AMD OpenClaw** on deck Slide 34—enterprise and external cloud separated by an LLM Gateway, AI Agent containers governed by a Human Manager. The router *is* that LLM Gateway.
+
+觀眾看什麼、為何重要 / What the audience looks at and why it matters：
+
+- 多輪 session 證明的是單筆 Playground demo 看不到的東西：session 內 selected-model 的連續性、tool-loop 不亂跳模型、以及 context-portability 不破——這對映簡報 Slide 18 的 `Agent LLM + Critic LLM` 與 Slide 12 的 `Automate→Autonomous` 成熟度。/ Multi-turn sessions prove what the single-shot Playground cannot: in-session selected-model continuity, no model thrashing across a tool loop, and unbroken context portability—mapping to `Agent LLM + Critic LLM` on Slide 18 and the `Automate→Autonomous` maturity of Slide 12.
+- benchmark 的 summary 直接給出 success rate、latency 百分位、selected-model 切換次數、tool-loop 違規數與 `x-vsr-*` 決策標頭，是 agentic 路由的系統證據（見 [bench/README.md](../../bench/README.md)）。/ The benchmark summary directly reports success rate, latency percentiles, selected-model switches, tool-loop violations, and `x-vsr-*` decision headers—system evidence for agentic routing (see [bench/README.md](../../bench/README.md)).
+
+後端 / 資料來源 / Backend and data source：
+
+- 流量經 `POST /api/router/v1/chat/completions`（經 Envoy listener），ClawOS 狀態走 OpenClaw 的 realtime 連線（WebSocket/SSE）。來源 [OpenClawPage.tsx](../../dashboard/frontend/src/pages/OpenClawPage.tsx)；benchmark 腳本 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py)。/ Traffic goes through `POST /api/router/v1/chat/completions` (via the Envoy listener); ClawOS state uses OpenClaw's realtime connection (WebSocket/SSE). Source [OpenClawPage.tsx](../../dashboard/frontend/src/pages/OpenClawPage.tsx); the benchmark script is [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py).
+
 ### Observability — Monitoring（`/monitoring`）[POC Demo] — Grafana 成本與分佈證據 / Grafana Cost and Distribution Evidence
 
 要展示什麼與點擊步驟 / What to show and click steps：
@@ -193,6 +211,23 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
 
 - router replay 端點（需 `replay.read` 權限）；PoC 設定 `global.services.router_replay` 啟用、`store_backend: postgres`（見 [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)）。來源 [InsightsPage.tsx](../../dashboard/frontend/src/pages/InsightsPage.tsx) 與 [dashboard/README.md](../../dashboard/README.md)。/ The router replay endpoint (needs the `replay.read` permission); the PoC enables `global.services.router_replay` with `store_backend: postgres` (see [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)). Sources [InsightsPage.tsx](../../dashboard/frontend/src/pages/InsightsPage.tsx) and [dashboard/README.md](../../dashboard/README.md).
 
+### Fleet Sim（`/fleet-sim` Overview / `/fleet-sim/runs` Runs）[POC Demo] — router-replay → fleet-sim 的 TCO 收尾 / The router-replay → fleet-sim TCO Closer
+
+要展示什麼與點擊步驟 / What to show and click steps：
+
+- 收尾用 Fleet Sim 把「單機軟體價值」延伸成「機群經濟學」。先開 **Overview（`/fleet-sim`）** 看 workloads / fleets / traces / 最近 jobs 的彙整，說明這是容量規劃與路由策略的模擬器。/ Close with Fleet Sim to extend "single-box software value" into "fleet economics." Open **Overview (`/fleet-sim`)** first to show the aggregated workloads / fleets / traces / recent jobs and explain it is a capacity-planning and routing-strategy simulator.
+- 強調「先量測、再模擬」的接力：上一步 Insight 的 router-replay trace（router 真實的每請求 `selected_model` 決策）就是這裡的輸入 workload，把你 PoC 的實際路由決策回放成機群規模，而不是憑空假設流量。/ Stress the measure-then-simulate handoff: the router-replay trace from the previous Insight step (the router's real per-request `selected_model` decisions) is the input workload here, replaying your PoC's actual routing decisions into a fleet sizing rather than assuming traffic out of thin air.
+- 再開 **Runs（`/fleet-sim/runs`）** 建立並追蹤一個 optimize / simulate 任務，指出輸出：GPU／節點數、$/yr、tokens-per-watt、P99 TTFT/TPOT 與 SLO 達成率。話術：「這就是 Slide 36 的 future-state tokenomics——我們在部署 MI350P 機群**之前**先證明它的 TCO。」/ Then open **Runs (`/fleet-sim/runs`)** to create and track an optimize / simulate job, and call out the outputs: GPU/node counts, $/yr, tokens-per-watt, P99 TTFT/TPOT, and SLO compliance. Talking point: "This is Slide 36's future-state tokenomics—we prove the MI350P fleet's TCO *before* deploying it."
+
+觀眾看什麼、為何重要 / What the audience looks at and why it matters：
+
+- 這是 [02-poc-plan.md](02-poc-plan.md) 第 12 節「多節點規模驗證（模擬）」的 demo 化：單機證明軟體價值，fleet-sim（由真實 PoC trace 餵養）在部署機群前就先證明機群的經濟性／TCO，真實效能數字留到 Instinct 機群階段再量。/ This is the demo-ized form of section 12 of [02-poc-plan.md](02-poc-plan.md) (multi-node scale validation via simulation): the single box proves software value, fleet-sim (fed by real PoC traces) proves fleet economics/TCO before deploying the fleet, and real performance numbers wait for the Instinct fleet phase.
+- 誠實邊界：fleet-sim 的數字是**模擬**的容量與成本，跨節點吞吐是外推、不是 Instinct 實測（見 [02-poc-plan.md](02-poc-plan.md) 第 12 節「模擬的邊界」與 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md) 第 4 節）。/ Honest boundary: fleet-sim's numbers are **simulated** capacity and cost, and cross-node throughput is extrapolation rather than measured Instinct performance (see the "honest boundaries" of section 12 in [02-poc-plan.md](02-poc-plan.md) and section 4 of [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)).
+
+後端 / 資料來源 / Backend and data source：
+
+- 後端走 `/api/fleet-sim/api`（見 [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)）；CLI 與模擬器核心為 [src/fleet-sim/run_sim.py](../../src/fleet-sim/run_sim.py)（子指令 optimize/simulate/simulate-fleet/whatif/compare-routers），trace 來源為 [router_replay_cost.go](../../src/semantic-router/pkg/extproc/router_replay_cost.go) 記錄的每請求決策。來源 [FleetSimOverviewPage.tsx](../../dashboard/frontend/src/pages/FleetSimOverviewPage.tsx) 與 [FleetSimRunsPage.tsx](../../dashboard/frontend/src/pages/FleetSimRunsPage.tsx)。/ The backend is `/api/fleet-sim/api` (see [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)); the CLI and simulator core is [src/fleet-sim/run_sim.py](../../src/fleet-sim/run_sim.py) (subcommands optimize/simulate/simulate-fleet/whatif/compare-routers), and the trace comes from the per-request decisions recorded by [router_replay_cost.go](../../src/semantic-router/pkg/extproc/router_replay_cost.go). Sources [FleetSimOverviewPage.tsx](../../dashboard/frontend/src/pages/FleetSimOverviewPage.tsx) and [FleetSimRunsPage.tsx](../../dashboard/frontend/src/pages/FleetSimRunsPage.tsx).
+
 ---
 
 ## 頂部主導覽 / Top Primary Nav
@@ -229,7 +264,7 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
   - 典型操作 / Typical usage：定義 role mappings 與 rate tiers，預覽產生的 router 設定片段，存檔後熱套用到 `config.yaml`。
   - 後端 / Backend：`GET /api/security/policy`、`PUT /api/security/policy`、`POST /api/security/policy/preview`（需 `security.manage`）。來源 [SecurityPolicyPage.tsx](../../dashboard/frontend/src/pages/SecurityPolicyPage.tsx)。
 
-- **ClawOS（`/clawos`）** — OpenClaw 多代理（claw team）操作主控台 / OpenClaw multi-agent (claw team) operations console.
+- **ClawOS（`/clawos`）[POC Demo]** — OpenClaw 多代理（claw team）操作主控台，對映簡報 Slide 34 的 AMD OpenClaw（demo 深入見上方「POC Demo 深入導覽」）/ OpenClaw multi-agent (claw team) operations console, mapping to AMD OpenClaw on deck Slide 34 (deep dive in "POC Demo Deep Dive" above).
   - 典型操作 / Typical usage：在 Overview / Claw Console / Claw Team / 佈建 / Status 各分頁檢視架構、團隊與即時狀態。
   - 後端 / Backend：OpenClaw 狀態與 realtime 連線（WebSocket/SSE）。來源 [OpenClawPage.tsx](../../dashboard/frontend/src/pages/OpenClawPage.tsx)。
 
@@ -297,13 +332,13 @@ Fleet Sim 提供容量規劃與路由策略的模擬；後端走 `/api/fleet-sim
 
 Fleet Sim provides capacity-planning and routing-strategy simulation; the backend is reached through `/api/fleet-sim/api` (see [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)).
 
-- **Overview（`/fleet-sim`）** — 模擬器總覽：彙整 workloads、fleets、traces 與最近 jobs / Simulator overview aggregating workloads, fleets, traces, and recent jobs.
+- **Overview（`/fleet-sim`）[POC Demo]** — 模擬器總覽：彙整 workloads、fleets、traces 與最近 jobs，是 router-replay → fleet-sim TCO 收尾的入口（demo 深入見上方「POC Demo 深入導覽」）/ Simulator overview aggregating workloads, fleets, traces, and recent jobs; the entry point for the router-replay → fleet-sim TCO closer (deep dive in "POC Demo Deep Dive" above).
   - 來源 / Source：[FleetSimOverviewPage.tsx](../../dashboard/frontend/src/pages/FleetSimOverviewPage.tsx)。
 - **Workloads（`/fleet-sim/workloads`）** — 管理 trace workloads：內建範本與上傳的 trace（JSONL/CSV/semantic_router）/ Manage trace workloads: built-in profiles and uploaded traces (JSONL/CSV/semantic_router).
   - 來源 / Source：[FleetSimWorkloadsPage.tsx](../../dashboard/frontend/src/pages/FleetSimWorkloadsPage.tsx)。
 - **Fleets（`/fleet-sim/fleets`）** — 定義 GPU 資源池與路由策略的 fleet 設定 / Define fleet configs of GPU pools and routing strategies.
   - 來源 / Source：[FleetSimFleetsPage.tsx](../../dashboard/frontend/src/pages/FleetSimFleetsPage.tsx)。
-- **Runs（`/fleet-sim/runs`）** — 建立並追蹤模擬任務：optimize / simulate / what-if / Create and track simulation jobs: optimize, simulate, what-if.
+- **Runs（`/fleet-sim/runs`）[POC Demo]** — 建立並追蹤模擬任務：optimize / simulate / what-if（demo 深入見上方「POC Demo 深入導覽」）/ Create and track simulation jobs: optimize, simulate, what-if (deep dive in "POC Demo Deep Dive" above).
   - 來源 / Source：[FleetSimRunsPage.tsx](../../dashboard/frontend/src/pages/FleetSimRunsPage.tsx)。
 
 ---

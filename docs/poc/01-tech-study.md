@@ -7,6 +7,9 @@
 
 This document focuses on what the technology is, how it works, and why it fits the customer ask. The concrete PoC execution steps, timeline, and hardware plan live in the companion file `02-poc-plan.md`.
 
+> 與 AMD 策略對齊 / AMD strategy alignment：這套 router 對應的正是 AMD CIO 簡報的 `Intelligent Token Routing` 與 `LLM Gateway`。逐 slide 對照（tokenomics / OpenClaw / Agent Gateway / Orion-Sentinel）與 router 的誠實邊界見 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)。
+> This router corresponds to the `Intelligent Token Routing` and `LLM Gateway` in the AMD CIO deck. For the slide-by-slide mapping (tokenomics / OpenClaw / Agent Gateway / Orion-Sentinel) and the router's honest boundaries, see [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md).
+
 ---
 
 ## 1. 重點摘要 / Executive Summary
