@@ -216,3 +216,6 @@ Makefile.local
 # Candle binding build outputs (use target/ for default Cargo builds)
 candle-binding/target-mkl/
 candle-binding/target-cpu/
+
+# Source PowerPoint asset (reference material, not a tracked doc)
+docs/Enterprise AI at AMD TSMC.pptx
