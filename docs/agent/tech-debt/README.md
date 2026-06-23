@@ -72,6 +72,8 @@ Every debt entry should include:
 - [TD045 mmBERT-32K PII Detector (mmbert32k-pii-detector-merged) Returns Zero Entities](td-045-mmbert32k-pii-detector-zero-entities.md)
 - [TD046 onnx-binding Concurrent ROCm ONNX Session Creation Segfaults on Classifier (Re)Initialization](td-046-onnx-binding-concurrent-rocm-session-init-segfault.md)
 - [TD047 PII Registry Alias Auto-Download Target Is Missing pii_type_mapping.json](td-047-pii-registry-alias-autodownload-missing-mapping.md)
+- [TD048 No First-Class Router-Replay to Fleet-Sim Exporter, and Fleet-Sim GPU Pools Are Hardcoded NVIDIA So Instinct TCO Is Uncalibrated](td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md)
+- [TD049 Multi-Candidate Decision Did Not Engage the Selection Algorithm at Runtime](td-049-multi-candidate-selection-not-engaged.md)
 
 ## Retired Debt Policy
 
