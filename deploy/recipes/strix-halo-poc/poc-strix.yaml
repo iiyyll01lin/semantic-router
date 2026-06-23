@@ -2335,7 +2335,7 @@ global:
         skip_processing:
             enabled: false
         model_selection:
-            method: knn
+            method: session_aware
             enabled: true
             router_dc:
                 temperature: 0.07
@@ -2352,6 +2352,10 @@ global:
                 cost_weight: 0.2
                 quality_gap_threshold: 0.1
                 normalize_scores: true
+            session_aware:
+                base_method: knn
+                tool_loop_hard_lock: true
+                context_portability_hard_lock: true
     services:
         api:
             batch_classification: {}
