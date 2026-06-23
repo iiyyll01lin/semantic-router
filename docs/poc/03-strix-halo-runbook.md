@@ -591,6 +591,49 @@ Flag notes: `--base-url` points at the `/v1` surface of the router **listener `:
 
 Output location: each run writes to `.agent-harness/experiments/live-agentic-routing/<ts>/` (`<ts>` is a UTC timestamp), containing `turns.csv` / `turns.jsonl` (per-turn raw rows) and `summary.json` / `summary.md` (aggregated success rate, latency percentiles, selected-model switches, tool-loop violations, and `x-vsr-*` decision headers). After the traffic, open **ClawOS (`/clawos`)** in the dashboard to map to OpenClaw on deck Slide 34.
 
+> session 連續性 violations 的定位與收斂嘗試（measured-on 2026-06-23）/ What the session-continuity violations mean, and the convergence attempt (measured-on 2026-06-23)：`tool_loop_switch_violations` / `context_portability_violations` 是 benchmark 的**純客戶端計數**，只比對「本輪 `x-vsr-selected-model` 是否與同 session 上一輪相同」。在 `--model auto` 下 router 每輪重新分類，跨 tier 的決策漂移自然會改變 selected-model，所以這些數字衡量的是 **session 黏著度一致性，屬預期、非路由品質 bug**。注意 `--include-previous-response-id` 只在 **Response API（`/v1/responses`）** 路徑生效；本 benchmark 走 `/v1/chat/completions`，該旗標**不會**改變這裡的 context-portability 計數。為治理黏著度，[poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) 已啟用 `global.router.model_selection.method: session_aware`（`base_method: knn`，hard-lock 預設開）。實測：啟用後以相同 8×12 指令重跑，counts **維持 11 tool-loop / 28 context-portability（未下降）**、success **96/96** 不變。原因是本 PoC 每條決策只對應**單一**模型，單候選時 router 直接略過模型選擇演算法（method `single`，見 [req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go)），`session_aware` / `model_switch_gate` 不會被呼叫，跨輪切換來自決策漂移；`session_aware` 只有在某決策暴露 **≥2 候選模型** 時才生效。完整說明見 [04-dashboard-tour.md](04-dashboard-tour.md) 第 6 步。/ `tool_loop_switch_violations` / `context_portability_violations` are **purely client-side counts**—they only compare whether this turn's `x-vsr-selected-model` matches the previous turn's in the same session. Under `--model auto` the router re-classifies every turn, so cross-tier decision drift naturally changes the selected model; these numbers measure **session-stickiness conformance—expected, not a routing-quality bug**. Note `--include-previous-response-id` only takes effect on the **Response API (`/v1/responses`)** path; this benchmark uses `/v1/chat/completions`, so that flag does **not** change the context-portability counts here. To govern stickiness, [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) now enables `global.router.model_selection.method: session_aware` (`base_method: knn`, hard-locks default on). Measured: after enabling it, re-running the same 8×12 command kept the counts at **11 tool-loop / 28 context-portability (no drop)**, with success still **96/96**. The reason is that every decision in this PoC maps to a **single** model, so with one candidate the router skips model selection entirely (method `single`, see [req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go)); `session_aware` / `model_switch_gate` are never invoked and the cross-turn switches come from decision drift—`session_aware` only bites once a decision exposes **≥2 candidate models**. Full explanation in step 6 of [04-dashboard-tour.md](04-dashboard-tour.md).
+
+### Routed vs frontier 成本/延遲對比 / Routed vs Frontier Cost/Latency Comparison
+
+用同一支 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 的 `--baseline-*` 旗標，把**同一份 session/prompt workload** 同時打「routed（listener `:8899`、`--model auto`）」與「direct baseline backend」，再產出 `comparison.json` / `comparison.md`，作為「本地 routed vs frontier」的成本/延遲故事（對應 [04-dashboard-tour.md](04-dashboard-tour.md) 第 6 步的回填）。
+
+Using the same [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) with its `--baseline-*` flags, replay **one session/prompt workload** against both the routed path (listener `:8899`, `--model auto`) and a direct baseline backend, then emit `comparison.json` / `comparison.md` as the local-routed-vs-frontier cost/latency story (this is the backfill referenced in step 6 of [04-dashboard-tour.md](04-dashboard-tour.md)).
+
+frontier 端點二選一 / Two ways to provide the frontier endpoint：
+
+- **預設：完全離線的 frontier stand-in / Default: fully-offline frontier stand-in** — 用 llm-katan 以 transformers 後端載入一個**真會生成**的小模型（真實生成延遲），當作 baseline。它與第 3 節的本地後端一樣掛在 `vllm-sr-network` 上：/ run llm-katan with the transformers backend hosting a small model that **actually generates** (real generation latency) as the baseline, on the same `vllm-sr-network` as the section-3 backends:
+
+```bash
+# 起一個會真實生成的離線 frontier stand-in（host :8001 -> 容器 :8000，避開既有 echo katan 的 :8000）
+# start a real-generating offline frontier stand-in (host :8001 -> container :8000, avoiding the existing echo katan on :8000)
+docker run -d --name frontier-katan --network=vllm-sr-network -p 8001:8000 \
+  ghcr.io/vllm-project/semantic-router/llm-katan:latest \
+  --model Qwen/Qwen3-0.6B --backend transformers \
+  --served-model-name Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000
+```
+
+- **真實雲端（swap）/ Real cloud (swap)** — 把 baseline 指向真實 frontier API，金鑰由環境變數讀取（需預算）：`--baseline-base-url https://api.openai.com/v1 --baseline-model gpt-4o-mini`（先 `export OPENAI_API_KEY=...`）。/ point the baseline at a real frontier API, key read from an env var (needs budget): `--baseline-base-url https://api.openai.com/v1 --baseline-model gpt-4o-mini` (first `export OPENAI_API_KEY=...`).
+
+routed-vs-baseline 指令 / The routed-vs-baseline command：
+
+```bash
+python3 bench/agentic_routing_live_benchmark.py \
+  --base-url http://localhost:8899/v1 \
+  --metrics-url http://localhost:9190/metrics \
+  --model auto \
+  --scenario tool-heavy \
+  --sessions 4 --turns 6 \
+  --concurrency 1 \
+  --baseline-base-url http://localhost:8001/v1 \
+  --baseline-model Qwen/Qwen3-0.6B \
+  --baseline-label frontier-qwen3-0.6b \
+  --max-overhead-p95-ms 8000
+```
+
+旗標說明 / Flag notes：`--concurrency 1` 讓延遲量測公平（避免併發排隊污染 overhead）；`--max-overhead-p95-ms <gate>` 把 p95 路由額外開銷當門檻（超過即 fail，傳 `0` 或省略則停用）。讀 `comparison.md`：`router_overhead_ms` 的 p50/p95/p99 看 routed 相對 direct-frontier 多花多少時間，`router_vs_baseline_ratio`（`requests_per_second` / `prompt_tokens` / `completion_tokens`）看吞吐與 token 比，`success_rate_delta` 看成功率差。/ `--concurrency 1` keeps the latency measurement fair (avoids concurrency queueing polluting the overhead); `--max-overhead-p95-ms <gate>` treats the p95 routing overhead as a gate (fails if exceeded; pass `0` or omit to disable). Read `comparison.md`: `router_overhead_ms` p50/p95/p99 shows how much longer the routed path takes than the direct frontier, `router_vs_baseline_ratio` (`requests_per_second` / `prompt_tokens` / `completion_tokens`) shows throughput and token ratios, and `success_rate_delta` shows the success-rate difference.
+
+> 實測狀態（measured-on 2026-06-23）/ Measurement status (measured-on 2026-06-23)：目前單機上唯一在跑的 llm-katan 是 `--backend echo`（即時回聲、**非真實生成**），只適合**驗證對比管線**而非當 frontier 延遲基準。以它跑 routed-vs-baseline（4×6，concurrency 1）確實產出了 `comparison.json/md`（管線 OK），但其 `router_overhead_ms` p50/p95/p99 ≈ **7.6 / 13.2 / 14.1 s**、`throughput ratio ≈ 0.0002`、`success_rate_delta 0.5`，只反映「routed 真實本地生成 vs echo 即時回聲」，**不是** frontier 成本/延遲故事，故不回填為 frontier 數字。真正的 routed-vs-frontier 數字為 **pending**：請用上面的 transformers stand-in（或雲端 swap）指令重跑，再把 `comparison.md` 的 overhead p50/p95/p99 與 throughput/token 比回填 [04-dashboard-tour.md](04-dashboard-tour.md)。/ The only llm-katan currently up uses `--backend echo` (instant echo, **not real generation**), which is fit only to **validate the comparison pipeline**, not as a frontier latency baseline. Running routed-vs-baseline against it (4×6, concurrency 1) did produce `comparison.json/md` (pipeline OK), but its `router_overhead_ms` p50/p95/p99 ≈ **7.6 / 13.2 / 14.1 s**, `throughput ratio ≈ 0.0002`, and `success_rate_delta 0.5` only reflect "routed real local generation vs echo instant reply"—**not** a frontier cost/latency story—so they are not backfilled as frontier numbers. The real routed-vs-frontier numbers are **pending**: re-run with the transformers stand-in (or cloud swap) command above, then backfill the `comparison.md` overhead p50/p95/p99 and throughput/token ratios into [04-dashboard-tour.md](04-dashboard-tour.md).
+
 ### Fleet-sim / TCO：router-replay → fleet-sim 匯出與模擬 / Fleet-sim / TCO: router-replay → fleet-sim export and simulate
 
 「部署機群**之前**先證明機群 TCO」的收尾（對應 [04-dashboard-tour.md](04-dashboard-tour.md) POC Demo 動線第 10 步與簡報 Slide 36 的 future-state tokenomics）。router-replay 已在 [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) 啟用（`global.services.router_replay`，`store_backend: postgres`），所以可以把 PoC 期間 router 的**真實每請求決策**匯出成 fleet-sim 的輸入 trace，再模擬一個 MI350P 機群的容量與成本，而不是憑空假設流量。

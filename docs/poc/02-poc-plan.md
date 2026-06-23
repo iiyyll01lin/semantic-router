@@ -502,6 +502,9 @@ For real multi-node use the Kubernetes operator with replicas plus HPA autoscali
 
 The single box proves software value; fleet-sim (fed by real PoC traces) proves fleet economics/TCO before deploying the fleet; real performance numbers wait for the Instinct fleet phase.
 
+> 部署面延伸 / Deployment-side extension：把這套擴成真多節點（operator 的 `SemanticRouter` CRD：replicas + HPA + 共享後端，以及既有的 Helm kind e2e）見 [06-multi-node-and-operator.md](06-multi-node-and-operator.md)。
+> For scaling this into real multi-node (the operator's `SemanticRouter` CRD: replicas + HPA + shared backends, plus the existing Helm kind e2e), see [06-multi-node-and-operator.md](06-multi-node-and-operator.md).
+
 ---
 
 ## 參考連結 / Reference links
