@@ -49,8 +49,15 @@ EDGE_TAGS=(
 # we do not duplicate the (large) model download. The router loads token
 # classifiers via ONNX Runtime, but the published ModernBERT presidio detector
 # ships safetensors only, so model.onnx must be generated once before serve.
-PII_MODEL_DIR="${SCRIPT_DIR}/../strix-halo-poc/models/pii_classifier_modernbert-base_presidio_token_model"
+# The shared single-box models dir is mounted into the gateway (see the symlink
+# step below): `vllm-sr serve` mounts `<config_dir>/models` -> `/app/models`, and
+# the config_dir is the rendered dir, so we point `${RENDER_DIR}/models` at this
+# pre-staged tree to supply the presidio PII model and avoid the broken alias
+# auto-download.
+SHARED_MODELS_DIR="${SCRIPT_DIR}/../strix-halo-poc/models"
+PII_MODEL_DIR="${SHARED_MODELS_DIR}/pii_classifier_modernbert-base_presidio_token_model"
 PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
+PII_MAPPING_FILE="${PII_MODEL_DIR}/pii_type_mapping.json"
 # One-time export venv kept outside the repo tree so it never pollutes git.
 ONNX_EXPORT_VENV="${TMPDIR:-/tmp}/vllm-sr-pii-onnx-export-venv"
 
@@ -153,11 +160,44 @@ PY
   echo "    onnx/model.onnx exported successfully"
 fi
 
+# Hard preflight: the router fatals at startup ("failed to read PII mapping
+# file: ...pii_type_mapping.json: no such file or directory") if the presidio
+# detector is incomplete. Verify BOTH the exported ONNX graph and the PII type
+# mapping are present in the pre-staged dir before we mount it.
+if [[ ! -f "${PII_MAPPING_FILE}" || ! -f "${PII_ONNX_MODEL}" ]]; then
+  echo "ERROR: the presidio PII model in the shared single-box models dir is incomplete." >&2
+  echo "       Required files (both must exist):" >&2
+  echo "         ${PII_MAPPING_FILE}" >&2
+  echo "         ${PII_ONNX_MODEL}" >&2
+  [[ -f "${PII_MAPPING_FILE}" ]] || echo "       MISSING: pii_type_mapping.json" >&2
+  [[ -f "${PII_ONNX_MODEL}" ]] || echo "       MISSING: onnx/model.onnx" >&2
+  echo "       The gateway mounts this dir read-through and the router reads the PII" >&2
+  echo "       mapping at startup, so it will not serve without both files." >&2
+  echo "       Run the single-box download (Gate B) + bring-up [4/5] ONNX export first:" >&2
+  echo "         see ../strix-halo-poc/REHEARSAL.md" >&2
+  exit 1
+fi
+
 echo "==> [5/6] Rendering runtime config with HALO_B_IP=${HALO_B_IP}"
 # The committed poc-client-edge.yaml keeps a literal HALO_B_IP placeholder so the
 # remote backends are obvious. We render a runtime copy here so the committed
 # file is never mutated. The rendered dir is gitignored.
 mkdir -p "${RENDER_DIR}"
+
+# `vllm-sr serve` mounts `<config_dir>/models` -> `/app/models`, and the
+# config_dir here is the rendered dir. Point `${RENDER_DIR}/models` at the
+# pre-staged single-box models tree so the router uses the presidio PII model
+# (with pii_type_mapping.json + onnx/model.onnx) instead of auto-downloading the
+# registry-alias repo that lacks the mapping file. If a previous failed run left
+# a real directory there (e.g. a partial auto-download), remove it first so the
+# symlink can be (re)created cleanly.
+if [[ -d "${RENDER_DIR}/models" && ! -L "${RENDER_DIR}/models" ]]; then
+  echo "    removing stale real models dir at ${RENDER_DIR}/models (likely a failed auto-download)"
+  rm -rf "${RENDER_DIR}/models"
+fi
+ln -sfn "../../strix-halo-poc/models" "${RENDER_DIR}/models"
+echo "    models dir symlinked: ${RENDER_DIR}/models -> ../../strix-halo-poc/models (shared pre-staged single-box dir)"
+
 sed "s/HALO_B_IP/${HALO_B_IP}/g" "${CONFIG_TEMPLATE}" > "${RENDERED_CONFIG}"
 if grep -q "HALO_B_IP" "${RENDERED_CONFIG}"; then
   echo "ERROR: HALO_B_IP placeholder still present after rendering ${RENDERED_CONFIG}" >&2

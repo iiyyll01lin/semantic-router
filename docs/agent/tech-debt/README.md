@@ -71,6 +71,7 @@ Every debt entry should include:
 - [TD044 onnx-binding PII Token Classifier Registers as bert_token but Inference Looks Up pii](td-044-onnx-binding-pii-name-registration.md)
 - [TD045 mmBERT-32K PII Detector (mmbert32k-pii-detector-merged) Returns Zero Entities](td-045-mmbert32k-pii-detector-zero-entities.md)
 - [TD046 onnx-binding Concurrent ROCm ONNX Session Creation Segfaults on Classifier (Re)Initialization](td-046-onnx-binding-concurrent-rocm-session-init-segfault.md)
+- [TD047 PII Registry Alias Auto-Download Target Is Missing pii_type_mapping.json](td-047-pii-registry-alias-autodownload-missing-mapping.md)
 
 ## Retired Debt Policy
 

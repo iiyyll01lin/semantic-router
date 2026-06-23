@@ -175,6 +175,29 @@ This is the part that makes or breaks the two-box run.
    The DSL only encodes `routing.*`, so the `HALO_B_IP` placeholder in the
    provider endpoints does not affect decompile/validate.
 
+## Models
+
+The gateway container mounts `<config_dir>/models` -> `/app/models`, where
+`config_dir` is the directory of the config passed to `vllm-sr serve`. Because
+`client-bring-up.sh` serves the rendered config from `.vllm-sr-rendered/`, the
+mounted models dir is `.vllm-sr-rendered/models`. To avoid duplicating the
+large model downloads, `client-bring-up.sh` symlinks
+`.vllm-sr-rendered/models` to the pre-staged single-box models tree
+(`../strix-halo-poc/models`) so the router uses the presidio PII model that
+ships `pii_type_mapping.json` and the exported `onnx/model.onnx`.
+
+Pre-staging is required, not optional. The config path
+`models/pii_classifier_modernbert-base_presidio_token_model` is a registry
+alias whose auto-download target is the Hugging Face repo
+`llm-semantic-router/mmbert-pii-detector-merged`, which does NOT ship
+`pii_type_mapping.json`. If the mounted models dir is empty, the router
+auto-downloads that repo and then fatals at startup with
+`failed to read PII mapping file: ...pii_type_mapping.json: no such file or directory`.
+`client-bring-up.sh` therefore hard-fails before serving if the pre-staged
+presidio dir is missing either `pii_type_mapping.json` or `onnx/model.onnx`;
+prepare them via the single-box download (Gate B) and bring-up `[4/5]` ONNX
+export in [../strix-halo-poc/REHEARSAL.md](../strix-halo-poc/REHEARSAL.md).
+
 ## Related
 
 - Topology doc: [../../../docs/poc/07-client-server-topology.md](../../../docs/poc/07-client-server-topology.md)
