@@ -20,6 +20,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ROUTER_DIR="${REPO_ROOT}/src/semantic-router"
 
+# The cmd/dsl tool is CGO-linked against the Rust candle binding, so the
+# dynamic loader (and the go-run link step) must be told where the prebuilt
+# .so files live. This matches the convention in tools/make/build-run-test.mk.
+# Note: handle an unset LD_LIBRARY_PATH safely under `set -u`.
+export LD_LIBRARY_PATH="${REPO_ROOT}/candle-binding/target/release:${REPO_ROOT}/ml-binding/target/release:${REPO_ROOT}/nlp-binding/target/release${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export CGO_LDFLAGS="-L${REPO_ROOT}/candle-binding/target/release -L${REPO_ROOT}/ml-binding/target/release -L${REPO_ROOT}/nlp-binding/target/release"
+
+# Guard: the candle binding must be built first, otherwise the loader emits a
+# cryptic "cannot open shared object file" error. Convert that into an
+# actionable instruction.
+CANDLE_LIB="${REPO_ROOT}/candle-binding/target/release/libcandle_semantic_router.so"
+if [[ ! -f "${CANDLE_LIB}" ]]; then
+  echo "ERROR: missing ${CANDLE_LIB}" >&2
+  echo "       The cmd/dsl tool is CGO-linked against the Rust candle binding." >&2
+  echo "       Build the bindings first, then re-run this script:" >&2
+  echo "         make rust      # GPU/CUDA build" >&2
+  echo "         make rust-ci   # CPU-only build" >&2
+  exit 1
+fi
+
 # Paths relative to ROUTER_DIR, matching the runbook's documented invocation.
 YAML_REL="../../deploy/recipes/strix-halo-poc/poc-strix.yaml"
 DSL_REL="../../deploy/recipes/strix-halo-poc/poc-strix.dsl"

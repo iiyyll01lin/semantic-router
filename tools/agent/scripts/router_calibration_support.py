@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import subprocess
 import tempfile
@@ -23,6 +24,30 @@ SEMANTIC_ROUTER_MODULE_ROOT = REPO_ROOT / "src" / "semantic-router"
 DEFAULT_REPORT_ROOT = REPO_ROOT / ".augment" / "router-loop"
 HTTP_OK_MIN = 200
 HTTP_REDIRECT_MIN = 300
+HTTP_TIMEOUT_SECONDS = 60
+
+# Resilience knobs for transient router crashes. The classification API can drop
+# the connection mid-request when it restarts (notably the ROCm ONNX classifier
+# segfault under --platform amd), so retry connection drops a bounded number of
+# times before surfacing an actionable error.
+DEFAULT_HTTP_RETRIES = 4
+DEFAULT_HTTP_BACKOFF = 2.0
+
+# Active resilience settings, seeded from the defaults above. Held in a mutable
+# mapping (not rebound module globals) so configure_http_resilience can tune them
+# from CLI flags without churning http_json's deep call sites.
+_HTTP_RESILIENCE = {
+    "retries": DEFAULT_HTTP_RETRIES,
+    "backoff": DEFAULT_HTTP_BACKOFF,
+}
+
+# Connection-drop exceptions that are NOT urllib.error.URLError subclasses, so
+# they would otherwise escape http_json's handlers as a raw traceback.
+CONNECTION_DROP_ERRORS = (
+    http.client.RemoteDisconnected,
+    ConnectionResetError,
+    ConnectionAbortedError,
+)
 
 
 def resolve_repo_path(path: Path | None) -> Path | None:
@@ -41,8 +66,41 @@ def normalize_router_url(router_url: str) -> str:
     return normalized
 
 
+def configure_http_resilience(
+    max_retries: int | None = None, retry_backoff: float | None = None
+) -> None:
+    """Set module-level HTTP retry defaults from CLI flags (called once at start)."""
+    if max_retries is not None:
+        _HTTP_RESILIENCE["retries"] = max(int(max_retries), 0)
+    if retry_backoff is not None:
+        _HTTP_RESILIENCE["backoff"] = max(float(retry_backoff), 0.0)
+
+
+def _is_connection_drop(exc: error.URLError) -> bool:
+    reason = exc.reason
+    return isinstance(reason, (ConnectionError, *CONNECTION_DROP_ERRORS))
+
+
+def _connection_drop_message(url: str, attempts: int, exc: Exception | None) -> str:
+    detail = f"{type(exc).__name__}: {exc}" if exc is not None else "connection dropped"
+    return (
+        f"router closed the connection to {url} without responding after "
+        f"{attempts} attempt(s) ({detail}) — the classification API on :8080 likely "
+        "crashed mid-request. Under `--platform amd` this is usually the ROCm ONNX "
+        "classifier segfault: ensure `VLLM_SR_AMD_PRESERVE_CPU=1` was exported before "
+        "`vllm-sr serve`, check `docker ps` / `docker logs vllm-sr-router-container`, "
+        "and see docs/poc/03-strix-halo-runbook.md."
+    )
+
+
 def http_json(
-    method: str, url: str, payload: dict[str, Any] | None = None
+    method: str,
+    url: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    retries: int | None = None,
+    backoff: float | None = None,
+    timeout: float | None = None,
 ) -> tuple[int, dict[str, Any] | list[Any] | str]:
     body = None
     headers = {"Accept": "application/json"}
@@ -51,25 +109,47 @@ def http_json(
         headers["Content-Type"] = "application/json"
 
     req = request.Request(url=url, method=method.upper(), data=body, headers=headers)
-    try:
-        with request.urlopen(req, timeout=60) as response:
-            status = response.getcode()
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = raw
-        return exc.code, parsed
-    except error.URLError as exc:
-        raise RuntimeError(f"request to {url} failed: {exc}") from exc
+    max_retries = max(
+        _HTTP_RESILIENCE["retries"] if retries is None else int(retries), 0
+    )
+    backoff_seconds = max(
+        _HTTP_RESILIENCE["backoff"] if backoff is None else float(backoff), 0.0
+    )
+    timeout_seconds = HTTP_TIMEOUT_SECONDS if timeout is None else timeout
 
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        parsed = raw
-    return status, parsed
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            with request.urlopen(req, timeout=timeout_seconds) as response:
+                status = response.getcode()
+                raw = response.read().decode("utf-8")
+        except error.HTTPError as exc:
+            # A real 4xx/5xx response — surface it, never retry.
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = raw
+            return exc.code, parsed
+        except CONNECTION_DROP_ERRORS as exc:
+            last_exc = exc
+        except error.URLError as exc:
+            if not _is_connection_drop(exc):
+                raise RuntimeError(f"request to {url} failed: {exc}") from exc
+            last_exc = exc
+        else:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = raw
+            return status, parsed
+
+        if attempt < max_retries and backoff_seconds > 0:
+            time.sleep(backoff_seconds * (attempt + 1))
+
+    raise RuntimeError(
+        _connection_drop_message(url, max_retries + 1, last_exc)
+    ) from last_exc
 
 
 def ensure_success(status: int, payload: Any, action: str) -> Any:
@@ -77,6 +157,42 @@ def ensure_success(status: int, payload: Any, action: str) -> Any:
         return payload
     raise RuntimeError(
         f"{action} failed with status {status}: {json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def preflight_router(router_url: str, timeout_seconds: float = 10.0) -> dict[str, Any]:
+    """Fail fast if the router api is not reachable/ready before a full run.
+
+    Uses a short-timeout GET /health (fallback /ready) with no retries so a down
+    router is reported immediately with an actionable message rather than after
+    partial work or as a raw connection traceback.
+    """
+    base = normalize_router_url(router_url)
+    failures: list[str] = []
+    for path in ("/health", "/ready"):
+        try:
+            status, payload = http_json(
+                "GET", f"{base}{path}", retries=0, timeout=timeout_seconds
+            )
+        except RuntimeError as exc:
+            failures.append(f"{path}: {exc}")
+            continue
+        if HTTP_OK_MIN <= status < HTTP_REDIRECT_MIN:
+            return {
+                "router_url": base,
+                "checked_at": utc_now(),
+                "endpoint": path,
+                "status_code": status,
+                "payload": payload,
+            }
+        failures.append(f"{path}: status {status}")
+
+    raise RuntimeError(
+        f"router api at {base} is not reachable or ready before the calibration run "
+        f"(checked /health then /ready): {'; '.join(failures)}. Confirm `vllm-sr serve` "
+        "is running (`docker ps` / `docker logs vllm-sr-router-container`); under "
+        "`--platform amd` ensure `VLLM_SR_AMD_PRESERVE_CPU=1` was exported before serve. "
+        "See docs/poc/03-strix-halo-runbook.md."
     )
 
 
