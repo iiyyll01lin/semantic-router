@@ -149,6 +149,83 @@ Continuing the series' honest split (section 12 of [02-poc-plan.md](02-poc-plan.
 
 ---
 
+## 6. 執行紀錄 / Run record (measured-on 2026-06-23)
+
+> 一句話框架：本節把前面五節的拓樸主張**實測落地**——在兩台 gfx1151 Strix Halo APU 上以一行指令部起設計 A（邊緣閘道），量測跨盒子路由是否正確發生、agentic 流量的邊緣／資料中心分流，以及最關鍵的「跨盒子那一跳到底貴不貴」。所有數字明確標註**實測（measured）**或**推導（derived）**。
+> One-line framing: this section **grounds the previous five sections' topology claims in measurement**—on two gfx1151 Strix Halo APUs, deploy Design A (edge-gateway) with a single command, then measure whether cross-box routing actually happens, the agentic traffic's edge/datacenter split, and the key question "how expensive is that extra cross-box hop." Every number is labeled **measured** or **derived**.
+
+### 6.1 一行部署 + 冒煙測試 / One-command deploy plus smoke test
+
+從 Halo-A 跑 [deploy-2box.sh](../../deploy/recipes/strix-halo-2box/deploy-2box.sh) 一行就把整套設計 A 拉起來。**實測**：router 在 14 秒內就緒，啟動日誌出現 `required_models_already_present total_models:6` 與 `pii_mapping_loaded count:35`——後者正是 PII 掛載修復（fix 提交 `ba3cd09f`）真的生效的證據。
+
+Running [deploy-2box.sh](../../deploy/recipes/strix-halo-2box/deploy-2box.sh) once from Halo-A brings the whole Design A up. **Measured**: the router was ready in 14 s, and the startup log showed `required_models_already_present total_models:6` and `pii_mapping_loaded count:35`—the latter is the proof that the PII-mount fix (fix commit `ba3cd09f`) is actually working.
+
+[smoke_test.py](../../deploy/recipes/strix-halo-2box/smoke_test.py) **實測**驗證跨盒子路由與安全攔截（其中 `qwen2.5:14b` 這個 response body 模型名就是「請求真的跨到 Halo-B」的鐵證）/ **Measured** cross-box routing and security blocking (the response-body model name `qwen2.5:14b` is the hard proof the request really crossed to Halo-B):
+
+| 輸入 / Input | x-vsr-selected-model | 回應 body 模型 / Response body model | 決策 / Decision | 信心 / Confidence | 服務於 / Served on |
+| --- | --- | --- | --- | --- | --- |
+| 簡單事實 / Easy factual | `qwen/qwen3.5-rocm` | `llama3.2:3b` | `fast_qa` | 0.905 | Halo-A EDGE（0 跳 / 0 hops） |
+| 困難推理 / Hard reasoning | `google/gemini-3.1-pro` | `qwen2.5:14b` | `reasoning_deep` | 0.902 | Halo-B DATACENTER（1 跳 / 1 hop） |
+| PII 輸入 / PII input | — | — | `security_guard` | — | `fast_response` 攔截（`x-vsr-fast-response: true`）/ blocked by `fast_response` |
+| Jailbreak 輸入 / Jailbreak input | — | — | `security_guard` | — | `fast_response` 攔截（`x-vsr-fast-response: true`）/ blocked by `fast_response` |
+
+### 6.2 即時 agentic 壓測 / Live agentic benchmark
+
+以 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 打閘道 `:8899/v1`（`--model auto --scenario balanced --sessions 8 --turns 8 --concurrency 2`）。**實測**：64 個請求、success_rate 1.0（全部 200）、0 個 validation failure、x-vsr headers 全部有效（missing=0）——這證明流量真的打進 router，而不是 echo mock。
+
+Using [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) against the gateway `:8899/v1` (`--model auto --scenario balanced --sessions 8 --turns 8 --concurrency 2`). **Measured**: 64 requests, success_rate 1.0 (all 200), 0 validation failures, x-vsr headers all valid (missing=0)—this confirms traffic hit the router, not the echo mock.
+
+| 指標 / Metric | 值 / Value（實測 / measured） |
+| --- | --- |
+| 請求數 / Requests | 64（success_rate 1.0） |
+| 延遲 ms / Latency ms | mean 3989.55、p50 3818.42、p95 5331.02、p99 5404.17 |
+| 吞吐 / Throughput | ~0.5 rps（wall 128 s） |
+| 模型分流 / Model distribution | `google/gemini-3.1-pro` x48（資料中心 / datacenter, Halo-B）、`qwen/qwen3.5-rocm` x16（邊緣 / edge, Halo-A） |
+| 邊緣／資料中心比 / Edge vs datacenter（**推導 / derived**） | Edge 16/64 = 25% ／ Datacenter 48/64 = 75% |
+| Frontier-mock 路由與 422 / Frontier-mock routes and 422s | 0 ／ 0 |
+
+注意：這些數秒級延遲是**被路由到的模型推論時間**，**不是**網路成本（網路那一跳的真實成本見 6.3）。
+
+Note: these multi-second latencies are the **routed-model inference time**, **not** network cost (the real cost of the network hop is in 6.3).
+
+### 6.3 網路跳數（雙跳）成本 / Network-hop (double-hop) cost
+
+這是直接回答「server-side routing 會不會因為雙跳而很怪」的關鍵量測。把「純網路往返」與「聊天往返」分開量，才不會被模型大小污染結論。
+
+This is the key measurement answering "is server-side routing weird because of double hops." Measuring "pure network round-trip" separately from "chat round-trip" keeps model size from contaminating the conclusion.
+
+| 量測 / Measurement | 本機 Halo-A（0 跳）/ local (0 hops) | 遠端 Halo-B（1 跳）/ remote (1 hop) | 差值 / Delta | 註解 / Note |
+| --- | --- | --- | --- | --- |
+| 純網路往返（trivial `GET /api/tags`）/ Pure network round-trip | 0.397 ms（中位 / median） | 0.572 ms（中位 / median） | **+0.175 ms**（實測 / measured） | 多 1 跳，亞毫秒、可忽略 / one extra hop, sub-ms, negligible |
+| 聊天往返（不同模型大小）/ Chat round-trip (different model sizes) | `llama3.2:3b` 170.42 ms | `qwen2.5:14b` 195.81 ms | +25.39 ms（實測 / measured） | 由**模型大小**驅動，**非**網路 / model-size driven, **not** network |
+
+**結論（實測支撐的判斷）**：邊緣閘道設計讓常規流量維持 0 跳；即使升級請求跨到 Halo-B，多出的網路那一跳也只有 ~0.2 ms——所以本拓樸選擇被量化驗證，先前對「雙跳」的疑慮在這條直連 2-box LAN 上是**可量化地小**。誠實警語：此值會在 WAN 上放大，跨地域部署時這條延遲要重新量測。
+
+**Conclusion (measurement-backed judgment)**: the edge-gateway design keeps routine traffic at 0 hops, and even when an escalated request crosses to Halo-B the extra network hop is only ~0.2 ms—so this topology choice is quantitatively validated, and the earlier double-hop concern is **quantifiably small** on this direct 2-box LAN. Honest caveat: this grows over a WAN, so for cross-region deployments this latency must be re-measured.
+
+### 6.4 可觀測性 / Observability
+
+**實測** `:9190` 指標快照（成本與 token 依模型歸戶，與 6.2 分流一致：流量集中在資料中心層 `google/gemini-3.1-pro`）/ **Measured** `:9190` metrics snapshot (cost and tokens attributed per model, consistent with the 6.2 split—traffic concentrated on the datacenter-tier `google/gemini-3.1-pro`):
+
+```text
+llm_model_cost_total{currency="USD",model="google/gemini-3.1-pro"} 0.007293120000000013
+llm_model_cost_total{currency="USD",model="qwen/qwen3.5-rocm"} 0
+llm_model_tokens_total{model="google/gemini-3.1-pro"} 7154
+llm_model_tokens_total{model="qwen/qwen3.5-rocm"} 4869
+```
+
+儀表板截圖（`:8700` 的 Status／Monitoring／Tracing）本輪**未**擷取：dashboard 需登入，而本次部署未配置 admin 憑證。要看成本／分流圖與 Jaeger 上 `classify → decide → upstream` 的 span，請走這些路由（`/status`、`/monitoring`、`/tracing`）登入後檢視，作為 demo 的觀測入口。
+
+Dashboard screenshots (Status/Monitoring/Tracing at `:8700`) were **not** captured this round: the dashboard requires login and no admin credentials were provisioned at deploy time. To view the cost/distribution charts and the Jaeger `classify → decide → upstream` span, log in and visit those routes (`/status`, `/monitoring`, `/tracing`) as the demo's observability entry point.
+
+### 6.5 誠實邊界 / Honest boundary
+
+延續第 5 節：本節是兩台 gfx1151 APU 上的**拓樸／路由／成本**證據，**不是** Instinct 效能數字。真實機群效能與 TCO 仍由「先量測再模擬」的 fleet-sim 外推補上（見第 5 節與 [02-poc-plan.md](02-poc-plan.md) 第 12 節）。
+
+Continuing section 5: this section is **topology/routing/cost** evidence on two gfx1151 APUs, **not** Instinct performance numbers. Real fleet performance and TCO still come from the "measure-then-simulate" fleet-sim extrapolation (see section 5 and section 12 of [02-poc-plan.md](02-poc-plan.md)).
+
+---
+
 ## 參考連結 / Reference links
 
 - 技術定位（router 不挑 endpoint、Envoy 才挑）/ Tech positioning (router does not pick endpoints, Envoy does): [01-tech-study.md](01-tech-study.md) 第 2–3 節 / sections 2–3
