@@ -15,10 +15,10 @@ providers:
     models:
         - name: anthropic/claude-opus-4.6
           reasoning_family: qwen3
-          provider_model_id: qwen2.5:32b
+          provider_model_id: test-model
           backend_refs:
-            - name: anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_ollama_local
-              endpoint: ollama:11434
+            - name: ollama_local
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
@@ -27,12 +27,12 @@ providers:
             completion_per_1m: 7.2
             cached_input_per_1m: 0.45
           external_model_ids:
-            vllm: qwen2.5:32b
+            vllm: test-model
         - name: google/gemini-2.5-flash-lite
           reasoning_family: qwen3
           provider_model_id: qwen2.5:7b
           backend_refs:
-            - name: google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_ollama_local
+            - name: ollama_local
               endpoint: ollama:11434
               protocol: http
               weight: 1
@@ -47,7 +47,7 @@ providers:
           reasoning_family: qwen3
           provider_model_id: qwen2.5:14b
           backend_refs:
-            - name: google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_ollama_local
+            - name: ollama_local
               endpoint: ollama:11434
               protocol: http
               weight: 1
@@ -62,7 +62,7 @@ providers:
           reasoning_family: qwen3
           provider_model_id: qwen3:14b
           backend_refs:
-            - name: openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_ollama_local
+            - name: ollama_local
               endpoint: ollama:11434
               protocol: http
               weight: 1
@@ -77,7 +77,7 @@ providers:
           reasoning_family: qwen3
           provider_model_id: llama3.2:3b
           backend_refs:
-            - name: qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_ollama_local
+            - name: ollama_local
               endpoint: ollama:11434
               protocol: http
               weight: 1
@@ -528,7 +528,7 @@ routing:
               case_sensitive: false
         embeddings:
             - name: fast_qa_en
-              threshold: 0.72
+              threshold: 0.75
               candidates:
                 - Who are you?
                 - What does CPU stand for?
@@ -1501,8 +1501,6 @@ routing:
                         - type: keyword
                           name: implementation_markers
                         - type: embedding
-                          name: architecture_design
-                        - type: embedding
                           name: complex_stem
                         - type: embedding
                           name: agentic_workflows
@@ -1690,6 +1688,8 @@ routing:
                       name: balance_complex
                     - type: projection
                       name: balance_reasoning
+                    - type: complexity
+                      name: general_reasoning:medium
                 - operator: NOT
                   conditions:
                     - operator: OR
@@ -2032,8 +2032,6 @@ routing:
                         - type: keyword
                           name: simple_request_markers
                         - type: keyword
-                          name: reasoning_request_markers
-                        - type: keyword
                           name: research_request_markers
                         - type: keyword
                           name: creative_request_markers
@@ -2204,6 +2202,8 @@ routing:
                                   name: likely_dissatisfied
                                 - type: projection
                                   name: feedback_clarification_overlay
+                                - type: structure
+                                  name: low_question_density
           modelRefs:
             - model: qwen/qwen3.5-rocm
               use_reasoning: false

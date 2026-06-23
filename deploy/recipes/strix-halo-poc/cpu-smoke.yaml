@@ -15,10 +15,13 @@ providers:
     models:
         - name: anthropic/claude-opus-4.6
           reasoning_family: qwen3
-          provider_model_id: qwen2.5:32b
+          # CPU smoke routes every tier at the single llm-katan echo backend that
+          # cpu-smoke.sh launches (served model: test-model). This is a GPU-free
+          # pipeline smoke, not a quality run, so all tiers share the echo backend.
+          provider_model_id: test-model
           backend_refs:
-            - name: anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_ollama_local
-              endpoint: ollama:11434
+            - name: anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_anthropic/claude-opus-4.6_llm_katan
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
@@ -27,13 +30,13 @@ providers:
             completion_per_1m: 7.2
             cached_input_per_1m: 0.45
           external_model_ids:
-            vllm: qwen2.5:32b
+            vllm: test-model
         - name: google/gemini-2.5-flash-lite
           reasoning_family: qwen3
-          provider_model_id: qwen2.5:7b
+          provider_model_id: test-model
           backend_refs:
-            - name: google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_ollama_local
-              endpoint: ollama:11434
+            - name: google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_google/gemini-2.5-flash-lite_llm_katan
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
@@ -42,13 +45,13 @@ providers:
             completion_per_1m: 0.04
             cached_input_per_1m: 0.002
           external_model_ids:
-            vllm: qwen2.5:7b
+            vllm: test-model
         - name: google/gemini-3.1-pro
           reasoning_family: qwen3
-          provider_model_id: qwen2.5:14b
+          provider_model_id: test-model
           backend_refs:
-            - name: google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_ollama_local
-              endpoint: ollama:11434
+            - name: google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_google/gemini-3.1-pro_llm_katan
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
@@ -57,13 +60,13 @@ providers:
             completion_per_1m: 1.92
             cached_input_per_1m: 0.12
           external_model_ids:
-            vllm: qwen2.5:14b
+            vllm: test-model
         - name: openai/gpt5.4
           reasoning_family: qwen3
-          provider_model_id: qwen3:14b
+          provider_model_id: test-model
           backend_refs:
-            - name: openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_ollama_local
-              endpoint: ollama:11434
+            - name: openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_openai/gpt5.4_llm_katan
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
@@ -72,19 +75,19 @@ providers:
             completion_per_1m: 4.8
             cached_input_per_1m: 0.3
           external_model_ids:
-            vllm: qwen3:14b
+            vllm: test-model
         - name: qwen/qwen3.5-rocm
           reasoning_family: qwen3
-          provider_model_id: llama3.2:3b
+          provider_model_id: test-model
           backend_refs:
-            - name: qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_ollama_local
-              endpoint: ollama:11434
+            - name: qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_qwen/qwen3.5-rocm_llm_katan
+              endpoint: llm-katan:8000
               protocol: http
               weight: 1
           pricing:
             currency: USD
           external_model_ids:
-            vllm: llama3.2:3b
+            vllm: test-model
 routing:
     modelCards:
         - name: anthropic/claude-opus-4.6

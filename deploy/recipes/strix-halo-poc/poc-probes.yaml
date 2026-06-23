@@ -26,6 +26,12 @@ decisions:
       - id: regulatory_risk_review
         query: Assess the legal risk in this agreement by analyzing indemnification, limitation of liability, and the compliance duties each party assumes.
         tags: [paraphrase, contract]
+      - id: ma_due_diligence
+        query: Perform a legal due-diligence review of this acquisition agreement, analyzing the representations and warranties, indemnification caps, and regulatory consent conditions.
+        tags: [robustness, contract]
+      - id: licensing_ip_analysis
+        query: Provide a legal analysis of the IP ownership, license scope, and termination clauses in this software licensing agreement, and flag the enforceability risks.
+        tags: [robustness, ip]
 
   - id: formal_math_proof
     expected_decision: formal_math_proof
@@ -81,7 +87,7 @@ decisions:
         query: In electrochemistry terms, compare SEI growth, lithium plating, and cathode cracking as causes of lithium-ion battery degradation, then propose experiments to isolate the dominant mechanism.
         tags: [baseline, stem]
       - id: qubit_decoherence
-        query: Compare modeling approaches for turbulent fluid simulation.
+        query: In quantum-computing terms, compare T1 relaxation, T2 dephasing, and two-level-system loss as sources of superconducting-qubit decoherence, then propose experiments to isolate the dominant mechanism.
         tags: [paraphrase, stem]
 
   - id: feedback_wrong_answer_verified
@@ -137,6 +143,12 @@ decisions:
       - id: sleep_apnea_sources
         query: What are common early signs of sleep apnea? Answer with citations to reliable medical sources.
         tags: [paraphrase, health]
+      - id: hypertension_warning_signs
+        query: What are the warning signs of dangerously high blood pressure, and when should someone seek urgent care? Please cite reputable medical sources.
+        tags: [robustness, health]
+      - id: type2_diabetes_symptoms
+        query: What are the early symptoms of type 2 diabetes, and which ones warrant seeing a doctor? Answer with citations to reliable medical sources.
+        tags: [robustness, health]
 
   - id: verified_explainer
     expected_decision: verified_explainer
