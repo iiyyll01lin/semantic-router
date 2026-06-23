@@ -43,7 +43,7 @@ The navigation structure was verified against source: [LayoutNavSupport.ts](../.
 8. **Tracing（`/tracing`）** — 延遲與路由開銷證據：Jaeger 以 `service=vllm-sr` 展開單筆請求的 span，佐證路由額外開銷低。/ Latency and routing-overhead evidence: Jaeger expands a single request's spans for `service=vllm-sr`, backing the low-routing-overhead claim.
 9. **Insight（`/insights`）（選配 / optional）** — 逐筆回放：用 router_replay 紀錄檢視每筆請求的決策與成本，這份 trace 即下一步 fleet-sim 的輸入。/ Per-request replay: inspect each request's decision and cost from the router_replay records; this trace is the input to the fleet-sim step next.
 10. **Fleet Sim（`/fleet-sim` Overview / `/fleet-sim/runs` Runs）** — TCO 收尾：把上一步的 router-replay trace 餵進 fleet-sim，在部署機群**之前**先證明 MI350P 機群的容量／成本，對齊簡報 Slide 36 的 future-state tokenomics。/ The TCO closer: feed the previous router-replay trace into fleet-sim to prove the MI350P fleet's capacity/cost *before* deploying it, aligned to future-state tokenomics on deck Slide 36.
-11. **校準迴圈報表（選配 / optional calibration-loop report）** — 用 [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) 證明路由準確率（最近一次 51/58，87.9%）。/ Prove routing accuracy with [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) (most recent run 51/58, 87.9%).
+11. **校準迴圈報表（選配 / optional calibration-loop report）** — 用 [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) 證明路由準確率（最近一次 61/62，98.4%；decision coverage 13/14，92.9%，measured-on 2026-06-22）。/ Prove routing accuracy with [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml) (most recent run 61/62, 98.4%; decision coverage 13/14, 92.9%, measured-on 2026-06-22).
 
 收尾話術 / Closing line：依 [02-poc-plan.md](02-poc-plan.md) 第 1 節的「成功定義」，demo 結束時能在 dashboard 同時指出「成本下降數字（Monitoring）」「路由分佈（Monitoring）」「安全攔截（Playground）」三個畫面，並用校準報表證明路由準確率；最後用 Fleet Sim 把 router-replay trace 推成機群 TCO，作為「部署機群前先證明 TCO」的收尾。整段動線逐 slide 對齊 AMD 簡報的對照見 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)。
 
@@ -167,6 +167,8 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
 
 - 流量經 `POST /api/router/v1/chat/completions`（經 Envoy listener），ClawOS 狀態走 OpenClaw 的 realtime 連線（WebSocket/SSE）。來源 [OpenClawPage.tsx](../../dashboard/frontend/src/pages/OpenClawPage.tsx)；benchmark 腳本 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py)。/ Traffic goes through `POST /api/router/v1/chat/completions` (via the Envoy listener); ClawOS state uses OpenClaw's realtime connection (WebSocket/SSE). Source [OpenClawPage.tsx](../../dashboard/frontend/src/pages/OpenClawPage.tsx); the benchmark script is [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py).
 
+> 實測證據（measured-on 2026-06-22，`--scenario tool-heavy`）/ Measured evidence (measured-on 2026-06-22, `--scenario tool-heavy`)：以上方指令對 live router 跑 8 sessions × 12 turns（96 requests，concurrency 2）的實測結果——success rate **100%**（96/96，0 session errors）；latency mean/p95/p99 **3535 / 4062 / 9672 ms**；throughput **0.57 rps**（wall 170s）；model-selection 分佈 **qwen/qwen3.5-rocm（SIMPLE 本地）63 + google/gemini-3.1-pro（COMPLEX）33**（約 66% 留本地）；session 內 model switches **28**、tool-loop switch 違規 **11**、context-portability 違規 **28**（tool-heavy 用 `auto` 跨雙 tier 的預期張力，是誠實數據而非錯誤）。核心 router 診斷標頭（selected-model / decision / replay-id / confidence / context-token-count）**96/96 齊全**；本設定未發出 `x-vsr-session-phase` / `x-vsr-matched-conversation`，故 `--require-router-diagnostics` 嚴格門檻會標記，但不影響路由成功。產物在 `.agent-harness/experiments/live-agentic-routing/20260622T120341Z/`。/ Running the command above against the live router for 8 sessions × 12 turns (96 requests, concurrency 2): success rate **100%** (96/96, 0 session errors); latency mean/p95/p99 **3535 / 4062 / 9672 ms**; throughput **0.57 rps** (170s wall); model-selection split **qwen/qwen3.5-rocm (SIMPLE local) 63 + google/gemini-3.1-pro (COMPLEX) 33** (~66% kept local); **28** in-session model switches, **11** tool-loop switch violations, **28** context-portability violations (the expected tension of `auto` across two tiers under a tool-heavy scenario—honest data, not an error). The core router diagnostic headers (selected-model / decision / replay-id / confidence / context-token-count) were present on **96/96**; this config does not emit `x-vsr-session-phase` / `x-vsr-matched-conversation`, so the strict `--require-router-diagnostics` gate flags them without affecting routing success. Artifacts in `.agent-harness/experiments/live-agentic-routing/20260622T120341Z/`.
+
 ### Observability — Monitoring（`/monitoring`）[POC Demo] — Grafana 成本與分佈證據 / Grafana Cost and Distribution Evidence
 
 要展示什麼與點擊步驟 / What to show and click steps：
@@ -227,6 +229,86 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
 後端 / 資料來源 / Backend and data source：
 
 - 後端走 `/api/fleet-sim/api`（見 [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)）；CLI 與模擬器核心為 [src/fleet-sim/run_sim.py](../../src/fleet-sim/run_sim.py)（子指令 optimize/simulate/simulate-fleet/whatif/compare-routers），trace 來源為 [router_replay_cost.go](../../src/semantic-router/pkg/extproc/router_replay_cost.go) 記錄的每請求決策。來源 [FleetSimOverviewPage.tsx](../../dashboard/frontend/src/pages/FleetSimOverviewPage.tsx) 與 [FleetSimRunsPage.tsx](../../dashboard/frontend/src/pages/FleetSimRunsPage.tsx)。/ The backend is `/api/fleet-sim/api` (see [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)); the CLI and simulator core is [src/fleet-sim/run_sim.py](../../src/fleet-sim/run_sim.py) (subcommands optimize/simulate/simulate-fleet/whatif/compare-routers), and the trace comes from the per-request decisions recorded by [router_replay_cost.go](../../src/semantic-router/pkg/extproc/router_replay_cost.go). Sources [FleetSimOverviewPage.tsx](../../dashboard/frontend/src/pages/FleetSimOverviewPage.tsx) and [FleetSimRunsPage.tsx](../../dashboard/frontend/src/pages/FleetSimRunsPage.tsx).
+
+> 實測證據（measured-on 2026-06-22）/ Measured evidence (measured-on 2026-06-22)：把本次 PoC 的 router-replay（`GET :8899/v1/router_replay`，160 筆，依 §9 流程過濾出 131 筆有計費 token 的請求）重塑成 `semantic_router` trace 後，用 [semantic_router_trace_replay.py](../../src/fleet-sim/examples/semantic_router_trace_replay.py) 回放：routing split **google/gemini-3.1-pro=50 | qwen/qwen3.5-rocm=81**，模擬機群 **20× A100-80GB + 8× A10G = 28 GPUs**、**$458K/yr**、**P99 8.1ms**、SLO **100%**。再用 `vllm-sr-sim optimize`（azure CDF，λ=200，SLO=500ms）做機群尺寸最佳化：最佳 **γ=1.9（n_s=10 + n_l=13 = 23 GPUs，$445.3K/yr）**，相對 γ=1.0 基準（36 GPUs、$696.9K/yr）省 **36.1%**，P99 TTFT short/long **51.9 / 112.4 ms**（SLO ✓）。`vllm-sr-sim tok-per-watt`（λ=100）給出每瓦 token 與每百萬 token 成本：**H100-80GB 9.38 Tok/W、$0.21/1M**、**A100-80GB 7.09 Tok/W、$0.23/1M**、**A10G 13.56 Tok/W、$0.18/1M**（A10G 功耗模型為低品質投影，僅供參考）。誠實邊界同上：這些是**模擬**容量與成本，跨節點吞吐為外推、非 Instinct 實測。/ Reshaping this PoC's router-replay (`GET :8899/v1/router_replay`, 160 records, 131 with billable tokens after the §9 filter) into a `semantic_router` trace and replaying it via [semantic_router_trace_replay.py](../../src/fleet-sim/examples/semantic_router_trace_replay.py): routing split **google/gemini-3.1-pro=50 | qwen/qwen3.5-rocm=81**, simulated fleet **20× A100-80GB + 8× A10G = 28 GPUs**, **$458K/yr**, **P99 8.1ms**, SLO **100%**. `vllm-sr-sim optimize` (azure CDF, λ=200, SLO=500ms) then sizes the fleet: best **γ=1.9 (n_s=10 + n_l=13 = 23 GPUs, $445.3K/yr)**, a **36.1%** saving vs the γ=1.0 baseline (36 GPUs, $696.9K/yr), with P99 TTFT short/long **51.9 / 112.4 ms** (SLO ✓). `vllm-sr-sim tok-per-watt` (λ=100) reports tokens-per-watt and $/1M-token: **H100-80GB 9.38 Tok/W, $0.21/1M**, **A100-80GB 7.09 Tok/W, $0.23/1M**, **A10G 13.56 Tok/W, $0.18/1M** (the A10G power model is a low-quality projection, indicative only). Same honest boundary as above: these are **simulated** capacity and cost; cross-node throughput is extrapolation, not measured Instinct performance.
+
+---
+
+## PII 遮罩示範（classification API，非 demo 動線）/ PII-Masking Demo (Classification API, Not in the Demo Flow)
+
+> 這一段不在上方的 POC Demo 動線裡（動線只示範 routing-path 的 `security_guard` 攔截）。遮罩是**資料治理**能力，只存在於 classification API，沒有對應的 dashboard UI，也沒有 inline 在路由路徑上。獨立小腳本見 [pii_mask_demo.py](../../deploy/recipes/strix-halo-poc/pii_mask_demo.py)。
+> This subsection is not part of the POC Demo Flow above (the flow only demonstrates the routing-path `security_guard` block). Masking is a **data-governance** capability that lives only in the classification API; it has no dashboard UI and is not inlined into the routing path. A standalone helper script is [pii_mask_demo.py](../../deploy/recipes/strix-halo-poc/pii_mask_demo.py).
+
+### 兩條 PII 路徑的差異 / The Two PII Paths Differ
+
+兩者用的是**同一個 PII 分類器**，但作用完全不同 / Both use the **same PII classifier**, but they act completely differently:
+
+| 路徑 / Path | 端點 / Endpoint | 行為 / Behavior | 對齊 / Aligns to |
+| --- | --- | --- | --- |
+| 路由路徑安全攔截 / routing-path security block | listener `:8899` 的 `POST /v1/chat/completions`（`pii` 訊號 → `security_guard` 決策）/ `POST /v1/chat/completions` on listener `:8899` (the `pii` signal → the `security_guard` decision) | 只**拒絕**：`fast_response` 回 HTTP 200 + 制式拒絕 + `x-vsr-fast-response: true`；**從不遮罩、從不改寫內容** / **denies only**: `fast_response` returns HTTP 200 + a canned refusal + `x-vsr-fast-response: true`; **never masks, never rewrites content** | [02-poc-plan.md](02-poc-plan.md) 的安全治理支柱 / the security-governance pillar |
+| 資料治理遮罩 / data-governance masking | api `:8080` 的 `POST /api/v1/classify/pii`（dashboard proxy 為 `/api/router/api/v1/classify/pii`）/ `POST /api/v1/classify/pii` on api `:8080` (dashboard proxy `/api/router/api/v1/classify/pii`) | 回傳 `masked_text` 與每個實體的 `masked_value`，把內容**轉換**為可安全留存／轉發的遮罩版；**不路由、不攔截** / returns `masked_text` and a per-entity `masked_value`, **transforming** content into a redacted form safe to store/forward; **does not route or block** | Orion / Sentinel 的資料治理 / Orion / Sentinel data governance |
+
+一句話 / In one line：路由路徑的 PII 只會「擋掉整個請求」，遮罩 API 則「保留請求但把敏感片段換成佔位符」。demo 動線第 3 步（Playground 的 PII 請求）走的是前者；要展示後者，請用下面的 curl 或腳本另開一個視窗。/ The routing path's PII handling only "blocks the whole request"; the masking API "keeps the request but swaps sensitive spans for placeholders." Step 3 of the demo flow (the Playground PII request) exercises the former; to show the latter, run the curl or script below in a separate window.
+
+### 可照抄的 curl 示範 / Copy-pasteable curl Demo
+
+`mask_entities: true` 開啟遮罩；`reveal_entity_text: true` 讓回應的 `entities[].value` 顯示原文（否則為 `[DETECTED]`）；`return_positions: true` 附上字元位移。/ `mask_entities: true` turns on masking; `reveal_entity_text: true` shows the original text in the response's `entities[].value` (otherwise `[DETECTED]`); `return_positions: true` adds character offsets.
+
+```bash
+# 直打 classification api :8080 / hit the classification api :8080 directly
+curl -s http://<host>:8080/api/v1/classify/pii \
+  -H "Content-Type: application/json" \
+  -d '{
+        "text": "My name is Jane Doe, my SSN is 123-45-6789 and my email is jane.doe@example.com.",
+        "options": {
+          "mask_entities": true,
+          "reveal_entity_text": true,
+          "return_positions": true
+        }
+      }'
+
+# 經 dashboard proxy（同一份結果，走 :8700）/ via the dashboard proxy (same result, through :8700)
+# curl -s http://<host>:8700/api/router/api/v1/classify/pii -H "Content-Type: application/json" -d '{ ... }'
+```
+
+預期回應形狀 / Expected response shape（數值與實體型別名稱依載入的 PII 模型而定；遮罩佔位符格式為 `[<TYPE>_<index>]`）/ (values and entity-type names depend on the loaded PII model; the mask placeholder format is `[<TYPE>_<index>]`):
+
+```json
+{
+  "has_pii": true,
+  "entities": [
+    {
+      "type": "PERSON",
+      "value": "Jane Doe",
+      "confidence": 0.98,
+      "start_position": 11,
+      "end_position": 19,
+      "masked_value": "[PERSON_0]"
+    },
+    {
+      "type": "US_SSN",
+      "value": "123-45-6789",
+      "confidence": 0.99,
+      "start_position": 31,
+      "end_position": 42,
+      "masked_value": "[US_SSN_0]"
+    },
+    {
+      "type": "EMAIL_ADDRESS",
+      "value": "jane.doe@example.com",
+      "confidence": 0.99,
+      "start_position": 59,
+      "end_position": 79,
+      "masked_value": "[EMAIL_ADDRESS_0]"
+    }
+  ],
+  "masked_text": "My name is [PERSON_0], my SSN is [US_SSN_0] and my email is [EMAIL_ADDRESS_0].",
+  "security_recommendation": "block",
+  "processing_time_ms": 8
+}
+```
+
+重點欄位 / Key fields：`masked_text` 是整段被遮罩後的文字；每個 `entities[].masked_value` 是該片段的佔位符（同型別同值會共用同一個索引，見 [classification_pii_response.go](../../src/semantic-router/pkg/services/classification_pii_response.go)）；`security_recommendation` 在有 PII 時為 `block`。請求／回應結構定義見 [classification_pii.go](../../src/semantic-router/pkg/services/classification_pii.go)，端點列表見 [apiserver.md](../../website/docs/api/apiserver.md)。/ Key fields: `masked_text` is the whole redacted string; each `entities[].masked_value` is that span's placeholder (identical type+value reuse the same index, see [classification_pii_response.go](../../src/semantic-router/pkg/services/classification_pii_response.go)); `security_recommendation` is `block` whenever PII is present. The request/response structs are defined in [classification_pii.go](../../src/semantic-router/pkg/services/classification_pii.go), and the endpoint list is in [apiserver.md](../../website/docs/api/apiserver.md).
 
 ---
 

@@ -569,23 +569,88 @@ Where savings come from: even when everything is served locally, the dashboard c
 After the single-shot Playground demo, drive multi-turn session traffic at the live router with [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) to prove in-session selected-model continuity and tool-loop governance (this is step 6 "Agentic multi-turn + ClawOS" of the POC Demo Flow in [04-dashboard-tour.md](04-dashboard-tour.md) and the Slide 34 OpenClaw alignment in [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)).
 
 ```bash
-# 多 session、多輪、工具迴圈情境，打運作中的 router（經 Envoy listener）
-# multiple sessions, multiple turns, tool-loop scenario, against the live router (via the Envoy listener)
+# 多 session、多輪、工具迴圈情境，打運作中的 router LISTENER :8899（NOT api :8080）
+# multiple sessions, multiple turns, tool-loop scenario, against the live router
+# LISTENER :8899 (the Envoy listener that serves /v1/*, NOT the :8080 classification api)
 python3 bench/agentic_routing_live_benchmark.py \
   --base-url http://<host>:8899/v1 \
-  --metrics-url http://<host>:9279/metrics \
+  --metrics-url http://<host>:9190/metrics \
   --model auto \
   --scenario tool-heavy \
   --sessions 8 \
   --turns 12 \
   --concurrency 2 \
-  --require-router-diagnostics \
-  --max-tool-loop-violations 0
+  --require-router-diagnostics
 ```
 
-旗標說明 / Flag notes：`--sessions` / `--turns` / `--concurrency` 控制 session 數、每 session 輪數與併發；`--scenario tool-heavy` 模擬工具迴圈（其他可選 `idle-heavy` / `stateful-heavy` / `drift-heavy` 等，見 [bench/README.md](../../bench/README.md)）。輸出寫到 `.agent-harness/experiments/live-agentic-routing/`，含 success rate、latency 百分位、selected-model 切換次數、tool-loop 違規數與 `x-vsr-*` 決策標頭。打完流量後在 dashboard 開 **ClawOS（`/clawos`）** 對映簡報 Slide 34 的 OpenClaw。
+旗標說明 / Flag notes：`--base-url` 指向 router 的 **listener `:8899`** 的 `/v1`（不是分類 api `:8080`）；`--metrics-url` 指向 metrics `:9190`。`--sessions` / `--turns` / `--concurrency` 控制 session 數、每 session 輪數與併發；`--require-router-diagnostics` 要求每筆成功請求都帶 selected-model / decision / replay-id / confidence / context-token-count 標頭。`--scenario` 可選 `balanced`、`tool-heavy`、`frontier-heavy`、`idle-heavy`、`stateful-heavy`、`drift-heavy`（見 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 與 [bench/README.md](../../bench/README.md)）。加 `--max-tool-loop-violations 0` 可把工具迴圈違規當作 gate（>0 即失敗）。
 
-Flag notes: `--sessions` / `--turns` / `--concurrency` set the session count, turns per session, and concurrency; `--scenario tool-heavy` emulates a tool loop (other choices include `idle-heavy` / `stateful-heavy` / `drift-heavy`; see [bench/README.md](../../bench/README.md)). Output is written under `.agent-harness/experiments/live-agentic-routing/` with success rate, latency percentiles, selected-model switches, tool-loop violations, and `x-vsr-*` decision headers. After the traffic, open **ClawOS (`/clawos`)** in the dashboard to map to OpenClaw on deck Slide 34.
+Flag notes: `--base-url` points at the `/v1` surface of the router **listener `:8899`** (not the classification api `:8080`); `--metrics-url` points at metrics `:9190`. `--sessions` / `--turns` / `--concurrency` set the session count, turns per session, and concurrency; `--require-router-diagnostics` requires the selected-model / decision / replay-id / confidence / context-token-count headers on every successful request. `--scenario` accepts `balanced`, `tool-heavy`, `frontier-heavy`, `idle-heavy`, `stateful-heavy`, and `drift-heavy` (see [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) and [bench/README.md](../../bench/README.md)). Add `--max-tool-loop-violations 0` to treat tool-loop violations as a gate (any > 0 fails).
+
+輸出位置 / Output location：每次執行寫到 `.agent-harness/experiments/live-agentic-routing/<ts>/`（`<ts>` 為 UTC 時戳），內含 `turns.csv` / `turns.jsonl`（逐輪原始資料）與 `summary.json` / `summary.md`（success rate、latency 百分位、selected-model 切換次數、tool-loop 違規數與 `x-vsr-*` 決策標頭彙整）。打完流量後在 dashboard 開 **ClawOS（`/clawos`）** 對映簡報 Slide 34 的 OpenClaw。
+
+Output location: each run writes to `.agent-harness/experiments/live-agentic-routing/<ts>/` (`<ts>` is a UTC timestamp), containing `turns.csv` / `turns.jsonl` (per-turn raw rows) and `summary.json` / `summary.md` (aggregated success rate, latency percentiles, selected-model switches, tool-loop violations, and `x-vsr-*` decision headers). After the traffic, open **ClawOS (`/clawos`)** in the dashboard to map to OpenClaw on deck Slide 34.
+
+### Fleet-sim / TCO：router-replay → fleet-sim 匯出與模擬 / Fleet-sim / TCO: router-replay → fleet-sim export and simulate
+
+「部署機群**之前**先證明機群 TCO」的收尾（對應 [04-dashboard-tour.md](04-dashboard-tour.md) POC Demo 動線第 10 步與簡報 Slide 36 的 future-state tokenomics）。router-replay 已在 [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) 啟用（`global.services.router_replay`，`store_backend: postgres`），所以可以把 PoC 期間 router 的**真實每請求決策**匯出成 fleet-sim 的輸入 trace，再模擬一個 MI350P 機群的容量與成本，而不是憑空假設流量。
+
+The "prove fleet TCO *before* deploying the fleet" closer (this is step 10 of the POC Demo Flow in [04-dashboard-tour.md](04-dashboard-tour.md) and the Slide 36 future-state tokenomics on the deck). router-replay is already enabled in [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) (`global.services.router_replay` with `store_backend: postgres`), so you can export the router's **real per-request decisions** from the PoC run as a fleet-sim input trace and then simulate an MI350P fleet's capacity and cost rather than assuming traffic out of thin air.
+
+1. 分頁匯出 router-replay 紀錄 / Page through the router-replay records — 走 listener `:8899` 的唯讀 replay API（每頁上限 100 筆，用 `offset` 往後翻）/ via the read-only replay API on the listener `:8899` (max 100 records per page; advance with `offset`):
+
+```bash
+# 單頁 / a single page
+curl -s "http://<host>:8899/v1/router_replay?limit=100&offset=0" | jq '.total, (.data | length)'
+
+# 全部分頁存成一個原始 JSON 陣列檔（依 total 調整頁數）
+# page everything into one raw JSON file (adjust the page count to .total)
+: > replay-raw.jsonl
+for off in 0 100 200 300; do
+  curl -s "http://<host>:8899/v1/router_replay?limit=100&offset=${off}" \
+    | jq -c '.data[]' >> replay-raw.jsonl
+done
+```
+
+1. 重塑為 fleet-sim 的 `semantic_router` JSONL / Reshape into fleet-sim's `semantic_router` JSONL — **必須**把 `completion_tokens` 改名為 `generated_tokens`（fleet-sim 的 loader 預設把 `l_out` 對到 `generated_tokens`，見 [trace.py](../../src/fleet-sim/fleet_sim/workload/trace.py)）/ you **must** rename `completion_tokens` to `generated_tokens` (fleet-sim's loader defaults `l_out` to `generated_tokens`; see [trace.py](../../src/fleet-sim/fleet_sim/workload/trace.py)):
+
+```bash
+# completion_tokens -> generated_tokens（必要的改名）；timestamp 由 RFC3339 轉成 epoch 秒
+# completion_tokens -> generated_tokens (the REQUIRED rename); timestamp RFC3339 -> epoch seconds
+jq -c 'select(.prompt_tokens != null and .completion_tokens != null)
+       | {timestamp: (.timestamp | sub("\\.[0-9]+Z$";"Z") | fromdateiso8601),
+          prompt_tokens: .prompt_tokens,
+          generated_tokens: .completion_tokens,
+          selected_model: .selected_model,
+          category: (.category // "prose")}' \
+  replay-raw.jsonl > poc-trace.jsonl
+```
+
+每筆 record 的欄位定義見 [store.go](../../src/semantic-router/pkg/routerreplay/store/store.go)（`prompt_tokens` / `completion_tokens` 為 `*int`，未計費的快取／串流請求可能缺值，故先 `select` 過濾）。fleet-sim 的 `semantic_router` 格式只需要 `timestamp`（數值秒）、`prompt_tokens`、`generated_tokens`、`selected_model`，`category` / `complexity` 為選配訊號。
+
+Each record's fields are defined in [store.go](../../src/semantic-router/pkg/routerreplay/store/store.go) (`prompt_tokens` / `completion_tokens` are `*int`, so cached/streamed requests without billing may omit them — hence the `select` filter first). fleet-sim's `semantic_router` format only needs `timestamp` (numeric seconds), `prompt_tokens`, `generated_tokens`, and `selected_model`; `category` / `complexity` are optional signals.
+
+1. 回放 trace / Replay the trace — 用 fleet-sim 的範例 replayer，第二個參數是 trace 內的路由決策欄位（此處為 `selected_model`）/ with fleet-sim's example replayer; the second argument is the routing-decision field inside the trace (here `selected_model`):
+
+```bash
+cd src/fleet-sim
+python3 examples/semantic_router_trace_replay.py ../../poc-trace.jsonl selected_model
+```
+
+這會用 `ModelRouter` 完全照 trace 的 `selected_model` 回放，印出 GPU／節點數、`$/yr`、P99 TTFT 與 SLO 達成率（範例見 [semantic_router_trace_replay.py](../../src/fleet-sim/examples/semantic_router_trace_replay.py)）。
+
+This replays exactly the trace's `selected_model` choices via `ModelRouter` and prints GPU/node counts, `$/yr`, P99 TTFT, and SLO compliance (see [semantic_router_trace_replay.py](../../src/fleet-sim/examples/semantic_router_trace_replay.py)).
+
+1. 產出 TCO 報表 / Produce the TCO report — `vllm-sr-sim` 的 `tok-per-watt` / `optimize` 子指令吃的是長度分布 **CDF json**（不是上面的 trace），輸出 `$/yr`、tokens-per-watt、P99 與機群規模 / the `tok-per-watt` / `optimize` subcommands of `vllm-sr-sim` consume a length-distribution **CDF json** (not the trace above) and output `$/yr`, tokens-per-watt, P99, and fleet sizing:
+
+```bash
+vllm-sr-sim optimize     --cdf data/azure_cdf.json --lam 200 --slo 500
+vllm-sr-sim tok-per-watt --cdf data/azure_cdf.json --lam 100 --slo 500
+```
+
+替代路徑（建議 demo 用）/ Alternative path (recommended for the demo)：直接在 dashboard 的 **Fleet Sim → Workloads** 上傳 `poc-trace.jsonl`，UI 會自動辨識 `semantic_router` 格式（見 [04-dashboard-tour.md](04-dashboard-tour.md) 的 Fleet Sim 段與 [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)），再到 **Runs** 建立 optimize / simulate 任務，省去手動 CDF。誠實邊界：fleet-sim 的數字是**模擬**容量與成本，跨節點吞吐為外推、非 Instinct 實測。
+
+Alternative path (recommended for the demo): upload `poc-trace.jsonl` directly under the dashboard's **Fleet Sim → Workloads**, where the UI auto-detects the `semantic_router` format (see the Fleet Sim section of [04-dashboard-tour.md](04-dashboard-tour.md) and [fleetSimApi.ts](../../dashboard/frontend/src/utils/fleetSimApi.ts)), then create an optimize / simulate job under **Runs**, skipping the manual CDF. Honest boundary: fleet-sim's numbers are **simulated** capacity and cost; cross-node throughput is extrapolation, not measured Instinct performance.
 
 ---
 
