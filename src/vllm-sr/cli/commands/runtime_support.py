@@ -46,6 +46,12 @@ PASSTHROUGH_ENV_RULES = (
     ("VLLM_SR_DETERMINISTIC_EMBEDDINGS", False),
     ("ANTHROPIC_API_KEY", True),
     ("OPENAI_API_KEY", True),
+    # Dashboard bootstrap-admin provisioning. The dashboard's
+    # EnsureBootstrapAdmin reads these at startup to create (or skip if already
+    # present) the initial admin account, so they must reach the container.
+    ("DASHBOARD_ADMIN_EMAIL", False),
+    ("DASHBOARD_ADMIN_PASSWORD", True),
+    ("DASHBOARD_ADMIN_NAME", False),
     ("OPENCLAW_BASE_IMAGE", False),
     ("SR_LOG_LEVEL", False),
     ("SR_LOG_ENCODING", False),

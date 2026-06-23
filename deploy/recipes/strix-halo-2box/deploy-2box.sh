@@ -33,6 +33,18 @@
 #   HALO_B_SSH_KEY   optional SSH identity file for Halo-B.
 #   SKIP_FRONTIER=1  skip the llm-katan frontier mock.
 #   SKIP_SMOKE=1     skip the final cross-box smoke test.
+#   ANTHROPIC_API_KEY (optional) enables the real external Anthropic public API
+#                    for the frontier/premium tier (anthropic/claude-opus-4.6).
+#                    Auto-passed into the gateway container by `vllm-sr serve`.
+#                    Requires Halo-A outbound HTTPS egress to api.anthropic.com:443.
+#                    If unset, local tiers still work; premium requests fail.
+#   DASHBOARD_ADMIN_EMAIL     (optional) demo dashboard admin email.
+#                    Default: admin@demo.local (set in client-bring-up.sh).
+#   DASHBOARD_ADMIN_PASSWORD  (optional) demo dashboard admin password.
+#                    Default: vllmsr-demo. Override for any non-demo use.
+#   DASHBOARD_ADMIN_NAME      (optional) demo dashboard admin display name.
+#                    Default: Admin. These three are forwarded to the dashboard
+#                    via client-bring-up.sh; EnsureBootstrapAdmin is idempotent.
 #
 # Usage (from anywhere):
 #   HALO_B_IP=192.0.2.20 HALO_B_SSH=ubuntu@192.0.2.20 bash deploy-2box.sh
