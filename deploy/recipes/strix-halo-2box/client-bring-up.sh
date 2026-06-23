@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+#
+# 2-box Strix Halo PoC: CLIENT (edge gateway) bring-up.
+#
+# Run this on Halo-A, the CLIENT/EDGE box. It co-locates the LLM Gateway (Envoy +
+# semantic router) with the small/cheap models, so routine requests are answered
+# locally (0 network hops) and only hard requests escalate to Halo-B (1 hop).
+# This is the executable counterpart of poc-client-edge.yaml.
+#
+# What it does:
+#   1. Requires HALO_B_IP (the routable address of the Halo-B datacenter box).
+#   2. Creates the shared Docker network `vllm-sr-network`.
+#   3. Starts the local `ollama/ollama:rocm` with AMD GPU passthrough and pulls
+#      ONLY the small/edge models: llama3.2:3b, qwen2.5:7b.
+#   4. Exports the ModernBERT PII detector to ONNX (one-time) when it is missing.
+#   5. Renders a runtime copy of poc-client-edge.yaml with HALO_B_IP substituted.
+#   6. Serves the gateway with the rendered config on the amd platform, keeping
+#      the built-in classifiers on CPU (VLLM_SR_AMD_PRESERVE_CPU=1).
+#
+# Prerequisites (see ../strix-halo-poc/REHEARSAL.md): Ubuntu x86_64, ROCm for
+# gfx1151, Docker with /dev/kfd + /dev/dri passthrough, the user in the
+# video/render groups, and the `vllm-sr` CLI installed/built.
+#
+# Run Halo-B first: bash server-bring-up.sh (on Halo-B), then on Halo-A:
+#   export HALO_B_IP=192.0.2.20    # the real Halo-B address
+#   bash client-bring-up.sh
+#
+set -euo pipefail
+
+# Resolve this script's directory so the config paths work from anywhere.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_TEMPLATE="${SCRIPT_DIR}/poc-client-edge.yaml"
+RENDER_DIR="${SCRIPT_DIR}/.vllm-sr-rendered"
+RENDERED_CONFIG="${RENDER_DIR}/poc-client-edge.yaml"
+
+NETWORK="vllm-sr-network"
+OLLAMA_CONTAINER="ollama"
+OLLAMA_PORT="11434"
+OLLAMA_VOLUME="ollama"
+OLLAMA_IMAGE="ollama/ollama:rocm"
+
+# Only the small/edge models run locally on Halo-A (the big tier lives on Halo-B).
+EDGE_TAGS=(
+  "llama3.2:3b"   # SIMPLE / default -> qwen/qwen3.5-rocm
+  "qwen2.5:7b"    # MEDIUM           -> google/gemini-2.5-flash-lite
+)
+
+# The PII ModernBERT model dir is shared with the existing single-box recipe so
+# we do not duplicate the (large) model download. The router loads token
+# classifiers via ONNX Runtime, but the published ModernBERT presidio detector
+# ships safetensors only, so model.onnx must be generated once before serve.
+PII_MODEL_DIR="${SCRIPT_DIR}/../strix-halo-poc/models/pii_classifier_modernbert-base_presidio_token_model"
+PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
+# One-time export venv kept outside the repo tree so it never pollutes git.
+ONNX_EXPORT_VENV="${TMPDIR:-/tmp}/vllm-sr-pii-onnx-export-venv"
+
+echo "==> [0/6] Checking required HALO_B_IP environment variable"
+if [[ -z "${HALO_B_IP:-}" ]]; then
+  echo "ERROR: HALO_B_IP is not set." >&2
+  echo "       The datacenter backends in poc-client-edge.yaml escalate to Halo-B" >&2
+  echo "       at HALO_B_IP:11434, so this box must know the real Halo-B address." >&2
+  echo "       Set it to the routable IP/host of the Halo-B box and re-run:" >&2
+  echo "         export HALO_B_IP=192.0.2.20" >&2
+  echo "         bash client-bring-up.sh" >&2
+  exit 1
+fi
+echo "    HALO_B_IP=${HALO_B_IP}"
+
+echo "==> [1/6] Ensuring Docker network '${NETWORK}' exists"
+docker network create "${NETWORK}" 2>/dev/null || true
+
+echo "==> [2/6] Starting local Ollama (ROCm) container '${OLLAMA_CONTAINER}' on ${NETWORK}"
+if docker ps -a --format '{{.Names}}' | grep -qx "${OLLAMA_CONTAINER}"; then
+  echo "    container '${OLLAMA_CONTAINER}' already exists; (re)starting it"
+  docker start "${OLLAMA_CONTAINER}"
+else
+  docker run -d \
+    --name "${OLLAMA_CONTAINER}" \
+    --network="${NETWORK}" \
+    --restart unless-stopped \
+    -p "${OLLAMA_PORT}:${OLLAMA_PORT}" \
+    -v "${OLLAMA_VOLUME}:/root/.ollama" \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add=video \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    -e HSA_OVERRIDE_GFX_VERSION=11.5.1 \
+    "${OLLAMA_IMAGE}"
+fi
+
+echo "    waiting for local Ollama to answer on http://localhost:${OLLAMA_PORT}/api/tags ..."
+ollama_ready=""
+for _ in $(seq 1 30); do
+  if curl -fsS "http://localhost:${OLLAMA_PORT}/api/tags" >/dev/null 2>&1; then
+    ollama_ready="yes"
+    echo "    local Ollama is up."
+    break
+  fi
+  sleep 2
+done
+if [[ -z "${ollama_ready}" ]]; then
+  echo "ERROR: local Ollama did not become ready on http://localhost:${OLLAMA_PORT}/api/tags." >&2
+  echo "       Check the container logs: docker logs ${OLLAMA_CONTAINER}" >&2
+  exit 1
+fi
+
+echo "==> [3/6] Pulling edge tier models into the local '${OLLAMA_CONTAINER}' container"
+for tag in "${EDGE_TAGS[@]}"; do
+  echo "    pulling ${tag}"
+  docker exec "${OLLAMA_CONTAINER}" ollama pull "${tag}"
+done
+
+echo "==> [4/6] Ensuring the ModernBERT PII detector has an exported ONNX model"
+# Idempotent: skip when model.onnx already exists; export it once otherwise. We
+# call the venv binaries directly (no `source activate`) so the step is safe
+# under `set -euo pipefail`.
+if [[ -f "${PII_ONNX_MODEL}" ]]; then
+  echo "    onnx/model.onnx already present; skipping export"
+elif [[ ! -d "${PII_MODEL_DIR}" ]]; then
+  echo "ERROR: PII model dir is missing:" >&2
+  echo "      ${PII_MODEL_DIR}" >&2
+  echo "    The gateway loads the ModernBERT PII classifier at serve time, so this" >&2
+  echo "    is a hard requirement -- the router will not start without it." >&2
+  echo "    Download it first (see ../strix-halo-poc/REHEARSAL.md Gate B), then re-run." >&2
+  exit 1
+else
+  echo "    exporting ONNX from safetensors via optimum (one-time, may take a while)"
+  PY_BIN="python3"
+  command -v "${PY_BIN}" >/dev/null 2>&1 || PY_BIN="python"
+  if [[ ! -x "${ONNX_EXPORT_VENV}/bin/python" ]]; then
+    "${PY_BIN}" -m venv "${ONNX_EXPORT_VENV}"
+  fi
+  "${ONNX_EXPORT_VENV}/bin/pip" install --quiet --upgrade pip
+  "${ONNX_EXPORT_VENV}/bin/pip" install --quiet \
+    "transformers>=4.48" "optimum[onnxruntime]" onnx torch
+  "${ONNX_EXPORT_VENV}/bin/python" - "${PII_MODEL_DIR}" <<'PY'
+import sys
+
+from optimum.onnxruntime import ORTModelForTokenClassification
+from transformers import AutoTokenizer
+
+src = sys.argv[1]
+out = src + "/onnx"
+ORTModelForTokenClassification.from_pretrained(src, export=True).save_pretrained(out)
+AutoTokenizer.from_pretrained(src).save_pretrained(out)
+print("    exported ONNX to", out)
+PY
+  if [[ ! -f "${PII_ONNX_MODEL}" ]]; then
+    echo "    ERROR: export finished but ${PII_ONNX_MODEL} is still missing" >&2
+    exit 1
+  fi
+  echo "    onnx/model.onnx exported successfully"
+fi
+
+echo "==> [5/6] Rendering runtime config with HALO_B_IP=${HALO_B_IP}"
+# The committed poc-client-edge.yaml keeps a literal HALO_B_IP placeholder so the
+# remote backends are obvious. We render a runtime copy here so the committed
+# file is never mutated. The rendered dir is gitignored.
+mkdir -p "${RENDER_DIR}"
+sed "s/HALO_B_IP/${HALO_B_IP}/g" "${CONFIG_TEMPLATE}" > "${RENDERED_CONFIG}"
+if grep -q "HALO_B_IP" "${RENDERED_CONFIG}"; then
+  echo "ERROR: HALO_B_IP placeholder still present after rendering ${RENDERED_CONFIG}" >&2
+  exit 1
+fi
+echo "    rendered: ${RENDERED_CONFIG}"
+
+echo "==> [6/6] Serving the gateway with the rendered config (platform amd)"
+# Keep the mmBERT/embedding classifiers on CPU so the iGPU is reserved for the
+# local LLM backends.
+export VLLM_SR_AMD_PRESERVE_CPU=1
+
+vllm-sr serve \
+  --config "${RENDERED_CONFIG}" \
+  --image-pull-policy never \
+  --platform amd
+
+echo "==> Client bring-up complete. Verify with: vllm-sr status"
+echo "    Then run the cross-box smoke test: python smoke_test.py"
