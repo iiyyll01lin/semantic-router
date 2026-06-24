@@ -255,6 +255,7 @@ func configuredAlgorithmBlocks(algorithm *AlgorithmConfig) []string {
 	addBlock("latency_aware", algorithm.LatencyAware != nil)
 	addBlock("multi_factor", algorithm.MultiFactor != nil)
 	addBlock("session_aware", algorithm.SessionAware != nil)
+	addBlock("failover", algorithm.Failover != nil)
 	return configuredBlocks
 }
 
@@ -273,6 +274,7 @@ func expectedAlgorithmBlock(normalizedType string) (string, bool) {
 		"latency_aware": "latency_aware",
 		"multi_factor":  "multi_factor",
 		"session_aware": "session_aware",
+		"failover":      "failover",
 	}
 	expectedBlock, ok := expectedBlockByType[normalizedType]
 	return expectedBlock, ok
@@ -298,8 +300,28 @@ func validateSpecializedAlgorithmConfig(decisionName string, normalizedType stri
 		if err := ValidateFusionAlgorithmConfig(algorithm.Fusion); err != nil {
 			return fmt.Errorf("decision '%s', algorithm.fusion: %w", decisionName, err)
 		}
+	case "failover":
+		if err := validateFailoverAlgorithmConfig(algorithm.Failover); err != nil {
+			return fmt.Errorf("decision '%s', algorithm.failover: %w", decisionName, err)
+		}
 	}
 	return nil
+}
+
+// validateFailoverAlgorithmConfig checks the failover looper configuration.
+// The block is optional (on_error defaults to "skip"); only an explicit
+// out-of-domain on_error value is rejected so misconfiguration fails loudly at
+// startup instead of silently disabling failover.
+func validateFailoverAlgorithmConfig(cfg *FailoverAlgorithmConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.OnError)) {
+	case "", "skip", "fail":
+		return nil
+	default:
+		return fmt.Errorf("on_error must be \"skip\" or \"fail\", got %q", cfg.OnError)
+	}
 }
 
 // validateLatencyAwareAlgorithmConfig validates latency_aware algorithm configuration.

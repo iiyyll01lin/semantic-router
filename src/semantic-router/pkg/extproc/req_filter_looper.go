@@ -29,7 +29,7 @@ import (
 
 func isLooperAlgorithmType(algorithmType string) bool {
 	switch algorithmType {
-	case "confidence", "ratings", "remom", "fusion":
+	case "confidence", "ratings", "remom", "fusion", "failover":
 		return true
 	default:
 		return false

@@ -23,6 +23,7 @@ Inside canonical `config.yaml`:
 - structure `density` features now use built-in multilingual text-unit normalization; the contract no longer exposes a per-rule `normalize_by` switch
 - the dashboard and DSL builder now expose the same projection surface directly; see `website/docs/tutorials/projection/overview.md` and the maintained `deploy/recipes/balance.{yaml,dsl}` pair for end-to-end usage
 - `global.router`, `global.services`, `global.stores`, `global.integrations`, and `global.model_catalog` expose router-wide overrides explicitly
+- `decision.algorithm.type=failover` is a looper that dispatches the decision's `modelRefs` in authored order and re-dispatches to the next candidate on any upstream failure (non-2xx such as `401`/`429`/`5xx`, or a transport error). It enables genuine cross-model/cross-provider degradation (different model name, body `model`, auth header, and provider profile per target) that Envoy retry policies cannot express. `failover.on_error` selects `skip` (default; try next) or `fail` (surface the error immediately); ordering is never reordered by cost or parameter size.
 - `decision.algorithm.type=session_aware` wraps a base selector with agentic session policy: tool loops and non-portable provider-state continuations stay on the current model, decision drift and idle boundaries can reselect, non-idle sessions pay handoff, switch-history, confidence-gated remaining-turn-prior, and input checkout prefix-cache costs before switching, and router replay records the full policy trace for experiments. Cache-cost multipliers must be neutral-or-stricter (`max_cache_cost_multiplier >= 1`) and remaining-turn horizons must be positive.
 - `global.services.router_replay.enabled` is the router-wide replay default; when it is on, decisions inherit replay capture unless a route-local `router_replay` plugin sets `enabled: false`
 - embedding fallback tuning such as `global.model_catalog.embeddings.semantic.embedding_config.top_k` lives under the router-owned model catalog, not under individual signal rules
@@ -48,7 +49,7 @@ Candidate iteration fragments must stay bounded to `decision.candidates` or an e
 
 `config/algorithm/` is organized by routing policy:
 
-- `looper/`: multi-model execution policies such as `confidence`, `ratings`, `remom`, and `fusion`
+- `looper/`: multi-model execution policies such as `confidence`, `failover`, `ratings`, `remom`, and `fusion`
 - `selection/`: candidate-selection policies such as `elo`, `router_dc`, `automix`, `session_aware`, and `latency_aware`
 
 Each supported algorithm now has its own tutorial page under `website/docs/tutorials/algorithm/`.

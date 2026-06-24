@@ -118,6 +118,8 @@ func FactoryWithSelectionRegistry(
 		return NewReMoMLooper(cfg)
 	case "fusion":
 		return NewFusionLooper(cfg)
+	case "failover":
+		return NewFailoverLooper(cfg)
 	case "rl_driven":
 		return NewRLDrivenLooperWithSelectionRegistry(cfg, selectorRegistry)
 	default:

@@ -74,7 +74,22 @@ type AlgorithmConfig struct {
 	LatencyAware *LatencyAwareAlgorithmConfig `yaml:"latency_aware,omitempty"`
 	MultiFactor  *MultiFactorSelectionConfig  `yaml:"multi_factor,omitempty"`
 	SessionAware *SessionAwareSelectionConfig `yaml:"session_aware,omitempty"`
+	Failover     *FailoverAlgorithmConfig     `yaml:"failover,omitempty"`
 	OnError      string                       `yaml:"on_error,omitempty"`
+}
+
+// FailoverAlgorithmConfig configures the cross-model/cross-provider failover
+// looper. Unlike pure selection algorithms (which converge a decision's
+// modelRefs to a single backend before dispatch), failover dispatches the
+// request against each modelRef in declared order and re-dispatches to the
+// next candidate when an upstream call returns a non-2xx status or a transport
+// error. Ordering is the authored modelRefs order; the algorithm never
+// reorders candidates (e.g. by param_size like confidence escalation does).
+type FailoverAlgorithmConfig struct {
+	// OnError selects what happens when a candidate model call fails:
+	//   - "skip" (default): try the next modelRef (true failover behavior)
+	//   - "fail": surface the error immediately without trying later candidates
+	OnError string `yaml:"on_error,omitempty"`
 }
 
 type ConfidenceAlgorithmConfig struct {

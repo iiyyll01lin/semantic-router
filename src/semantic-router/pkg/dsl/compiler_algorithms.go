@@ -41,6 +41,9 @@ var algorithmSubConfigCompilers = map[string]algorithmSubConfigCompiler{
 	"session_aware": func(c *Compiler, algo *config.AlgorithmConfig, fields map[string]Value) {
 		algo.SessionAware = c.compileSessionAwareAlgo(fields)
 	},
+	"failover": func(c *Compiler, algo *config.AlgorithmConfig, fields map[string]Value) {
+		algo.Failover = c.compileFailoverAlgo(fields)
+	},
 	"static": func(*Compiler, *config.AlgorithmConfig, map[string]Value) {},
 	"knn":    func(*Compiler, *config.AlgorithmConfig, map[string]Value) {},
 	"kmeans": func(*Compiler, *config.AlgorithmConfig, map[string]Value) {},
@@ -66,7 +69,7 @@ func (c *Compiler) populateAlgorithmSubConfig(algo *config.AlgorithmConfig, spec
 
 func (c *Compiler) setAlgorithmTopLevelOnError(algo *config.AlgorithmConfig, fields map[string]Value) {
 	switch algo.Type {
-	case "confidence", "ratings", "remom":
+	case "confidence", "ratings", "remom", "failover":
 		return
 	default:
 		if v, ok := getStringField(fields, "on_error"); ok {
@@ -118,6 +121,14 @@ func parseHybridWeights(fields map[string]Value) *config.HybridWeightsConfig {
 		hw.MarginWeight = v
 	}
 	return hw
+}
+
+func (c *Compiler) compileFailoverAlgo(fields map[string]Value) *config.FailoverAlgorithmConfig {
+	cfg := &config.FailoverAlgorithmConfig{}
+	if v, ok := getStringField(fields, "on_error"); ok {
+		cfg.OnError = v
+	}
+	return cfg
 }
 
 func (c *Compiler) compileRatingsAlgo(fields map[string]Value) *config.RatingsAlgorithmConfig {

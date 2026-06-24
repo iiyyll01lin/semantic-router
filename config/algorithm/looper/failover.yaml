@@ -1,0 +1,4 @@
+algorithm:
+  type: failover
+  failover:
+    on_error: skip
