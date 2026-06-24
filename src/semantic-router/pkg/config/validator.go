@@ -259,5 +259,9 @@ func validateModelSelectionConfig(cfg *RouterConfig) error {
 	if isEloSelectionConfigConfigured(cfg.ModelSelection.Elo) {
 		return fmt.Errorf("global.router.model_selection.elo is no longer supported; use global.router.learning.adaptation")
 	}
+	// cfg.Decisions is in scope here (promoted from the embedded
+	// IntelligentRouting), so this is the validation pass that can see both the
+	// global model_selection and the decisions list.
+	warnGlobalModelSelectionMethodIgnored(cfg)
 	return nil
 }

@@ -69,6 +69,7 @@ Every debt entry should include:
 ### PL0035 Router Flow Workflows
 
 - [TD044 Flow Tool State Durability Follow-Up](td-044-flow-tool-state-durability-gap.md)
+- [TD050 Global model_selection.method Is Silently Ignored Unless a Decision Carries a Per-Decision Algorithm Block](td-050-global-model-selection-method-ignored.md)
 
 ## Retired Debt Policy
 
