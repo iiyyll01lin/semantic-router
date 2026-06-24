@@ -27,6 +27,7 @@ Inside canonical `config.yaml`:
 - top-level `recipes` adds named routing profiles beside the `routing` block. The top-level `routing` profile is the `default` recipe; each `recipes[].routing` block carries the same profile shape (`signals`, `projections`, `decisions`) but never `modelCards` — the model catalog and the signal/projection name registry stay global across recipes. See `website/docs/tutorials/global/entrypoints-and-recipes.md`
 - `global.router`, `global.services`, `global.stores`, `global.integrations`, and `global.model_catalog` expose router-wide overrides explicitly
 - `global.router.learning.adaptation` adds online model-choice learning after the base decision algorithm. `global.router.learning.protection` protects agentic continuity, cache, tool loops, and handoff cost. Decisions can opt out with `routing.decisions[].adaptations.mode: bypass`, use component-level `adaptations.adaptation.mode` / `adaptations.protection.mode`, or override the adaptation search space with `adaptations.adaptation.candidate_set`. `decision.algorithm.type=session_aware|elo|rl_driven|gmtrouter|bandit|personalization` is no longer a supported public algorithm.
+- `decision.algorithm.type=failover` is a looper that dispatches the decision's `modelRefs` in authored order and re-dispatches to the next candidate on any upstream failure (non-2xx such as `401`/`429`/`5xx`, or a transport error). It enables genuine cross-model/cross-provider degradation (different model name, body `model`, auth header, and provider profile per target) that Envoy retry policies cannot express. `failover.on_error` selects `skip` (default; try next) or `fail` (surface the error immediately); ordering is never reordered by cost or parameter size.
 - `global.services.router_replay.enabled` is the router-wide replay default; when it is on, decisions inherit replay capture unless a route-local `router_replay` plugin sets `enabled: false`
 - embedding fallback tuning such as `global.model_catalog.embeddings.semantic.embedding_config.top_k` lives under the router-owned model catalog, not under individual signal rules
 - prototype-aware exemplar compression and label scoring live alongside their owning signal families: `global.model_catalog.embeddings.semantic.embedding_config.prototype_scoring`, `global.model_catalog.modules.classifier.preference.prototype_scoring`, `global.model_catalog.kbs[].prototype_scoring`, and `global.model_catalog.modules.complexity.prototype_scoring`
@@ -51,7 +52,7 @@ Candidate iteration fragments must stay bounded to `decision.candidates` or an e
 
 `config/algorithm/` is organized by routing policy:
 
-- `looper/`: multi-model execution policies such as `confidence`, `ratings`, `remom`, and `fusion`
+- `looper/`: multi-model execution policies such as `confidence`, `failover`, `ratings`, `remom`, and `fusion`
 - `selection/`: request-time candidate-selection policies such as `router_dc`, `automix`, `hybrid`, `multi_factor`, and `latency_aware`
 
 Each supported algorithm now has its own tutorial page under `website/docs/tutorials/algorithm/`.

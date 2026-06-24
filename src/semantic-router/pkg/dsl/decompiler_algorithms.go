@@ -35,6 +35,9 @@ var algorithmFieldExporters = map[string]algorithmFieldExporter{
 	"multi_factor": func(algo *config.AlgorithmConfig, fields map[string]Value) {
 		multiFactorAlgorithmToFields(algo.MultiFactor, fields)
 	},
+	"failover": func(algo *config.AlgorithmConfig, fields map[string]Value) {
+		failoverAlgorithmToFields(algo.Failover, fields)
+	},
 }
 
 func (d *decompiler) algorithmToFields(algo *config.AlgorithmConfig) map[string]Value {
@@ -51,7 +54,7 @@ func (d *decompiler) algorithmToFields(algo *config.AlgorithmConfig) map[string]
 
 func algorithmOnErrorToFields(algo *config.AlgorithmConfig, fields map[string]Value) {
 	switch algo.Type {
-	case "confidence", "ratings", "remom":
+	case "confidence", "ratings", "remom", "failover":
 		return
 	default:
 		if algo.OnError != "" {
@@ -86,6 +89,13 @@ func ratingsAlgorithmToFields(r *config.RatingsAlgorithmConfig, fields map[strin
 	}
 	setIntValue(fields, "max_concurrent", r.MaxConcurrent)
 	setStringValue(fields, "on_error", r.OnError)
+}
+
+func failoverAlgorithmToFields(f *config.FailoverAlgorithmConfig, fields map[string]Value) {
+	if f == nil {
+		return
+	}
+	setStringValue(fields, "on_error", f.OnError)
 }
 
 func remomAlgorithmToFields(r *config.ReMoMAlgorithmConfig, fields map[string]Value) {

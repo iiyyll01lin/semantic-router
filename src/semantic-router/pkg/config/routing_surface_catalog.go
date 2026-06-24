@@ -63,6 +63,7 @@ type AlgorithmCatalogEntry struct {
 var decisionAlgorithmCatalog = []AlgorithmCatalogEntry{
 	{Type: "automix", Tier: "experimental"},
 	{Type: "confidence", Tier: "supported"},
+	{Type: "failover", Tier: "supported"},
 	{Type: "fusion", Tier: "experimental"},
 	{Type: "hybrid", Tier: "supported"},
 	{Type: "kmeans", Tier: "experimental"},

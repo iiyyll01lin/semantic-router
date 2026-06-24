@@ -96,7 +96,7 @@ func TestShouldUseLooper(t *testing.T) {
 		router := &OpenAIRouter{
 			Config: &config.RouterConfig{Looper: config.LooperConfig{Endpoint: "http://looper"}},
 		}
-		looperAlgorithms := []string{"confidence", "ratings", "fusion", "workflows"}
+		looperAlgorithms := []string{"confidence", "ratings", "fusion", "workflows", "failover"}
 
 		for _, algorithmType := range looperAlgorithms {
 			decision := &config.Decision{

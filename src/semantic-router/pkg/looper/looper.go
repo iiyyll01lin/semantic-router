@@ -130,6 +130,8 @@ func FactoryWithSelectionRegistry(
 		return NewFusionLooper(cfg)
 	case "workflows":
 		return NewWorkflowsLooper(cfg)
+	case "failover":
+		return NewFailoverLooper(cfg)
 	case "rl_driven":
 		return NewRLDrivenLooperWithSelectionRegistry(cfg, selectorRegistry)
 	default:

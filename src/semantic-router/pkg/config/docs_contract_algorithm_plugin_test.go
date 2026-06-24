@@ -11,6 +11,7 @@ import (
 var algorithmTutorialBuckets = map[string]string{
 	"automix":       "selection",
 	"confidence":    "looper",
+	"failover":      "looper",
 	"fusion":        "looper",
 	"hybrid":        "selection",
 	"kmeans":        "selection",
