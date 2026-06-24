@@ -198,6 +198,9 @@ FactCHD_dataset/
 **/lora_*_model_rust/
 *.safetensors
 
+# Router-replay / PoC run traces (run artifacts, not source)
+poc-trace.jsonl
+
 .vllm-sr/
 .codex-go-cache/
 
