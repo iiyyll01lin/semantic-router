@@ -188,14 +188,45 @@ func toOpenAIResponseBody(anthropicResponse []byte, model string, ext *ir.IRExte
 			},
 			FinishReason: finishReason,
 		}},
-		Usage: openai.CompletionUsage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		},
+		Usage: openAIUsageFromAnthropicTokens(
+			resp.Usage.InputTokens,
+			resp.Usage.OutputTokens,
+			resp.Usage.CacheReadInputTokens,
+			resp.Usage.CacheCreationInputTokens,
+		),
 	}
 
 	return json.Marshal(openAIResp)
+}
+
+// openAIUsageFromAnthropicTokens folds Anthropic's split input-token buckets
+// into the OpenAI usage shape the cost reader consumes.
+//
+// Anthropic reports input_tokens EXCLUSIVE of both cache reads and cache
+// writes, so the OpenAI prompt_tokens total must add all three buckets back
+// together. Otherwise the cost reader (pkg/extproc), which derives the
+// uncached portion as prompt_tokens - cached_tokens, would never see the
+// cache-read tokens and would bill them at no rate at all.
+//
+// cached_tokens carries only cache_read_input_tokens: the single
+// cached_input_per_1m rate models cache *reads* (the cheap ~0.1x rate).
+// cache_creation_input_tokens is deliberately left in the uncached portion so
+// it is billed at the base prompt rate rather than the much cheaper cached
+// rate (cache writes are a premium ~1.25x, so the base rate is far closer than
+// the cached rate would be).
+func openAIUsageFromAnthropicTokens(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens int64) openai.CompletionUsage {
+	promptTokens := inputTokens + cacheReadTokens + cacheCreationTokens
+	usage := openai.CompletionUsage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: outputTokens,
+		TotalTokens:      promptTokens + outputTokens,
+	}
+	if cacheReadTokens > 0 {
+		usage.PromptTokensDetails = openai.CompletionUsagePromptTokensDetails{
+			CachedTokens: cacheReadTokens,
+		}
+	}
+	return usage
 }
 
 // openAIFinishReasonFromAnthropic maps Anthropic's StopReason alphabet

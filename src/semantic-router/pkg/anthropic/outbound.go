@@ -297,6 +297,15 @@ func buildAnthropicUsage(usage openai.CompletionUsage, ext *ir.IRExtensions) ant
 
 	out.CacheReadInputTokens = ext.CacheReadInputTokens
 	out.CacheCreationInputTokens = ext.CacheCreationInputTokens
+	// The inverse helper now folds cache reads and writes into the OpenAI
+	// prompt_tokens total (see openAIUsageFromAnthropicTokens) so the cost
+	// reader bills them; Anthropic's input_tokens is cache-exclusive, so
+	// recover it by removing the cache portions ext captured. Clamp at zero
+	// to stay well-defined if the counters are ever inconsistent.
+	out.InputTokens = usage.PromptTokens - ext.CacheReadInputTokens - ext.CacheCreationInputTokens
+	if out.InputTokens < 0 {
+		out.InputTokens = 0
+	}
 	if ext.Ephemeral5mInputTokens > 0 || ext.Ephemeral1hInputTokens > 0 {
 		out.CacheCreation = &anthropicCacheCreationUsage{
 			Ephemeral5mInputTokens: ext.Ephemeral5mInputTokens,
