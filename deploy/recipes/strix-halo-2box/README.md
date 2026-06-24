@@ -21,11 +21,13 @@ routing config across two boxes.
             |  + local Ollama (small/edge models)       |        |  plain Ollama, NO router |
             |    - llama3.2:3b  -> qwen/qwen3.5-rocm     |        |    - qwen2.5:14b          |
             |    - qwen2.5:7b   -> gemini-2.5-flash-lite |        |    - qwen3:14b           |
-            |  + llm-katan mock (claude-opus-4.6)        |        |    - qwen2.5:32b          |
+            |  (frontier -> real Anthropic API)         |        |    - qwen2.5:32b          |
             +-------------------------------------------+        +--------------------------+
-                          |                                            ^
-        routine request   |  0 hops (answered locally on Halo-A)       |
-        ------------------ +                                           |
+                  |       |                                            ^
+  premium/frontier|       |  routine request: 0 hops (local on Halo-A) |
+  -> api.anthropic.com:443 (HTTPS, ANTHROPIC_API_KEY)                  |
+                  v       |                                            |
+   [ Anthropic public API: claude-opus-4.6 ]                          |
         hard request       --------- 1 hop -> HALO_B_IP:11434 ---------+
 ```
 
@@ -49,6 +51,8 @@ routing config across two boxes.
 | [`client-bring-up.sh`](client-bring-up.sh) | Run on Halo-A. Starts local Ollama with only the small/edge models, does the one-time ModernBERT PII ONNX export, renders the config with `HALO_B_IP` substituted, then serves the gateway with `--platform amd`. |
 | [`smoke_test.py`](smoke_test.py) | Stdlib-only cross-box smoke test against the gateway. Reads `x-vsr-selected-model` and asserts routine -> edge (Halo-A) and hard -> datacenter (Halo-B). |
 | [`gen-dsl.sh`](gen-dsl.sh) | Generates and validates the routing DSL from `poc-client-edge.yaml` (requires Go). The `.dsl` is a generated artifact and is not committed. |
+| [`export-replay-trace.sh`](export-replay-trace.sh) | Read-only exporter: pages the gateway's `/v1/router_replay` API and reshapes it into fleet-sim's `semantic_router` JSONL for a TCO simulation. See "Fleet-sim TCO closer" below. |
+| [`wan-latency-experiment.sh`](wan-latency-experiment.sh) | Injects `tc netem` WAN latency on Halo-B (0/20/50 ms) and re-measures the network hop from Halo-A, with a cleanup trap. Needs sudo on Halo-B + SSH. See "WAN-latency contrast" below. |
 
 ## Run Order
 
@@ -134,6 +138,31 @@ must be served by an EDGE model (`qwen/qwen3.5-rocm` or
 served by a DATACENTER model (`google/gemini-3.1-pro` or `openai/gpt5.4`) on
 Halo-B.
 
+## Dashboard login
+
+The dashboard (status / monitoring / tracing UI) requires an admin login. To
+keep the PoC viewable without a manual first-run bootstrap, `client-bring-up.sh`
+provisions a demo admin and forwards it to the gateway container (these are on
+the `vllm-sr serve` env passthrough allowlist):
+
+| Env var | Default | Notes |
+| --- | --- | --- |
+| `DASHBOARD_ADMIN_EMAIL` | `admin@demo.local` | Login email. |
+| `DASHBOARD_ADMIN_PASSWORD` | `vllmsr-demo` | Override for any non-demo use. |
+| `DASHBOARD_ADMIN_NAME` | `Admin` | Display name. |
+
+Override any of them in the environment before bring-up, e.g.:
+
+```bash
+DASHBOARD_ADMIN_EMAIL=me@example.com DASHBOARD_ADMIN_PASSWORD='s3cret' \
+  HALO_B_IP=192.0.2.20 bash client-bring-up.sh
+```
+
+The dashboard's `EnsureBootstrapAdmin` is idempotent: it creates the admin only
+if that email does not already exist, so re-running bring-up against an
+already-bootstrapped database is safe — **no volume wipe is needed** to get a
+working login.
+
 ## Networking
 
 This is the part that makes or breaks the two-box run.
@@ -145,11 +174,16 @@ This is the part that makes or breaks the two-box run.
    The committed `poc-client-edge.yaml` keeps a literal `HALO_B_IP` placeholder
    so the remote backends are obvious; `client-bring-up.sh` renders a runtime
    copy with the `HALO_B_IP` env var substituted in (it never mutates the
-   committed file). The edge tiers and the frontier mock stay on the local
-   docker DNS names (`ollama:11434`, `llm-katan:8000`).
+   committed file). The edge tiers stay on the local docker DNS name
+   (`ollama:11434`); the frontier/premium tier now calls the real external
+   Anthropic public API (`https://api.anthropic.com`) instead of a local mock.
 
 2. **Open the right ports and verify reachability.**
    - Halo-A: `8899` (the OpenAI-compatible gateway ingress the app calls).
+   - Halo-A outbound: `api.anthropic.com:443` (HTTPS egress for the
+     frontier/premium tier). Also `export ANTHROPIC_API_KEY=sk-ant-...` before
+     serving — `vllm-sr serve` auto-injects it into the gateway container. If
+     unset, local tiers still work and only premium requests fail.
    - Halo-B: `11434` (the Ollama endpoint the gateway escalates to).
    The Envoy data-plane runs inside a container on Halo-A and must be able to
    reach `HALO_B_IP:11434`. Open the firewall on both boxes and confirm the two
@@ -197,6 +231,78 @@ auto-downloads that repo and then fatals at startup with
 presidio dir is missing either `pii_type_mapping.json` or `onnx/model.onnx`;
 prepare them via the single-box download (Gate B) and bring-up `[4/5]` ONNX
 export in [../strix-halo-poc/REHEARSAL.md](../strix-halo-poc/REHEARSAL.md).
+
+## Multi-candidate selection demo
+
+Most decisions in `poc-client-edge.yaml` have a single `modelRefs` entry, so
+runtime selection short-circuits to `single`. The `reasoning_deep` decision is
+the explicit multi-candidate demo: it offers **two** candidates —
+`google/gemini-3.1-pro` (datacenter complex tier) and
+`google/gemini-2.5-flash-lite` (edge medium tier) — and an `algorithm:` block of
+`type: multi_factor`, which scores candidates on quality / latency / cost / load.
+`multi_factor` is dependency-free (unlike `session_aware`, which needs a
+pretrained KNN model), so it works in the offline PoC. Send a deep-reasoning
+prompt and confirm the response's `x-vsr` selection method is not `single`.
+
+## Fleet-sim TCO closer
+
+`router-replay` is enabled in the gateway config (`global.services.router_replay`,
+`store_backend: postgres`) and exposed read-only at `GET :8899/v1/router_replay`.
+[`export-replay-trace.sh`](export-replay-trace.sh) pages that API and reshapes the
+records into fleet-sim's `semantic_router` JSONL (renames `completion_tokens` ->
+`generated_tokens`, RFC3339 -> epoch seconds, drops null-token rows):
+
+```bash
+BASE_URL=http://localhost:8899 OUT=poc-trace.jsonl bash export-replay-trace.sh
+# then drive a fleet-sim capacity/TCO simulation from the real PoC decisions:
+pip install -e ../../../src/fleet-sim
+python3 ../../../src/fleet-sim/examples/semantic_router_trace_replay.py poc-trace.jsonl selected_model
+```
+
+**Honest caveat:** fleet-sim's GPU pools are hardcoded NVIDIA (`a100`/`a10g`), so
+the resulting `$/yr` and node/GPU counts are a **pipeline demonstration with
+default profiles, NOT an Instinct-calibrated TCO**. A calibrated MI350P profile
+is tracked as follow-up tech debt.
+
+## WAN-latency contrast
+
+On the LAN the per-hop cost of escalating to Halo-B is ~0.2 ms, which understates
+the edge-gateway advantage. [`wan-latency-experiment.sh`](wan-latency-experiment.sh)
+injects synthetic WAN latency on Halo-B with `tc netem` at 0 / 20 / 50 ms and
+re-measures the network hop from Halo-A, then prints a `delay vs measured hop`
+table:
+
+```bash
+HALO_B_IP=192.0.2.20 HALO_B_SSH=ubuntu@halob bash wan-latency-experiment.sh
+```
+
+It needs **sudo on Halo-B** (for `tc`) and SSH access from Halo-A (same env vars
+as `deploy-2box.sh`; the NIC is auto-detected or set via `HALO_B_IFACE`). A
+cleanup trap always removes the netem qdisc on exit, so Halo-B is never left
+with injected latency. The point: routine (edge-served) requests take 0 network
+hops and are unaffected, while only datacenter escalations pay the added WAN
+cost — which is exactly why the gateway lives at the edge.
+
+## Frontier / premium tier
+
+The frontier/premium alias is `anthropic/claude-opus-4.6`. The recipe supports
+two backends for it:
+
+- **Offline `llm-katan` echo mock (intended PoC default).** `deploy-2box.sh`
+  starts an `llm-katan` container (`--backend echo`) on `vllm-sr-network:8000`
+  (skip with `SKIP_FRONTIER=1`). It is an instant echo, **not real generation** —
+  fit for validating the pipeline offline, not as a latency/cost baseline. To
+  route the frontier tier at it, point the `anthropic/claude-opus-4.6`
+  `backend_refs` endpoint at `llm-katan:8000`.
+- **Real Anthropic public API.** Point the `backend_refs` at
+  `https://api.anthropic.com` and export `ANTHROPIC_API_KEY` (already on the
+  `vllm-sr serve` env passthrough allowlist; Halo-A also needs outbound HTTPS
+  egress to `api.anthropic.com:443`). If the key is unset, the local edge and
+  datacenter tiers still work and only premium requests fail.
+
+> Note: the committed `poc-client-edge.yaml` currently wires this tier to the
+> real Anthropic API. For a fully offline demo, repoint its `backend_refs` to the
+> `llm-katan:8000` mock that `deploy-2box.sh` already launches.
 
 ## Related
 

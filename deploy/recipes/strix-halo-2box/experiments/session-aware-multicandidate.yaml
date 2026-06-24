@@ -1,4 +1,39 @@
 # =============================================================================
+# EXPERIMENT VARIANT: session_aware multi-candidate (NOT the topology recipe).
+#
+# This is a deliberately separate experiment copy of ../poc-client-edge.yaml. It
+# is the `session_aware` demonstrator and is intentionally distinct from the
+# single-candidate topology recipe (../poc-client-edge.yaml), which must stay
+# untouched. Differences from the topology recipe:
+#
+#   * Three decisions are MULTI-CANDIDATE with a per-decision `algorithm:` block
+#     of `type: session_aware` (a per-decision algorithm block is REQUIRED for
+#     session_aware to engage; single-candidate decisions short-circuit and the
+#     selector — and the global model_selection.method — are bypassed):
+#       - reasoning_deep : [google/gemini-3.1-pro (first), qwen/qwen3.5-rocm]  -> quality lane
+#       - simple_general : [qwen/qwen3.5-rocm (first), google/gemini-3.1-pro]  -> cheap lane
+#       - casual_chat    : [qwen/qwen3.5-rocm (first), google/gemini-3.1-pro]  -> cheap lane
+#     Both models stay candidates in all three so a hard lock can hold continuity
+#     (the current model is always in the candidate set).
+#
+#   * base_method: static. Offline this box has no trained KNN/embedding artifact
+#     (`knn` logs "model not trained" and silently falls back to static anyway),
+#     so we settle on `static`, whose scoring is deterministic candidate-ORDER
+#     (first listed candidate wins). The qwen-first ordering above is what seeds a
+#     genuine two-model workload offline: reasoning turns -> gemini, simple/casual
+#     turns -> qwen. This makes the session_aware hard locks observable.
+#
+#   * tool_loop_hard_lock + context_portability_hard_lock are ON here. The
+#     locked-vs-unlocked continuity proof (see
+#     .agent-harness/experiments/2box-session-aware/*-continuity-*) renders an
+#     "unlocked" sibling that flips both to false and zeroes stay/handoff
+#     stickiness; on `tool-heavy` the lock cuts mid-session switches 22 -> 8 and
+#     tool-loop switch violations 11 -> 0 while keeping both models in play.
+#
+# Serve/render exactly like ../client-bring-up.sh [5/6]/[6/6]: `sed HALO_B_IP`
+# into a rendered dir + `models` symlink + `vllm-sr serve --platform amd` with
+# VLLM_SR_AMD_PRESERVE_CPU=1. HALO_B_IP below is a literal placeholder.
+# =============================================================================
 # Client/edge LLM Gateway config for the 2-box Strix Halo PoC.
 #
 # This is the gateway config that runs on Halo-A (the CLIENT/EDGE box). It is
@@ -45,7 +80,7 @@ providers:
         - name: anthropic/claude-opus-4.6
           api_format: anthropic
           reasoning_family: qwen3
-          provider_model_id: ANTHROPIC_MODEL_ID
+          provider_model_id: claude-opus-4-20250514
           backend_refs:
             # FRONTIER tier: real external Anthropic public API (no local hop).
             # Uses the shared anthropic_api_cluster (api.anthropic.com:443 + TLS).
@@ -61,7 +96,7 @@ providers:
             completion_per_1m: 7.2
             cached_input_per_1m: 0.45
           external_model_ids:
-            anthropic: ANTHROPIC_MODEL_ID
+            anthropic: claude-opus-4-20250514
         - name: google/gemini-2.5-flash-lite
           reasoning_family: qwen3
           provider_model_id: qwen2.5:7b
@@ -1653,6 +1688,14 @@ routing:
             - model: google/gemini-3.1-pro
               use_reasoning: true
               reasoning_effort: high
+            - model: qwen/qwen3.5-rocm
+              use_reasoning: false
+          algorithm:
+            type: session_aware
+            session_aware:
+              base_method: static
+              tool_loop_hard_lock: true
+              context_portability_hard_lock: true
           plugins:
             - type: router_replay
               configuration:
@@ -1742,27 +1785,10 @@ routing:
                           name: creative_request_markers
                         - type: embedding
                           name: creative_tasks
-          # MULTI-CANDIDATE SELECTION DEMO: this decision intentionally offers
-          # two candidates (a datacenter complex tier + an edge medium tier) so
-          # runtime selection does NOT short-circuit to `single`. The
-          # multi_factor algorithm scores candidates on quality/latency/cost/load
-          # (dependency-free; no pretrained model needed, unlike session_aware).
           modelRefs:
             - model: google/gemini-3.1-pro
               use_reasoning: true
               reasoning_effort: high
-            - model: google/gemini-2.5-flash-lite
-              use_reasoning: false
-          algorithm:
-            type: multi_factor
-            multi_factor:
-              weights:
-                quality: 0.4
-                latency: 0.2
-                cost: 0.2
-                load: 0.2
-              latency_percentile: 95
-              on_no_candidates: cheapest
           plugins:
             - type: router_replay
               configuration:
@@ -2354,6 +2380,14 @@ routing:
           modelRefs:
             - model: qwen/qwen3.5-rocm
               use_reasoning: false
+            - model: google/gemini-3.1-pro
+              use_reasoning: true
+          algorithm:
+            type: session_aware
+            session_aware:
+              base_method: static
+              tool_loop_hard_lock: true
+              context_portability_hard_lock: true
           plugins:
             - type: router_replay
               configuration:
@@ -2371,6 +2405,14 @@ routing:
           modelRefs:
             - model: qwen/qwen3.5-rocm
               use_reasoning: false
+            - model: google/gemini-3.1-pro
+              use_reasoning: true
+          algorithm:
+            type: session_aware
+            session_aware:
+              base_method: static
+              tool_loop_hard_lock: true
+              context_portability_hard_lock: true
           plugins:
             - type: router_replay
               configuration:
@@ -2408,7 +2450,7 @@ global:
                 quality_gap_threshold: 0.1
                 normalize_scores: true
             session_aware:
-                base_method: knn
+                base_method: static
                 tool_loop_hard_lock: true
                 context_portability_hard_lock: true
     services:

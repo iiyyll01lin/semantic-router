@@ -198,12 +198,46 @@ fi
 ln -sfn "../../strix-halo-poc/models" "${RENDER_DIR}/models"
 echo "    models dir symlinked: ${RENDER_DIR}/models -> ../../strix-halo-poc/models (shared pre-staged single-box dir)"
 
-sed "s/HALO_B_IP/${HALO_B_IP}/g" "${CONFIG_TEMPLATE}" > "${RENDERED_CONFIG}"
-if grep -q "HALO_B_IP" "${RENDERED_CONFIG}"; then
-  echo "ERROR: HALO_B_IP placeholder still present after rendering ${RENDERED_CONFIG}" >&2
-  exit 1
+# The committed yaml also keeps a literal ANTHROPIC_MODEL_ID placeholder for the
+# real id sent to the Anthropic public API (the logical name
+# anthropic/claude-opus-4.6 used by routing/decisions is unaffected). Default to
+# the pinned Opus id; override via the ANTHROPIC_MODEL_ID env to pin another.
+ANTHROPIC_MODEL_ID="${ANTHROPIC_MODEL_ID:-claude-opus-4-20250514}"
+sed -e "s/HALO_B_IP/${HALO_B_IP}/g" \
+  -e "s/ANTHROPIC_MODEL_ID/${ANTHROPIC_MODEL_ID}/g" \
+  "${CONFIG_TEMPLATE}" > "${RENDERED_CONFIG}"
+for placeholder in HALO_B_IP ANTHROPIC_MODEL_ID; do
+  if grep -q "${placeholder}" "${RENDERED_CONFIG}"; then
+    echo "ERROR: ${placeholder} placeholder still present after rendering ${RENDERED_CONFIG}" >&2
+    exit 1
+  fi
+done
+echo "    rendered: ${RENDERED_CONFIG} (ANTHROPIC_MODEL_ID=${ANTHROPIC_MODEL_ID})"
+
+# The FRONTIER/PREMIUM tier (anthropic/claude-opus-4.6) now calls the real
+# external Anthropic public API instead of a local mock. ANTHROPIC_API_KEY is an
+# auto-passthrough env in `vllm-sr serve`, so we only need it exported on the
+# host here. This check is non-fatal: the local tiers (small/datacenter) still
+# work without it; only premium/frontier requests would fail.
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "WARNING: ANTHROPIC_API_KEY is not set."
+  echo "    The frontier/premium tier (anthropic/claude-opus-4.6) will FAIL"
+  echo "    without it -- it now calls the real Anthropic public API."
+  echo "    Halo-A also needs outbound HTTPS egress to api.anthropic.com:443."
+  echo "    Local tiers (small -> Halo-A Ollama, datacenter -> Halo-B Ollama)"
+  echo "    still work. To enable premium: export ANTHROPIC_API_KEY=sk-ant-..."
 fi
-echo "    rendered: ${RENDERED_CONFIG}"
+
+# Provision a demo dashboard admin so the observability UI (status / monitoring
+# / tracing) is viewable without a manual first-run bootstrap. These are
+# auto-passthrough envs in `vllm-sr serve`, and the dashboard's
+# EnsureBootstrapAdmin is idempotent (it skips creation if the account already
+# exists), so this is safe to run against an already-bootstrapped DB -- no
+# volume wipe needed. Override any of them via the environment for non-demo use.
+export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-admin@demo.local}"
+export DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-vllmsr-demo}"
+export DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-Admin}"
+echo "    dashboard admin provisioned: ${DASHBOARD_ADMIN_EMAIL} (password hidden; override via DASHBOARD_ADMIN_PASSWORD)"
 
 echo "==> [6/6] Serving the gateway with the rendered config (platform amd)"
 # Keep the mmBERT/embedding classifiers on CPU so the iGPU is reserved for the

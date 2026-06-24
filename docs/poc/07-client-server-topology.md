@@ -96,6 +96,10 @@ For the 2-box Strix Halo PoC, adopt **Design A (edge-gateway)**:
 
 In [poc-client-edge.yaml](../../deploy/recipes/strix-halo-2box/poc-client-edge.yaml) this maps to splitting `backend_refs[].endpoint` into two halves: edge-tier models point at the local `ollama:11434`, datacenter-tier models point at `${HALO_B_IP}:11434`; the listener binds `0.0.0.0:8899` so the app can reach the gateway over the network. This config reuses the very same `routing.decisions` as the single-box [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml); only the backend addresses differ.
 
+frontier/premium 那一條（`anthropic/claude-opus-4.6`)現在接到**真實的 Anthropic 公有 API**（`api_format: anthropic` + `base_url: https://api.anthropic.com`),不再是本地 `llm-katan` mock。Envoy 會自動生成共用的 `anthropic_api_cluster`（`api.anthropic.com:443` + TLS),routing 完全沿用——`premium_legal` decision 仍把 legal/high-risk 導向同一個 model 名稱。這形成「本地小模型(Halo-A)+ 本地大模型(Halo-B)+ 雲端 frontier」的混合部署;唯一新增的需求是 Halo-A 要有 `ANTHROPIC_API_KEY` 與對外 443 egress（見第 5 節）。
+
+The frontier/premium branch (`anthropic/claude-opus-4.6`) now points at the **real Anthropic public API** (`api_format: anthropic` + `base_url: https://api.anthropic.com`), no longer the local `llm-katan` mock. Envoy auto-generates the shared `anthropic_api_cluster` (`api.anthropic.com:443` + TLS), and routing is reused verbatim—the `premium_legal` decision still steers legal/high-risk traffic to the same model name. This yields a hybrid deployment of "local small models (Halo-A) + local big models (Halo-B) + cloud frontier"; the only new requirement is that Halo-A has `ANTHROPIC_API_KEY` and outbound 443 egress (see section 5).
+
 對映回 AMD 簡報（見 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)）：Halo-A 的閘道**就是** `LLM Gateway` 與 `Intelligent Token Routing`——`Local Tokens → 本地小模型`（Halo-A 本機，0 跳）、`Premium Tokens → Frontier`（上雲），而升級到 Halo-B 大模型對映 `Local Tokens → MI350P AMD Servers`。整張分流圖原封不動地落在這兩台盒子上。
 
 Mapping back to the AMD deck (see [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md)): the gateway on Halo-A **is** the `LLM Gateway` and `Intelligent Token Routing`—`Local Tokens → local small models` (on Halo-A, 0 hops), `Premium Tokens → Frontier` (to cloud), while escalation to Halo-B's big models maps to `Local Tokens → MI350P AMD Servers`. The entire routing diagram lands unchanged on these two boxes.
@@ -119,10 +123,10 @@ flowchart TD
         BigModels["Plain Ollama 0.0.0.0:11434: big models (qwen2.5:14b, qwen3:14b, qwen2.5:32b)"]
     end
 
-    Cloud["Frontier cloud API or llm-katan mock"]
+    Cloud["Anthropic public API (api.anthropic.com:443, claude-opus-4.6)"]
 
     Envoy -->|"escalated hard request to HALO_B_IP:11434"| BigModels
-    Envoy -->|"premium / frontier"| Cloud
+    Envoy -->|"premium / frontier (HTTPS + ANTHROPIC_API_KEY)"| Cloud
 ```
 
 ---
@@ -146,6 +150,10 @@ Continuing the series' honest split (section 12 of [02-poc-plan.md](02-poc-plan.
   For the gateway to accept connections from an app on the other end of the network, the listener address must be `0.0.0.0` (see `listeners[].address: 0.0.0.0` in [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)), not loopback only.
 - **要開的埠 / Ports to open** — Halo-A 的閘道入口 `8899`（OpenAI 相容入站）、Halo-B 的 Ollama `11434`。請確認 Halo-A 容器內的 Envoy 真的能連到 `<HALO_B_IP>:11434`（主機路由／防火牆）。
   Port `8899` on Halo-A (the gateway's OpenAI-compatible inbound) and port `11434` on Halo-B (Ollama). Verify that Envoy inside the Halo-A container can actually reach `<HALO_B_IP>:11434` (host routing and firewall).
+- **Halo-A 需對外 HTTPS egress 到 `api.anthropic.com:443` + 金鑰 / Halo-A needs outbound HTTPS egress to `api.anthropic.com:443` plus a key** — frontier/premium 那一層現在打真實 Anthropic 公有 API,所以 Halo-A 必須能對外連到 `api.anthropic.com:443`（防火牆／容器允許出向 HTTPS),並在 serve 前設好 `export ANTHROPIC_API_KEY=sk-ant-...`(`vllm-sr serve` 會自動帶進容器)。這只影響 Halo-A,完全不碰 Halo-B;缺金鑰時本地層仍可運作,只有 premium 請求會失敗。
+  The frontier/premium tier now calls the real Anthropic public API, so Halo-A must be able to reach `api.anthropic.com:443` outbound (firewall/container allows egress HTTPS), with `export ANTHROPIC_API_KEY=sk-ant-...` set before serving (`vllm-sr serve` auto-injects it into the container). This affects Halo-A only, never Halo-B; without the key the local tiers still work and only premium requests fail.
+- **金鑰只在 host env / router 注入,log 預設遮蔽,trace 不含 auth / The key lives only in host env and router injection; logs are redacted by default and traces carry no auth** — `ANTHROPIC_API_KEY` 只存在於 Halo-A 的 host 環境變數,由 router 在送往 Anthropic 時以 header mutation 注入 `x-api-key`(不寫進 Envoy 設定檔)。debug 層的請求/回應 dump 走深拷貝遮蔽(`x-api-key`/`authorization`/...→ `[REDACTED]`,見 [response_log_redaction.go](../../src/semantic-router/pkg/extproc/response_log_redaction.go)),分散式 tracing 只注入 W3C trace context、不帶任何憑證。
+  `ANTHROPIC_API_KEY` exists only as a host environment variable on Halo-A; the router injects it as the `x-api-key` header via header mutation when forwarding to Anthropic (never written into the Envoy config). Debug-level request/response dumps are masked through a deep copy (`x-api-key`/`authorization`/... → `[REDACTED]`, see [response_log_redaction.go](../../src/semantic-router/pkg/extproc/response_log_redaction.go)), and distributed tracing injects only the W3C trace context, carrying no credentials.
 
 ---
 
@@ -223,6 +231,92 @@ Dashboard screenshots (Status/Monitoring/Tracing at `:8700`) were **not** captur
 延續第 5 節：本節是兩台 gfx1151 APU 上的**拓樸／路由／成本**證據，**不是** Instinct 效能數字。真實機群效能與 TCO 仍由「先量測再模擬」的 fleet-sim 外推補上（見第 5 節與 [02-poc-plan.md](02-poc-plan.md) 第 12 節）。
 
 Continuing section 5: this section is **topology/routing/cost** evidence on two gfx1151 APUs, **not** Instinct performance numbers. Real fleet performance and TCO still come from the "measure-then-simulate" fleet-sim extrapolation (see section 5 and section 12 of [02-poc-plan.md](02-poc-plan.md)).
+
+### 6.6 第二輪：儀表板管理員、多候選、fleet-sim / Second round: dashboard admin, multi-candidate, fleet-sim (measured-on 2026-06-23)
+
+> 一句話框架：第一輪（6.1–6.5）留下三個缺口——儀表板無法登入、選擇演算法未實證、fleet-sim 尚未接真實 replay。本輪在同一對 gfx1151 盒子上補強這些缺口，並**誠實**標出哪些成立、哪些仍未證實。
+> One-line framing: the first round (6.1–6.5) left three gaps—the dashboard could not be logged into, the selection algorithm was unproven, and fleet-sim was not yet fed by real replay. This round closes those on the same pair of gfx1151 boxes and **honestly** marks what holds versus what remains unproven.
+
+#### 6.6.1 儀表板管理員已佈建 / Dashboard admin now provisioned
+
+本輪透過新的 `DASHBOARD_ADMIN_*` 環境變數直通（加進 `vllm-sr serve` 的 passthrough allowlist），由 [client-bring-up.sh](../../deploy/recipes/strix-halo-2box/client-bring-up.sh) 在 serve 前佈建一組 demo 管理員 **admin@demo.local**（密碼隱藏，預設 `vllmsr-demo`，可用 `DASHBOARD_ADMIN_PASSWORD` 覆寫）。dashboard 的 `EnsureBootstrapAdmin` 具冪等性，對已 bootstrap 的資料庫重跑也安全，**不需清空 volume**。**實測**：登入後 `/status`、`/monitoring`、`/tracing` 三個觀測頁面現在皆可進入——第一輪「無法登入」的缺口已解除。
+
+This round forwards the new `DASHBOARD_ADMIN_*` env vars (added to the `vllm-sr serve` passthrough allowlist), so [client-bring-up.sh](../../deploy/recipes/strix-halo-2box/client-bring-up.sh) provisions a demo admin **admin@demo.local** before serving (password hidden; default `vllmsr-demo`, override via `DASHBOARD_ADMIN_PASSWORD`). The dashboard's `EnsureBootstrapAdmin` is idempotent and safe to re-run against an already-bootstrapped database, so **no volume wipe is needed**. **Measured**: after login, the `/status`, `/monitoring`, and `/tracing` observability pages are now all reachable—the first round's "cannot log in" gap is resolved.
+
+#### 6.6.2 多候選選擇 — 已知落差（未證實）/ Multi-candidate selection — KNOWN GAP (unproven)
+
+本輪給 `reasoning_deep` decision 加了第二個候選（`google/gemini-2.5-flash-lite`，與既有的 `google/gemini-3.1-pro` 並列）並掛上 `algorithm: type: multi_factor`。**實測（成立的部分）**：啟動日誌出現 `Registered algorithm: multi_factor (tier=supported, dependencies=none)`，且 hard prompt 仍正確路由——困難推理 → `reasoning_deep` → `google/gemini-3.1-pro`（Halo-B 資料中心）；簡單事實 → `fast_qa` → `qwen/qwen3.5-rocm`（Halo-A 邊緣）。
+
+This round gave the `reasoning_deep` decision a second candidate (`google/gemini-2.5-flash-lite` alongside the existing `google/gemini-3.1-pro`) plus an `algorithm: type: multi_factor` block. **Measured (what holds)**: the startup log shows `Registered algorithm: multi_factor (tier=supported, dependencies=none)`, and the hard prompt still routes correctly—hard reasoning → `reasoning_deep` → `google/gemini-3.1-pro` (Halo-B datacenter); easy factual → `fast_qa` → `qwen/qwen3.5-rocm` (Halo-A edge).
+
+**但執行期遙測並未證實 multi_factor 真的執行了候選比較（誠實落差）/ But runtime telemetry did NOT confirm multi_factor actually executed a candidate comparison (honest gap)**：即使在 2–3 個命中 `reasoning_deep` 的 hard 請求後（`llm_decision_match_total{decision_name="reasoning_deep"}=2`），選擇計數器 `llm_model_selection_total{method="multi_factor"}` 仍維持 **0**，也沒有任何選擇方法的 response header 被送出；請求最終解析到第一個候選，且 method 為空（**不是** `single`）。結論：多候選設定與 multi_factor 註冊都到位，路由也正確抵達 `reasoning_deep`，但**沒有任何執行期證據顯示 multi_factor 跑完一次候選比較**。此項記為**已知落差／尚未證實**，不是成功；後續調查見 tech-debt [TD049](../agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md)。
+
+Even after 2–3 hard requests that matched `reasoning_deep` (`llm_decision_match_total{decision_name="reasoning_deep"}=2`), the selection counter `llm_model_selection_total{method="multi_factor"}` stayed **0**, and no selection-method response header was emitted; the request resolved to the first candidate with an empty method (**not** `single`). Conclusion: the multi-candidate config and the `multi_factor` registration are both in place and routing correctly reaches `reasoning_deep`, but there is **no runtime evidence that multi_factor ran a candidate comparison to completion**. This is recorded as a **KNOWN GAP / unproven**, not a success; follow-up investigation is tracked in tech-debt [TD049](../agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md).
+
+#### 6.6.3 Fleet-sim TCO closer（管線示範，非 Instinct 校準）/ Fleet-sim TCO closer (pipeline demo, NOT Instinct-calibrated)
+
+新增的 [export-replay-trace.sh](../../deploy/recipes/strix-halo-2box/export-replay-trace.sh) 把閘道唯讀的 `GET :8899/v1/router_replay` 分頁匯出、重塑成 fleet-sim 的 `semantic_router` JSONL（把 `completion_tokens` 改名為 `generated_tokens`、RFC3339 轉 epoch、濾掉 null token 列），共 **396 列**可用 trace。接著跑 fleet-sim：
+
+The new [export-replay-trace.sh](../../deploy/recipes/strix-halo-2box/export-replay-trace.sh) pages the gateway's read-only `GET :8899/v1/router_replay`, reshapes it into fleet-sim's `semantic_router` JSONL (renames `completion_tokens` → `generated_tokens`, RFC3339 → epoch, drops null-token rows), yielding **396 usable trace rows**. Then fleet-sim is run:
+
+```bash
+BASE_URL=http://localhost:8899 OUT=poc-trace.jsonl bash export-replay-trace.sh
+pip install -e ../../../src/fleet-sim
+python3 ../../../src/fleet-sim/examples/semantic_router_trace_replay.py poc-trace.jsonl selected_model
+```
+
+**實測（管線輸出，預設 NVIDIA profile）/ Measured (pipeline output, default NVIDIA profile)**：
+
+| 指標 / Metric | 值 / Value |
+| --- | --- |
+| 重放請求數 / Requests replayed | 396 |
+| 機群 / Fleet | 28 GPUs = 20× A100-80GB + 8× A10G |
+| 年成本 / Cost | ~$458K/yr |
+| P99 TTFT | 8.1 ms |
+| SLO | 100.0% |
+
+**誠實警語（必載）/ Honest caveat (required)**：fleet-sim 的 GPU pool 是**硬編碼的 NVIDIA**（`a100`/`a10g`），所以上面的 `$/yr` 與 GPU 數量是**以預設 profile 跑出的管線示範，並非 Instinct/MI350P 校準的 TCO**。延續第 5 節與第 6.5 節的 gfx1151-非-Instinct 切分；校準 MI350P profile 記為後續 tech-debt [TD048](../agent/tech-debt/td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md)。
+
+fleet-sim's GPU pools are **hardcoded NVIDIA** (`a100`/`a10g`), so the `$/yr` and GPU counts above are a **pipeline demonstration with default profiles, NOT an Instinct/MI350P-calibrated TCO**. This continues the gfx1151-not-Instinct split of sections 5 and 6.5; calibrating an MI350P profile is tracked as follow-up tech-debt [TD048](../agent/tech-debt/td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md).
+
+#### 6.6.4 WAN 延遲對比 — 待使用者執行 / WAN-latency contrast — PENDING (to be run by user)
+
+第 6.3 節已量到 LAN 上跨盒子那一跳僅 ~0.2 ms；要讓邊緣閘道的優勢在 WAN 下被量化，新增了 [wan-latency-experiment.sh](../../deploy/recipes/strix-halo-2box/wan-latency-experiment.sh)（在 Halo-B 以 `tc netem` 注入 0/20/50 ms 延遲後重量網路跳，含 cleanup trap）。本輪**未執行**：它需要對 Halo-B 的互動式 SSH + sudo（`tc netem`），而本盒子尚未設好金鑰式 SSH（非互動 preflight 以 `Permission denied (publickey,password)` 失敗）。**標記為待執行**——請使用者先 `ssh-copy-id test001@10.96.28.126`（並允許 `tc` 免密 sudo），再執行 `HALO_B_IP=10.96.28.126 HALO_B_SSH=test001@10.96.28.126 bash deploy/recipes/strix-halo-2box/wan-latency-experiment.sh`。
+
+Section 6.3 already measured the cross-box hop at only ~0.2 ms on the LAN; to quantify the edge-gateway advantage under a WAN, [wan-latency-experiment.sh](../../deploy/recipes/strix-halo-2box/wan-latency-experiment.sh) was added (it injects 0/20/50 ms via `tc netem` on Halo-B and re-measures the hop, with a cleanup trap). It was **not run** this round: it needs interactive SSH + sudo (`tc netem`) on Halo-B, which is not key-based yet (the non-interactive preflight failed with `Permission denied (publickey,password)`). **Marked PENDING / to be run by the user**—set up `ssh-copy-id test001@10.96.28.126` (with passwordless sudo for `tc`), then run `HALO_B_IP=10.96.28.126 HALO_B_SSH=test001@10.96.28.126 bash deploy/recipes/strix-halo-2box/wan-latency-experiment.sh`.
+
+#### 6.6.5 截圖與證據 / Screenshots and evidence
+
+本輪的儀表板截圖（登入後的 `/status`、`/monitoring`、`/tracing`）由另一個工作分支**另行擷取至本機** `.agent-harness/experiments/2box-topology/screenshots/`，**不**進版控（屬本機證據，非倉庫資產）。本輪其餘證據（bring-up 日誌、header dump、export 與 fleet-sim 輸出）見 `.agent-harness/experiments/2box-topology/phase2/`。
+
+This round's dashboard screenshots (post-login `/status`, `/monitoring`, `/tracing`) are captured **separately to the local** `.agent-harness/experiments/2box-topology/screenshots/` by a parallel effort and are **not** committed (local evidence, not a repo asset). The rest of this round's evidence (bring-up log, header dumps, export and fleet-sim output) lives under `.agent-harness/experiments/2box-topology/phase2/`.
+
+#### 6.6.6 選擇演算法落差的根因 + 如何真的跑起 session_aware / Root cause of the selection gap, and how to actually engage session_aware
+
+> 一句話框架：6.6.2 留下的「選擇演算法沒被執行」是**設定假象**，不是 bug——選擇方法有兩道短路會讓設定看起來生效、實際卻走 static。本節把根因講清楚，並給出讓 `session_aware` 真的執行的最小設定與驗證方法。
+> One-line framing: the "selection algorithm never ran" gap from 6.6.2 is a **config illusion**, not a bug—two short-circuits make a configured method look active while routing actually falls back to static. This section pins the root cause and gives the minimal config plus verification that makes `session_aware` actually run.
+
+根因有兩道短路（皆已對源碼確認）/ The root cause is two short-circuits (both confirmed against source):
+
+- **單一候選會在選擇前就短路 / A single-candidate decision short-circuits before selection** — 當一個 decision 只有一個 `modelRefs`，`selectModelFromCandidates`（[req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go) ~L86-90）直接回傳該候選、method 標為 `single`，**根本不進選擇演算法**：`session_aware` 不會跑、不會掛上 `SessionPolicy`、`x-vsr-session-phase` 永遠是空的。
+  When a decision has only one `modelRefs`, `selectModelFromCandidates` ([req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go) ~L86-90) returns that candidate with method `single` and **never enters the selection algorithm**: `session_aware` does not run, no `SessionPolicy` is attached, and `x-vsr-session-phase` stays empty.
+- **全域 `model_selection.method` 對每決策路由被忽略 / The global `model_selection.method` is ignored for per-decision routing** — 就算有多個候選，`getSelectionMethod`（[req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go) ~L448-455）**只**用每決策的 `algorithm.Type` 去查 `selectionMethodByAlgorithmType`（[req_filter_classification_runtime.go](../../src/semantic-router/pkg/extproc/req_filter_classification_runtime.go)），其餘一律 fallback 到 `MethodStatic`，**完全不讀** `global.router.model_selection.method`。所以只設全域 method 是**靜默的死設定**——無錯誤、無警告（直到 Part 1 啟動警告落地），路由其實走 static。
+  Even with multiple candidates, `getSelectionMethod` ([req_filter_classification.go](../../src/semantic-router/pkg/extproc/req_filter_classification.go) ~L448-455) maps **only** the per-decision `algorithm.Type` via `selectionMethodByAlgorithmType` ([req_filter_classification_runtime.go](../../src/semantic-router/pkg/extproc/req_filter_classification_runtime.go)) and otherwise falls back to `MethodStatic`; it **never reads** `global.router.model_selection.method`. So setting only the global method is **silent dead config**—no error, no warning (until the Part 1 startup warning lands), and routing quietly runs static. 這個死設定足跡記為 tech-debt [TD050](../agent/tech-debt/td-050-global-model-selection-method-ignored.md)，並根因化 6.6.2 觀察到的 [TD049](../agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md)。This dead-config footgun is tracked as tech-debt [TD050](../agent/tech-debt/td-050-global-model-selection-method-ignored.md) and root-causes the [TD049](../agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md) observation from 6.6.2.
+
+要真的讓 `session_aware` 執行，**每個**多候選 decision 需同時滿足兩點：(1) 重疊的 `modelRefs`（>=2 個候選），(2) 自己的 `algorithm: {type: session_aware, session_aware: {...}}` 區塊。實驗設定見 [experiments/session-aware-multicandidate.yaml](../../deploy/recipes/strix-halo-2box/experiments/session-aware-multicandidate.yaml)（由平行作業維護，請以路徑參考、勿改）。
+
+To actually engage `session_aware`, **each** multi-candidate decision must satisfy both: (1) overlapping `modelRefs` (>=2 candidates), and (2) its own `algorithm: {type: session_aware, session_aware: {...}}` block. The experiment config is [experiments/session-aware-multicandidate.yaml](../../deploy/recipes/strix-halo-2box/experiments/session-aware-multicandidate.yaml) (maintained by a parallel effort—reference it by path, do not edit it).
+
+驗證方法 / How to verify:
+
+- **讀 `x-vsr-session-phase` 回應 header / Read the `x-vsr-session-phase` response header** — 每個回應應帶非空的階段值（`user_turn` 或 `tool_loop`）；空值代表又走了上面的短路。
+  Each response should carry a non-empty phase (`user_turn` or `tool_loop`); an empty value means a short-circuit above was hit again.
+- **在 `:9190` 指標確認 method=session_aware / Confirm method=session_aware in the `:9190` metrics** — `llm_model_selection_total{method="session_aware"}` 應隨命中該 decision 的請求而 >0（對照 6.6.2 中 multi_factor 維持 0 的失敗樣態）。
+  `llm_model_selection_total{method="session_aware"}` should climb above 0 as requests hit that decision (contrast with the multi_factor-stayed-0 failure mode in 6.6.2).
+
+**實測（成立的部分）/ Measured (what holds)**：補上重疊候選 + 每決策 `algorithm` 區塊後，選擇方法變成 `session_aware`，`x-vsr-session-phase` 在 64/64 請求上皆有值（`user_turn` / `tool_loop`），session-policy 違規計數從 16/8 降到 0。**誠實警語 / Honest caveat**：該輪流量塌縮到**單一**服務模型，所以「0 違規」本身**不**證明鎖真的擋下了一次實際換模——只證明 method 確實被執行、phase header 確實被填上。延續第 5、6.5 節的誠實切分：這是**選擇路徑被正確啟動**的證據，不是 session-lock 在真實換模壓力下的證明。
+
+**Measured (what holds)**: after adding the overlapping candidates plus the per-decision `algorithm` block, the selection method became `session_aware`, `x-vsr-session-phase` populated on 64/64 requests (`user_turn` / `tool_loop`), and session-policy violation counters dropped from 16/8 to 0. **Honest caveat**: that run collapsed to a **single** served model, so the 0 violations alone do **not** prove a lock prevented a real model switch—only that the method executed and the phase header was filled. Continuing the honest split of sections 5 and 6.5: this is evidence that **the selection path was correctly engaged**, not proof that the session lock holds under real switch pressure.
 
 ---
 

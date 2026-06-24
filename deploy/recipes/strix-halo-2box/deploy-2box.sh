@@ -38,6 +38,11 @@
 #                    Auto-passed into the gateway container by `vllm-sr serve`.
 #                    Requires Halo-A outbound HTTPS egress to api.anthropic.com:443.
 #                    If unset, local tiers still work; premium requests fail.
+#   ANTHROPIC_MODEL_ID (optional) the real Anthropic model id sent to the public
+#                    API for the frontier/premium tier. Default:
+#                    claude-opus-4-20250514. client-bring-up.sh renders it into
+#                    the config; the logical name anthropic/claude-opus-4.6 used
+#                    by routing/decisions is unaffected.
 #   DASHBOARD_ADMIN_EMAIL     (optional) demo dashboard admin email.
 #                    Default: admin@demo.local (set in client-bring-up.sh).
 #   DASHBOARD_ADMIN_PASSWORD  (optional) demo dashboard admin password.
