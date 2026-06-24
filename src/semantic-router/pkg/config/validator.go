@@ -226,5 +226,9 @@ func validateModelSelectionConfig(cfg *RouterConfig) error {
 		return err
 	}
 	warnModelSwitchGateEnforceWithoutCostSignals(cfg.ModelSelection)
+	// cfg.Decisions is in scope here (promoted from the embedded
+	// IntelligentRouting), so this is the validation pass that can see both the
+	// global model_selection and the decisions list.
+	warnGlobalModelSelectionMethodIgnored(cfg)
 	return nil
 }

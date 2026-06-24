@@ -74,6 +74,7 @@ Every debt entry should include:
 - [TD047 PII Registry Alias Auto-Download Target Is Missing pii_type_mapping.json](td-047-pii-registry-alias-autodownload-missing-mapping.md)
 - [TD048 No First-Class Router-Replay to Fleet-Sim Exporter, and Fleet-Sim GPU Pools Are Hardcoded NVIDIA So Instinct TCO Is Uncalibrated](td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md)
 - [TD049 Multi-Candidate Decision Did Not Engage the Selection Algorithm at Runtime](td-049-multi-candidate-selection-not-engaged.md)
+- [TD050 Global model_selection.method Is Silently Ignored Unless a Decision Carries a Per-Decision Algorithm Block](td-050-global-model-selection-method-ignored.md)
 
 ## Retired Debt Policy
 

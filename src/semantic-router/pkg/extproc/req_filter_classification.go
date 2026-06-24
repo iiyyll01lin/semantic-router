@@ -445,6 +445,17 @@ func (r *OpenAIRouter) buildCacheAffinityContext(reqCtx *RequestContext, modelRe
 // getSelectionMethod determines which selection algorithm to use.
 // Per-decision algorithm is the primary configuration (aligned with looper pattern).
 // Defaults to static selection if no algorithm is specified.
+//
+// Intentional gap: the global global.router.model_selection.method
+// (config ModelSelection.Method) is deliberately NOT consulted here. Routing is
+// resolved purely from the per-decision algorithm.Type and falls back to
+// MethodStatic when it is absent. Falling back to the configured global method
+// instead would change routing for every existing config that relies on the
+// static default, so it is a reviewed/opt-in change rather than an autonomous
+// one. Config-validation surfaces this as a startup warning
+// (warnGlobalModelSelectionMethodIgnored in pkg/config) so the global method is
+// not silently dead config. Do not wire the global method in here without an
+// explicit gate (e.g. an opt-in flag) and maintainer review.
 func (r *OpenAIRouter) getSelectionMethod(algorithm *config.AlgorithmConfig) selection.SelectionMethod {
 	if algorithm != nil && algorithm.Type != "" {
 		if method, ok := selectionMethodByAlgorithmType[algorithm.Type]; ok {
