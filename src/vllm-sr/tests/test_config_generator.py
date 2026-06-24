@@ -270,6 +270,115 @@ routing:
         _cluster_by_name(rendered, "anthropic_api_cluster")
 
 
+def test_generate_envoy_config_adds_same_cluster_resilience_for_per_model(
+    tmp_path, monkeypatch
+):
+    """Per-model routes/clusters get same-cluster resilience: a retry_policy on
+    the route and outlier_detection + circuit_breakers on the cluster. This is
+    same-cluster resilience only, NOT cross-provider failover."""
+    rendered = _render_envoy_config(
+        tmp_path,
+        monkeypatch,
+        """
+version: v0.3
+listeners:
+  - name: "http-8899"
+    address: "0.0.0.0"
+    port: 8899
+providers:
+  defaults:
+    default_model: "test-model"
+  models:
+    - name: "test-model"
+      backend_refs:
+        - name: "primary"
+          endpoint: "host.docker.internal:8000"
+          protocol: "http"
+          weight: 100
+routing:
+  modelCards:
+    - name: "test-model"
+  decisions:
+    - name: "default-route"
+      description: "default route"
+      priority: 100
+      rules:
+        operator: "AND"
+        conditions: []
+      modelRefs:
+        - model: "test-model"
+          use_reasoning: false
+""",
+        extproc_host="localhost",
+        router_api_host="localhost",
+    )
+
+    # --- route retry_policy assertions ---
+    route_action = _model_route(rendered, "test-model")["route"]
+    retry_policy = route_action["retry_policy"]
+    assert retry_policy["retry_on"] == "5xx,gateway-error,reset,connect-failure"
+    assert retry_policy["num_retries"] == 2
+
+    # --- cluster outlier_detection / circuit_breakers assertions ---
+    cluster = _cluster_by_name(rendered, "test_model_cluster")
+    assert cluster["outlier_detection"]["consecutive_5xx"] == 5
+    thresholds = cluster["circuit_breakers"]["thresholds"][0]
+    assert thresholds["priority"] == "DEFAULT"
+    assert thresholds["max_retries"] >= retry_policy["num_retries"]
+
+
+def test_generate_envoy_config_adds_same_cluster_resilience_for_anthropic(
+    tmp_path, monkeypatch
+):
+    """The shared anthropic_api_cluster and its route get same-cluster
+    resilience (retry_policy + outlier_detection + circuit_breakers). This only
+    protects the same Anthropic upstream; it is NOT cross-provider failover."""
+    rendered = _render_envoy_config(
+        tmp_path,
+        monkeypatch,
+        """
+version: v0.3
+listeners:
+  - name: "http-8899"
+    address: "0.0.0.0"
+    port: 8899
+providers:
+  defaults:
+    default_model: "claude-test"
+  models:
+    - name: "claude-test"
+      api_format: "anthropic"
+routing:
+  modelCards:
+    - name: "claude-test"
+  decisions:
+    - name: "default-route"
+      description: "default route"
+      priority: 100
+      rules:
+        operator: "AND"
+        conditions: []
+      modelRefs:
+        - model: "claude-test"
+          use_reasoning: false
+""",
+        extproc_host="vllm-sr-router-container",
+        router_api_host="vllm-sr-router-container",
+    )
+
+    # --- route retry_policy assertions ---
+    route_action = _model_route(rendered, "claude-test")["route"]
+    assert route_action["cluster"] == "anthropic_api_cluster"
+    retry_policy = route_action["retry_policy"]
+    assert retry_policy["retry_on"] == "5xx,gateway-error,reset,connect-failure"
+    assert retry_policy["num_retries"] == 2
+
+    # --- cluster outlier_detection / circuit_breakers assertions ---
+    cluster = _cluster_by_name(rendered, "anthropic_api_cluster")
+    assert cluster["outlier_detection"]["consecutive_5xx"] == 5
+    assert cluster["circuit_breakers"]["thresholds"][0]["priority"] == "DEFAULT"
+
+
 def test_generate_envoy_config_uses_logical_dns_for_api_only_router_fallback(
     tmp_path, monkeypatch
 ):
