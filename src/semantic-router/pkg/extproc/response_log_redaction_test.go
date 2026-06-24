@@ -82,6 +82,43 @@ func TestRedactProcessingResponseMasksCredentialsAndKeepsOriginal(t *testing.T) 
 	}
 }
 
+// TestRedactProcessingResponseMasksAnthropicAPIKey is a focused regression
+// guard for the Anthropic credential header: the router injects the upstream
+// key under x-api-key, so a debug dump of the ext_proc mutation must mask it to
+// [REDACTED] in both the string Value and RawValue forms (CWE-532), while
+// leaving the original mutation sent to Envoy untouched.
+func TestRedactProcessingResponseMasksAnthropicAPIKey(t *testing.T) {
+	const keyValue = "sk-ant-secret-canary"
+	const keyRaw = "sk-ant-raw-canary"
+	resp := requestBodyResponseWithHeaders(
+		&core.HeaderValueOption{Header: &core.HeaderValue{Key: "x-api-key", Value: keyValue}},
+		&core.HeaderValueOption{Header: &core.HeaderValue{Key: "X-API-Key", RawValue: []byte(keyRaw)}},
+	)
+
+	redacted := redactResponseForLog(resp)
+	rm := responseHeaderMutation(redacted)
+
+	for _, opt := range rm.SetHeaders {
+		if opt.Header.Value != "" && opt.Header.Value != redactedHeaderValue {
+			t.Errorf("x-api-key Value not masked: %q", opt.Header.Value)
+		}
+		if len(opt.Header.RawValue) > 0 && string(opt.Header.RawValue) != redactedHeaderValue {
+			t.Errorf("x-api-key RawValue not masked: %q", opt.Header.RawValue)
+		}
+	}
+
+	dump := redactedResponseDump(redacted)
+	if strings.Contains(dump, "canary") {
+		t.Fatalf("redacted dump still contains the key: %s", dump)
+	}
+
+	// The original mutation (sent to Envoy) must still carry the real key.
+	origRM := responseHeaderMutation(resp)
+	if origRM.SetHeaders[0].Header.Value != keyValue {
+		t.Fatalf("original x-api-key was mutated: %q", origRM.SetHeaders[0].Header.Value)
+	}
+}
+
 func TestRedactProcessingResponseNilSafe(t *testing.T) {
 	if redactResponseForLog(nil) != nil {
 		t.Fatal("nil response must return nil")
