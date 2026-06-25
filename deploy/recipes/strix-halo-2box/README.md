@@ -184,6 +184,14 @@ This is the part that makes or breaks the two-box run.
      frontier/premium tier). Also `export ANTHROPIC_API_KEY=sk-ant-...` before
      serving — `vllm-sr serve` auto-injects it into the gateway container. If
      unset, local tiers still work and only premium requests fail.
+   - Halo-A outbound (optional, AMD premium): `llm-api.amd.com:443` for the
+     `amd/claude-opus-4.8` tier (AMD's Anthropic-compatible gateway). Set
+     `export AMD_OCP_APIM_KEY=<subscription-key>` before serving;
+     `client-bring-up.sh` renders it into the runtime config as the
+     `Ocp-Apim-Subscription-Key` header (the committed yaml holds only the
+     `__AMD_OCP_APIM_KEY__` placeholder, and the rendered copy under
+     `.vllm-sr-rendered/` is gitignored). If unset, every other tier still works
+     and only `amd/claude-opus-4.8` requests fail.
    - Halo-B: `11434` (the Ollama endpoint the gateway escalates to).
    The Envoy data-plane runs inside a container on Halo-A and must be able to
    reach `HALO_B_IP:11434`. Open the firewall on both boxes and confirm the two

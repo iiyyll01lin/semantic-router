@@ -203,8 +203,22 @@ echo "    models dir symlinked: ${RENDER_DIR}/models -> ../../strix-halo-poc/mod
 # anthropic/claude-opus-4.6 used by routing/decisions is unaffected). Default to
 # the pinned Opus id; override via the ANTHROPIC_MODEL_ID env to pin another.
 ANTHROPIC_MODEL_ID="${ANTHROPIC_MODEL_ID:-claude-opus-4-20250514}"
+# AMD premium tier (amd/claude-opus-4.8) auth: the Azure-APIM
+# Ocp-Apim-Subscription-Key, rendered from the AMD_OCP_APIM_KEY env var so the
+# secret is NEVER committed (the committed yaml holds only the
+# __AMD_OCP_APIM_KEY__ placeholder; this rendered copy lives under the gitignored
+# .vllm-sr-rendered/). Non-fatal when unset, like ANTHROPIC_API_KEY below: every
+# other tier still works and only amd/claude-opus-4.8 requests fail. `|` is the
+# sed delimiter so url/base64-style key characters (e.g. `/`) do not break it.
+AMD_OCP_APIM_KEY="${AMD_OCP_APIM_KEY:-}"
+if [ -z "${AMD_OCP_APIM_KEY}" ]; then
+  echo "WARNING: AMD_OCP_APIM_KEY is not set."
+  echo "    The amd/claude-opus-4.8 tier (AMD Anthropic gateway) will FAIL without it."
+  echo "    Other tiers still work. Enable it with: export AMD_OCP_APIM_KEY=<subscription-key>"
+fi
 sed -e "s/HALO_B_IP/${HALO_B_IP}/g" \
   -e "s/ANTHROPIC_MODEL_ID/${ANTHROPIC_MODEL_ID}/g" \
+  -e "s|__AMD_OCP_APIM_KEY__|${AMD_OCP_APIM_KEY}|g" \
   "${CONFIG_TEMPLATE}" > "${RENDERED_CONFIG}"
 for placeholder in HALO_B_IP ANTHROPIC_MODEL_ID; do
   if grep -q "${placeholder}" "${RENDERED_CONFIG}"; then

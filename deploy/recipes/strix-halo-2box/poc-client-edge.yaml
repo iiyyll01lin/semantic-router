@@ -18,6 +18,11 @@
 #   FRONTIER / PREMIUM tier (real external Anthropic public API, NOT a local mock):
 #     - anthropic/claude-opus-4.6  (provider_model_id claude-opus-4-20250514) -> https://api.anthropic.com
 #       Requires ANTHROPIC_API_KEY on Halo-A and outbound HTTPS egress to api.anthropic.com:443.
+#     - amd/claude-opus-4.8        (provider_model_id Claude-Opus-4.8)         -> https://llm-api.amd.com/Anthropic
+#       AMD Anthropic-compatible gateway (Azure APIM). Auth via the
+#       Ocp-Apim-Subscription-Key header, rendered from the AMD_OCP_APIM_KEY env
+#       var at serve time (placeholder committed; the rendered copy is gitignored).
+#       Requires outbound HTTPS egress from Halo-A to llm-api.amd.com:443.
 #
 # IMPORTANT: `HALO_B_IP` is a literal placeholder, NOT a resolvable host. The
 # docker-network DNS name `ollama` only resolves on the box that runs that
@@ -62,6 +67,35 @@ providers:
             cached_input_per_1m: 0.45
           external_model_ids:
             anthropic: ANTHROPIC_MODEL_ID
+        - name: amd/claude-opus-4.8
+          api_format: anthropic
+          reasoning_family: qwen3
+          provider_model_id: Claude-Opus-4.8
+          backend_refs:
+            # FRONTIER tier via AMD's Anthropic-compatible gateway (Azure APIM).
+            # Body is Anthropic Messages format; ResolveChatPath yields
+            # /Anthropic/v1/messages from base_url. The anthropic client sends
+            # anthropic-version: 2023-06-01 by default (matches the AMD curl).
+            # Auth is the Ocp-Apim-Subscription-Key header (NOT x-api-key),
+            # rendered from the AMD_OCP_APIM_KEY env var at serve time
+            # (placeholder committed; the rendered copy is gitignored). No
+            # api_key_env on purpose: with no Anthropic credential the router
+            # omits the hardcoded x-api-key header, so only the AMD subscription
+            # header is sent.
+            - name: amd_anthropic
+              base_url: https://llm-api.amd.com/Anthropic
+              provider: anthropic
+              type: anthropic
+              extra_headers:
+                Ocp-Apim-Subscription-Key: __AMD_OCP_APIM_KEY__
+              weight: 1
+          pricing:
+            currency: USD
+            prompt_per_1m: 1.8
+            completion_per_1m: 7.2
+            cached_input_per_1m: 0.45
+          external_model_ids:
+            anthropic: Claude-Opus-4.8
         - name: google/gemini-2.5-flash-lite
           reasoning_family: qwen3
           provider_model_id: qwen2.5:7b
@@ -138,6 +172,20 @@ routing:
             - tier:premium
             - cost:highest
             - specialty:legal
+        - name: amd/claude-opus-4.8
+          context_window_size: 262144
+          description: PREMIUM tier via AMD's Anthropic-compatible gateway (Claude Opus 4.8).
+          capabilities:
+            - legal_analysis
+            - policy_review
+            - high_risk_review
+          quality_score: 0.95
+          modality: text
+          tags:
+            - tier:premium
+            - cost:highest
+            - specialty:legal
+            - provider:amd
         - name: google/gemini-2.5-flash-lite
           context_window_size: 262144
           description: MEDIUM tier alias for low-cost verified explanation and correction tasks.
