@@ -562,6 +562,45 @@ Follow the demo script in section 8 of [02-poc-plan.md](02-poc-plan.md): send re
 
 Where savings come from: even when everything is served locally, the dashboard computes savings from the config `pricing` against an all-most-expensive-model baseline. For a fully offline demo of frontier escalation, replace the real cloud API with the mock server `llm-katan` (see [e2e/testing/llm-katan/README.md](../../e2e/testing/llm-katan/README.md)).
 
+### Bench 證據一鍵執行 / One-command Bench Evidence
+
+除了上面手動的 demo 動線，[run-bench.sh](../../deploy/recipes/strix-halo-poc/run-bench.sh) 把「尚未在本手冊其他處接線」的 bench 工具一次對運作中的 stack 跑完，並逐步對映 [02-poc-plan.md](02-poc-plan.md) 第 1 節的成功標準。關鍵原因：bench 工具的**預設** port 指向手動 dev 拓樸（直連 `:8000`、Envoy `:8801`、metrics `:9279`），但本 PoC 用 `vllm-sr serve`，listener 在 `:8899`、metrics 在 `:9190`（見 [consts.py](../../src/vllm-sr/cli/consts.py)），所以每次都得覆寫 port；這支 wrapper 已預設正確值。
+
+Beyond the manual demo flow above, [run-bench.sh](../../deploy/recipes/strix-halo-poc/run-bench.sh) runs the bench tools that are not otherwise wired in this runbook in one shot against the live stack, mapping each step onto the section-1 success criteria of [02-poc-plan.md](02-poc-plan.md). Key reason: the bench tools' **defaults** target the manual dev topology (direct `:8000`, Envoy `:8801`, metrics `:9279`), but this PoC uses `vllm-sr serve` with the listener on `:8899` and metrics on `:9190` (see [consts.py](../../src/vllm-sr/cli/consts.py)), so the ports must be overridden every time; this wrapper pre-wires the correct values.
+
+Port 對映 / Port mapping：
+
+| 用途 / Purpose | vllm-sr serve（本 PoC）/ this PoC | bench 預設 / bench default |
+| --- | --- | --- |
+| router 入口 `--base-url` / router entry | `:8899/v1`（listener）/ listener | `:8000/v1` |
+| `--metrics-url` | `:9190/metrics` | `:9279/metrics` |
+| 直連 baseline `--baseline-base-url` / direct baseline | 本地 Ollama `:11434/v1` / local Ollama | `:8090` 或 / or `:8000` |
+
+```bash
+# GA 證據（probe -> agentic -> cached-token）；baseline 用本地 Ollama 直連後端
+# GA evidence (probe -> agentic -> cached-token); baseline = the local Ollama direct backend
+BASELINE_BASE_URL=http://localhost:11434/v1 \
+  bash deploy/recipes/strix-halo-poc/run-bench.sh
+
+# 加跑「品質維持」：router vs 直連 Ollama 在推理資料集上的準確率（較重，需 bench dataset 依賴）
+# add quality retention: router-vs-direct accuracy on reasoning datasets (heavier, needs bench deps)
+BASELINE_BASE_URL=http://localhost:11434/v1 \
+  bash deploy/recipes/strix-halo-poc/run-bench.sh --with-reasoning
+```
+
+每步對映的成功標準 / What each step covers（[02-poc-plan.md](02-poc-plan.md) 第 1 節 / section 1）：
+
+| 步驟 / Step | 工具 / Tool | 成功標準 / Success criterion |
+| --- | --- | --- |
+| 1 GA 診斷 probe / GA diagnostic probe | [session_routing_branch_image_probe.py](../../bench/session_routing_branch_image_probe.py) | 路由可觀測性（`x-vsr-*` 標頭齊備）/ routing observability |
+| 2 agentic session 路由 / agentic session routing | [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) | 本地承載率 + 路由 + 額外開銷 / local ratio + routing + overhead |
+| 3 cached-token 上報 / cached-token reporting | [cache_token_probe.py](../../bench/cache_token_probe.py) | 語意快取／cached-token 證據 / semantic-cache evidence |
+| 4（選配 / opt-in）品質維持 / quality retention | [router_reason_bench.py](../../bench/router_reason_bench.py) | 升級請求品質不低於直連基準 / hard-request quality vs direct baseline |
+
+進階（wrapper 不自動跑）/ Advanced (not auto-run by the wrapper)：失敗復原需把 [openai_fault_proxy.py](../../bench/openai_fault_proxy.py) 夾在後端與 router 之間並重新 serve（只改 runtime config 會讓 Envoy 仍指向舊 backend cluster，見 [bench/README.md](../../bench/README.md)）；GA 證據包用 [session_routing_branch_image_benchmark.py](../../bench/session_routing_branch_image_benchmark.py) 把上面各步的輸出組成單一 gate。
+
+Advanced (not auto-run by the wrapper): failure recovery needs [openai_fault_proxy.py](../../bench/openai_fault_proxy.py) placed between the backend and the router with a re-serve (changing only the runtime config leaves Envoy on the old backend cluster, see [bench/README.md](../../bench/README.md)); the GA evidence bundle assembles the per-step outputs into one gate via [session_routing_branch_image_benchmark.py](../../bench/session_routing_branch_image_benchmark.py).
+
 ### Agentic 多輪 demo 指令 / Agentic Multi-turn Demo Commands
 
 單筆 Playground demo 之後，用 [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 對運作中的 router 打多輪 session 流量，證明 session 內 selected-model 連續性與 tool-loop 治理（對應 [04-dashboard-tour.md](04-dashboard-tour.md) POC Demo 動線第 6 步「Agentic 多輪 + ClawOS」與 [05-amd-strategy-alignment.md](05-amd-strategy-alignment.md) 的 Slide 34 OpenClaw 對齊）。

@@ -19,6 +19,7 @@ It uses the runbook's selected **approach C**: a single Ollama (ROCm) server on 
 | [`validate_poc_config.py`](validate_poc_config.py) | 離線 PyYAML 設定驗證器，本機即可跑（即本資料夾的 on-box 測試）。檢查模型解析、`default_model`、決策 `modelRefs`、決策 `rules` 的 signal 參照與 `provider_model_id`。/ An offline PyYAML config validator that runs on this box (the on-box test). Checks model resolution, `default_model`, decision `modelRefs`, decision-rule signal references, and `provider_model_id`. |
 | [`gen-dsl.sh`](gen-dsl.sh) | 由 `poc-strix.yaml` 產生並驗證 `poc-strix.dsl`（從 `src/semantic-router` 執行 `go run ./cmd/dsl decompile` 再 `validate`，需要 Go）。`.dsl` 是產生物，不入庫。/ Generates and validates `poc-strix.dsl` from `poc-strix.yaml` (runs `go run ./cmd/dsl decompile` then `validate` from `src/semantic-router`, requires Go). The `.dsl` is a generated artifact and is not committed. |
 | [`poc-probes.yaml`](poc-probes.yaml) | 校準 probe 套件：balance 的 13 條決策 probe 加上期望路由到 `security_guard` 的安全 probe。/ The calibration probe suite: the balance 13-decision probes plus security probes expecting the `security_guard` decision. |
+| [`run-bench.sh`](run-bench.sh) | 對運作中的 `vllm-sr serve` 堆疊一鍵跑 live bench 證據（GA 診斷 probe、agentic session 路由、cached-token、選配品質維持），預設正確 port（listener `:8899`、metrics `:9190`，baseline 本地 Ollama `:11434`），避開 bench 預設的手動 dev port。/ One-command live-bench evidence against the running `vllm-sr serve` stack (GA diagnostic probe, agentic session routing, cached-token, optional quality retention), pre-wired to the correct ports (listener `:8899`, metrics `:9190`, baseline local Ollama `:11434`), avoiding the bench manual-dev defaults. |
 | [`cpu-smoke.yaml`](cpu-smoke.yaml) / [`cpu-smoke.sh`](cpu-smoke.sh) | 免 GPU 的 CPU 端到端煙霧變體：安全 lane 與 `poc-strix.yaml` 完全相同，僅 providers/backends 改指向 `llm-katan` echo 後端（見下方 CPU 煙霧測試）。/ The GPU-free CPU end-to-end smoke variant: the security lane is identical to `poc-strix.yaml`, only providers/backends point at the `llm-katan` echo backend (see CPU smoke below). |
 | [`REHEARSAL.md`](REHEARSAL.md) | Strix Halo demo 前的彩排與 Go/No-Go 檢查表（ROCm、安全模型、DSL 驗證、bring-up、煙霧證據、dashboard）。/ The pre-demo rehearsal and Go/No-Go checklist for the Strix Halo (ROCm, security models, DSL validation, bring-up, smoke evidence, dashboard). |
 
@@ -76,6 +77,7 @@ The config and scripts are authored and statically validated on the dev box (Win
 | DSL 產生與驗證 / DSL generate and validate | Strix Halo 即時 / on-Strix-Halo live | `bash gen-dsl.sh`（decompile `poc-strix.yaml` -> `poc-strix.dsl` 再 validate）/ (decompile `poc-strix.yaml` -> `poc-strix.dsl` then validate) |
 | 啟動與冒煙 / serve and smoke | Strix Halo 即時 / on-Strix-Halo live | `bash bring-up.sh` 然後 / then `python smoke_test.py` |
 | 路由校準 / routing calibration | Strix Halo 即時 / on-Strix-Halo live | `router_calibration_loop.py --probes poc-probes.yaml` |
+| Live bench 證據 / live bench evidence | Strix Halo 即時 / on-Strix-Halo live | `BASELINE_BASE_URL=http://localhost:11434/v1 bash run-bench.sh`（選加 `--with-reasoning`）/ (optionally `--with-reasoning`) |
 
 即時驗證與校準的完整步驟見操作手冊第 7 與第 8 節。
 

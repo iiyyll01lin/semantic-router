@@ -23,6 +23,27 @@ A comprehensive benchmark suite for evaluating **semantic router** performance a
 pip install vllm-semantic-router-bench
 ```
 
+### Endpoints: `vllm-sr serve` stack vs manual dev
+
+The examples below use the **manual dev topology** defaults (direct backend
+`:8000`, Envoy `:8801`, metrics `:9279`). If you brought the stack up with the
+`vllm-sr serve` CLI (for example the Strix Halo PoC under
+`deploy/recipes/strix-halo-poc/`), the OpenAI-compatible listener is on
+**`:8899`** and Prometheus metrics on **`:9190`** (not `:9279`), and the direct
+backend is whatever you configured (for example a local Ollama on `:11434`).
+Override the flags accordingly:
+
+```bash
+--base-url http://127.0.0.1:8899/v1
+--metrics-url http://127.0.0.1:9190/metrics
+--baseline-base-url http://127.0.0.1:11434/v1
+```
+
+Or use the pre-wired `deploy/recipes/strix-halo-poc/run-bench.sh` wrapper, which
+runs the GA diagnostic probe, the agentic live benchmark, the cached-token
+probe, and (opt-in) the reasoning quality-retention comparison against those
+ports in one shot.
+
 ### Live Session-Aware Routing Benchmark
 
 Use the live benchmark when a router or Envoy stack is already running and you

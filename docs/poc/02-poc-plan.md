@@ -216,10 +216,14 @@ flowchart LR
 | 每模型成本 / per-model cost | Prometheus `llm_model_cost_total` |
 | 每 session 成本 / per-session cost | `llm_session_turn_cost`（[session_cost.go](../../src/semantic-router/pkg/observability/metrics/session_cost.go)） |
 | 路由分佈 / model distribution | Grafana model distribution 面板 / panel |
-| 快取命中率 / cache hit ratio | Prometheus cache hits/misses |
+| 快取命中率 / cache hit ratio | Prometheus cache hits/misses；cached-token 上報 [cache_token_probe.py](../../bench/cache_token_probe.py) / plus cached-token reporting via the probe |
 | 延遲 / latency | Grafana TTFT/TPOT P95 面板（auto-gen [grafana_dashboard_sections.py](../../src/vllm-sr/cli/templates/grafana_dashboard_sections.py)） |
 | 安全攔截 / security blocks | `pii_policy_denied`、`jailbreak_block` 錯誤原因 / error reasons |
 | 路由準確率 / routing accuracy | calibration loop（見下）/ calibration loop (below) |
+| 品質維持 / quality retention | router vs 直連後端在推理資料集上的準確率 [router_reason_bench.py](../../bench/router_reason_bench.py)（MMLU-Pro/GPQA/ARC/TruthfulQA，見 [bench/reasoning/](../../bench/reasoning/)）/ router-vs-direct accuracy on reasoning datasets |
+| 韌性／失敗復原 / resilience & recovery | 故障注入 [openai_fault_proxy.py](../../bench/openai_fault_proxy.py) + [agentic_routing_live_benchmark.py](../../bench/agentic_routing_live_benchmark.py) 的 session 復原率 / fault injection plus the benchmark's session-recovery rate |
+
+> 一鍵執行 / One command：上述 live bench（GA 診斷 probe、agentic session 路由、cached-token、選配品質維持）可用 [run-bench.sh](../../deploy/recipes/strix-halo-poc/run-bench.sh) 對運作中的 vllm-sr 堆疊一次跑完，已預設正確 port（listener `:8899`、metrics `:9190`，baseline 指向本地 Ollama `:11434`）。bench 工具的**預設** port 是手動 dev 拓樸（`:8000`/`:8801`/`:9279`），對 vllm-sr 堆疊需覆寫；細節見 [03-strix-halo-runbook.md](03-strix-halo-runbook.md) 第 9 節。/ The live benchmarks above can be run in one shot against the live vllm-sr stack via [run-bench.sh](../../deploy/recipes/strix-halo-poc/run-bench.sh), pre-wired to the correct ports (listener `:8899`, metrics `:9190`, baseline at the local Ollama `:11434`). The bench tools' **defaults** target the manual dev topology (`:8000`/`:8801`/`:9279`) and must be overridden for the vllm-sr stack; see section 9 of [03-strix-halo-runbook.md](03-strix-halo-runbook.md).
 
 路由校準迴圈 / Routing calibration loop：
 
