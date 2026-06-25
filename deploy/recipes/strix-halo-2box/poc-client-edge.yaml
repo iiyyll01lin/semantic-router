@@ -1538,7 +1538,10 @@ routing:
                     - type: complexity
                       name: legal_risk:hard
           modelRefs:
-            - model: anthropic/claude-opus-4.6
+            # Temporarily repointed to the AMD gateway (amd/claude-opus-4.8) so the
+            # premium path works without ANTHROPIC_API_KEY. Revert this one line to
+            # `anthropic/claude-opus-4.6` to use the standard Anthropic public API.
+            - model: amd/claude-opus-4.8
               use_reasoning: true
               reasoning_effort: high
           plugins:
