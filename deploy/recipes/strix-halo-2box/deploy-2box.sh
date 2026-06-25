@@ -254,9 +254,16 @@ echo "    (log -> ${CLIENT_LOG})"
 HALO_B_IP="${HALO_B_IP}" bash "${SCRIPT_DIR}/client-bring-up.sh" 2>&1 | tee "${CLIENT_LOG}"
 
 echo "    waiting for the gateway listener at ${GATEWAY_URL} ..."
+# Probe only that the Envoy listener accepts a connection and returns SOME HTTP
+# response. A bare GET / is intentionally NOT routed by the gateway (only /v1/*
+# is), so Envoy answers 404 -- which still proves the listener is up. We
+# therefore do NOT use `curl -f` here: -f treats 404 as a failure and would loop
+# the full timeout on a perfectly healthy gateway. A connection refusal (Envoy
+# not up yet) still makes curl exit non-zero, so readiness is detected correctly.
+# --max-time guards against a hung connection.
 gw_ready=""
 for _ in $(seq 1 60); do
-  if curl -fsS -o /dev/null "${GATEWAY_URL}" 2>/dev/null; then
+  if curl -sS -o /dev/null --max-time 5 "${GATEWAY_URL}" 2>/dev/null; then
     gw_ready="yes"
     echo "    gateway listener is responding."
     break
