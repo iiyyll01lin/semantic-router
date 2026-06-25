@@ -18,7 +18,7 @@
 #   FRONTIER / PREMIUM tier (real external Anthropic public API, NOT a local mock):
 #     - anthropic/claude-opus-4.6  (provider_model_id claude-opus-4-20250514) -> https://api.anthropic.com
 #       Requires ANTHROPIC_API_KEY on Halo-A and outbound HTTPS egress to api.anthropic.com:443.
-#     - Claude-Opus-4.8            (provider_model_id Claude-Opus-4.8)         -> https://llm-api.amd.com/Anthropic
+#     - amd/claude-opus-4.8        (provider_model_id Claude-Opus-4.8)         -> https://llm-api.amd.com/Anthropic
 #       AMD Anthropic-compatible gateway (Azure APIM). Auth via the
 #       Ocp-Apim-Subscription-Key header, rendered from the AMD_OCP_APIM_KEY env
 #       var at serve time (placeholder committed; the rendered copy is gitignored).
@@ -67,15 +67,13 @@ providers:
             cached_input_per_1m: 0.45
           external_model_ids:
             anthropic: ANTHROPIC_MODEL_ID
-        # NOTE: the model NAME is intentionally the exact upstream id
-        # "Claude-Opus-4.8" (not amd/claude-opus-4.8). On the currently shipped
-        # router image the Anthropic routing path forwards the model NAME verbatim
-        # to the upstream, so the alias must equal the id the AMD gateway accepts
-        # or it returns HTTP 400. The provider-id resolution fix in
-        # pkg/extproc/processor_req_body_anthropic.go removes this constraint; once
-        # that rebuilt image is deployed this can be renamed back to
-        # amd/claude-opus-4.8.
-        - name: Claude-Opus-4.8
+        # The friendly alias amd/claude-opus-4.8 is resolved to its upstream id
+        # (provider_model_id: Claude-Opus-4.8) by the Anthropic routing path
+        # (pkg/extproc/processor_req_body_anthropic.go -> resolveModelNameForBackend),
+        # so the AMD gateway receives the id it accepts. (Before that fix the model
+        # had to be named Claude-Opus-4.8 verbatim or the gateway returned HTTP 400;
+        # the rebuilt image removes that constraint.)
+        - name: amd/claude-opus-4.8
           api_format: anthropic
           reasoning_family: qwen3
           provider_model_id: Claude-Opus-4.8
@@ -180,7 +178,7 @@ routing:
             - tier:premium
             - cost:highest
             - specialty:legal
-        - name: Claude-Opus-4.8
+        - name: amd/claude-opus-4.8
           context_window_size: 262144
           description: PREMIUM tier via AMD's Anthropic-compatible gateway (Claude Opus 4.8).
           capabilities:
@@ -1546,15 +1544,12 @@ routing:
                     - type: complexity
                       name: legal_risk:hard
           modelRefs:
-            # Repointed to the AMD gateway so the premium path works without
-            # ANTHROPIC_API_KEY. The model NAME is intentionally the exact upstream
-            # id "Claude-Opus-4.8": the shipped router image forwards the model NAME
-            # verbatim on the Anthropic path, so the alias must equal the id AMD
-            # accepts or the gateway returns HTTP 400 (see the model definition
-            # note above). After the provider-id resolution fix ships this can
-            # become amd/claude-opus-4.8 again; revert to `anthropic/claude-opus-4.6`
-            # to use the standard Anthropic public API.
-            - model: Claude-Opus-4.8
+            # Routed to the AMD gateway so the premium path works without
+            # ANTHROPIC_API_KEY. The friendly alias amd/claude-opus-4.8 is resolved
+            # to its upstream id (Claude-Opus-4.8) by the Anthropic routing path,
+            # so the AMD gateway accepts it. Revert to `anthropic/claude-opus-4.6`
+            # to use the standard Anthropic public API instead.
+            - model: amd/claude-opus-4.8
               use_reasoning: true
               reasoning_effort: high
           plugins:
