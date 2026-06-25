@@ -48,13 +48,15 @@ DATACENTER_MODELS = {
     "google/gemini-3.1-pro",  # provider_model_id qwen2.5:14b (remote on Halo-B)
     "openai/gpt5.4",  # provider_model_id qwen3:14b   (remote on Halo-B)
 }
-# Frontier/premium tier. The premium_legal decision routes here. This recipe
-# points premium_legal at amd/claude-opus-4.8 -- the AMD enterprise Claude
-# gateway (api_format: anthropic, https://llm-api.amd.com/Anthropic), reachable
-# when AMD_OCP_APIM_KEY is set and Halo-A has outbound 443 egress.
-# anthropic/claude-opus-4.6 (the public Anthropic API) is kept as an accepted
-# alias in case the decision is reverted to it.
+# Frontier/premium tier. The premium_legal decision routes here. On the shipped
+# router image the recipe names the AMD model by its exact upstream id
+# "Claude-Opus-4.8" (the Anthropic routing path forwards the model name verbatim),
+# so that is the x-vsr-selected-model value to expect today. "amd/claude-opus-4.8"
+# is the post-fix alias (once the provider-id resolution fix ships) and
+# "anthropic/claude-opus-4.6" the public-API alias; all three are accepted so the
+# test stays green across the workaround and the real fix.
 FRONTIER_MODELS = {
+    "Claude-Opus-4.8",
     "amd/claude-opus-4.8",
     "anthropic/claude-opus-4.6",
 }
@@ -107,17 +109,20 @@ CASES = [
     {
         # FRONTIER/PREMIUM case: a legal-risk prompt crafted to hit the
         # premium_legal decision (domain: law / legal_risk_markers keywords +
-        # premium_legal_analysis embedding), which this recipe routes to
-        # amd/claude-opus-4.8 -- the AMD enterprise Claude gateway
-        # (api_format: anthropic, https://llm-api.amd.com/Anthropic, authed via
-        # the Ocp-Apim-Subscription-Key header rendered from AMD_OCP_APIM_KEY).
-        # Gated on AMD_OCP_APIM_KEY: skipped (not failed) when it is unset so
-        # local-only validation stays green. max_tokens caps the legal memo so
-        # the live Claude call returns quickly instead of streaming a long memo.
+        # premium_legal_analysis embedding), which this recipe routes to the AMD
+        # enterprise Claude gateway (api_format: anthropic,
+        # https://llm-api.amd.com/Anthropic, authed via the
+        # Ocp-Apim-Subscription-Key header rendered from AMD_OCP_APIM_KEY). On the
+        # shipped router image the model is named by its exact upstream id
+        # "Claude-Opus-4.8" (post-fix alias amd/claude-opus-4.8), so that is the
+        # x-vsr-selected-model value to expect. Gated on AMD_OCP_APIM_KEY: skipped
+        # (not failed) when it is unset so local-only validation stays green.
+        # max_tokens caps the legal memo so the live Claude call returns quickly
+        # instead of streaming a long memo.
         "label": "5. premium legal-risk analysis (AMD Claude)",
         "expectation": (
             "escalates to the FRONTIER tier (AMD Claude gateway, "
-            "amd/claude-opus-4.8) via the premium_legal decision; "
+            "Claude-Opus-4.8) via the premium_legal decision; "
             "requires HTTP 200"
         ),
         "content": (
