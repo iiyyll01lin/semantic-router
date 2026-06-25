@@ -48,10 +48,14 @@ DATACENTER_MODELS = {
     "google/gemini-3.1-pro",  # provider_model_id qwen2.5:14b (remote on Halo-B)
     "openai/gpt5.4",  # provider_model_id qwen3:14b   (remote on Halo-B)
 }
-# Frontier/premium alias backed by the REAL external Anthropic public API
-# (api_format: anthropic, https://api.anthropic.com). It is only reachable when
-# ANTHROPIC_API_KEY is set and Halo-A has outbound 443 egress.
+# Frontier/premium tier. The premium_legal decision routes here. This recipe
+# points premium_legal at amd/claude-opus-4.8 -- the AMD enterprise Claude
+# gateway (api_format: anthropic, https://llm-api.amd.com/Anthropic), reachable
+# when AMD_OCP_APIM_KEY is set and Halo-A has outbound 443 egress.
+# anthropic/claude-opus-4.6 (the public Anthropic API) is kept as an accepted
+# alias in case the decision is reverted to it.
 FRONTIER_MODELS = {
+    "amd/claude-opus-4.8",
     "anthropic/claude-opus-4.6",
 }
 
@@ -103,14 +107,17 @@ CASES = [
     {
         # FRONTIER/PREMIUM case: a legal-risk prompt crafted to hit the
         # premium_legal decision (domain: law / legal_risk_markers keywords +
-        # premium_legal_analysis embedding), which routes to
-        # anthropic/claude-opus-4.6 backed by the real Anthropic public API.
-        # Gated on ANTHROPIC_API_KEY: skipped (not failed) when it is unset so
-        # local-only validation stays green.
-        "label": "5. premium legal-risk analysis",
+        # premium_legal_analysis embedding), which this recipe routes to
+        # amd/claude-opus-4.8 -- the AMD enterprise Claude gateway
+        # (api_format: anthropic, https://llm-api.amd.com/Anthropic, authed via
+        # the Ocp-Apim-Subscription-Key header rendered from AMD_OCP_APIM_KEY).
+        # Gated on AMD_OCP_APIM_KEY: skipped (not failed) when it is unset so
+        # local-only validation stays green. max_tokens caps the legal memo so
+        # the live Claude call returns quickly instead of streaming a long memo.
+        "label": "5. premium legal-risk analysis (AMD Claude)",
         "expectation": (
-            "escalates to the FRONTIER tier (real Anthropic public API, "
-            "anthropic/claude-opus-4.6) via the premium_legal decision; "
+            "escalates to the FRONTIER tier (AMD Claude gateway, "
+            "amd/claude-opus-4.8) via the premium_legal decision; "
             "requires HTTP 200"
         ),
         "content": (
@@ -122,18 +129,21 @@ CASES = [
         ),
         "expect_box": "frontier",
         "expect_status": 200,
-        "requires_env": "ANTHROPIC_API_KEY",
+        "max_tokens": 256,
+        "requires_env": "AMD_OCP_APIM_KEY",
     },
 ]
 
 
-def post_chat(base_url, content):
+def post_chat(base_url, content, max_tokens=None):
     """POST one chat request. Returns (status, headers_dict, body_text)."""
     url = base_url.rstrip("/") + CHAT_PATH
     payload = {
         "model": "auto",
         "messages": [{"role": "user", "content": content}],
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -182,7 +192,7 @@ def box_label(box):
     return {
         "edge": "EDGE (Halo-A, local, 0 hops)",
         "datacenter": "DATACENTER (Halo-B, remote, 1 hop)",
-        "frontier": "FRONTIER (real Anthropic API, api.anthropic.com)",
+        "frontier": "FRONTIER (premium Claude tier: AMD gateway llm-api.amd.com)",
         "unknown": "UNKNOWN",
     }.get(box, "UNKNOWN")
 
@@ -308,7 +318,9 @@ def main(argv):
             skipped += 1
             continue
         try:
-            status, headers, body = post_chat(args.base_url, case["content"])
+            status, headers, body = post_chat(
+                args.base_url, case["content"], case.get("max_tokens")
+            )
         except urllib.error.URLError as exc:
             print("=" * 72)
             print(case["label"])
