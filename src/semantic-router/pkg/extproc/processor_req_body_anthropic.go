@@ -56,7 +56,21 @@ func (r *OpenAIRouter) prepareAnthropicRoutingRequest(
 		logging.Debugf("No API key for Anthropic model %q (fail_open=true) — request will use empty key", targetModel)
 	}
 
-	openAIRequest.Model = targetModel
+	// Resolve the model NAME alias to the upstream model id the Anthropic
+	// backend expects (e.g. "amd/claude-opus-4.8" -> "Claude-Opus-4.8" via
+	// external_model_ids). The OpenAI-compatible path does this through
+	// resolveModelNameForBackend; without the same step here the internal alias
+	// leaks into the Anthropic request body and Anthropic-format upstreams (the
+	// AMD gateway, api.anthropic.com) reject the unknown model with HTTP 400.
+	// Only the upstream body model is rewritten; ctx headers/tracing keep the
+	// friendly alias (set via ctx.VSRSelectedModel below). Models without an
+	// external_model_ids mapping resolve to themselves, so behaviour is
+	// unchanged for backends where the name already equals the upstream id.
+	upstreamModel := targetModel
+	if _, backendName, ok, beErr := r.Config.ResolvePrimaryBackendForModel(targetModel); beErr == nil && ok && backendName != "" {
+		upstreamModel = r.resolveModelNameForBackend(targetModel, backendName)
+	}
+	openAIRequest.Model = upstreamModel
 	streaming := ctx.ExpectStreamingResponse
 
 	// Capture Anthropic-only fields from the raw inbound body (cache_control,
