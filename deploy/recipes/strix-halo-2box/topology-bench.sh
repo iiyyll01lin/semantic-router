@@ -40,6 +40,7 @@
 #   --datacenter-backend H:P  remote backend for the 1-hop probe (default: none)
 #   --scenario NAME           agentic scenario   (default tool-heavy)
 #   --sessions/--turns/--concurrency  agentic shape (default 6 / 8 / 2)
+#   --concurrency-sweep "1 2 4 8"  measure each concurrency (labels <label>-c<N>)
 #   --hop-samples N           network-hop samples (default 20)
 #   --results-dir DIR         output dir (default .agent-harness/experiments/topology-bench)
 #   --report | --compare      aggregate all topology-*.json into a report
@@ -60,6 +61,7 @@ SCENARIO="tool-heavy"
 SESSIONS=6
 TURNS=8
 CONCURRENCY=2
+CONC_SWEEP=""
 HOP_SAMPLES=20
 RESULTS_DIR="${REPO_ROOT}/.agent-harness/experiments/topology-bench"
 LABEL=""
@@ -79,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --sessions) SESSIONS="$2"; shift 2;;
     --turns) TURNS="$2"; shift 2;;
     --concurrency) CONCURRENCY="$2"; shift 2;;
+    --concurrency-sweep) CONC_SWEEP="$2"; shift 2;;
     --hop-samples) HOP_SAMPLES="$2"; shift 2;;
     --results-dir) RESULTS_DIR="$2"; shift 2;;
     --report|--compare) MODE="report"; shift;;
@@ -208,14 +211,17 @@ if [[ -n "${DATACENTER_BACKEND}" ]]; then
 fi
 echo
 
-# 2) agentic throughput under a fixed load.
+# 2) agentic throughput under fixed load(s); sweep concurrency when requested.
+CONC_LIST=(${CONC_SWEEP:-${CONCURRENCY}})
+for CC in "${CONC_LIST[@]}"; do
+RUN_LABEL="${LABEL}"; [[ ${#CONC_LIST[@]} -gt 1 ]] && RUN_LABEL="${LABEL}-c${CC}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-RUN_DIR="${RESULTS_DIR}/agentic-${LABEL}-${STAMP}"
+RUN_DIR="${RESULTS_DIR}/agentic-${RUN_LABEL}-${STAMP}"
 mkdir -p "${RUN_DIR}"
-echo "==> [2/2] Agentic load (agentic_routing_live_benchmark.py)"
+echo "==> [2/2] Agentic load (concurrency=${CC}, label=${RUN_LABEL})"
 "${PY_BIN}" "${BENCH_DIR}/agentic_routing_live_benchmark.py" \
   --base-url "${BASE_URL}" --model auto \
-  --scenario "${SCENARIO}" --sessions "${SESSIONS}" --turns "${TURNS}" --concurrency "${CONCURRENCY}" \
+  --scenario "${SCENARIO}" --sessions "${SESSIONS}" --turns "${TURNS}" --concurrency "${CC}" \
   --output-dir "${RUN_DIR}" >/dev/null 2>&1 || true
 SUMMARY_JSON="${RUN_DIR}/summary.json"
 [[ -f "${SUMMARY_JSON}" ]] || {
@@ -225,9 +231,9 @@ SUMMARY_JSON="${RUN_DIR}/summary.json"
 }
 
 # 3) assemble topology-<label>.json from the hop probe + the agentic summary.
-OUT_JSON="${RESULTS_DIR}/topology-${LABEL}.json"
-"${PY_BIN}" - "${SUMMARY_JSON}" "${OUT_JSON}" "${LABEL}" "${BASE_URL}" "${EDGE_HOP_MS}" "${DC_HOP_MS}" \
-  "${SCENARIO}" "${SESSIONS}" "${TURNS}" "${CONCURRENCY}" "${EDGE_MODELS_CSV}" "${DC_MODELS_CSV}" <<'PYEOF'
+OUT_JSON="${RESULTS_DIR}/topology-${RUN_LABEL}.json"
+"${PY_BIN}" - "${SUMMARY_JSON}" "${OUT_JSON}" "${RUN_LABEL}" "${BASE_URL}" "${EDGE_HOP_MS}" "${DC_HOP_MS}" \
+  "${SCENARIO}" "${SESSIONS}" "${TURNS}" "${CC}" "${EDGE_MODELS_CSV}" "${DC_MODELS_CSV}" <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
 (summary_path, out_path, label, base_url, edge_hop, dc_hop, scenario,
@@ -281,5 +287,6 @@ PYEOF
 
 echo
 echo "==> Wrote ${OUT_JSON}"
+done
 echo "    Measure the other topologies the same way (same load), then render:"
 echo "      bash ${BASH_SOURCE[0]##*/} --report"
