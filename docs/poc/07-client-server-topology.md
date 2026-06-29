@@ -318,6 +318,28 @@ To actually engage `session_aware`, **each** multi-candidate decision must satis
 
 **Measured (what holds)**: after adding the overlapping candidates plus the per-decision `algorithm` block, the selection method became `session_aware`, `x-vsr-session-phase` populated on 64/64 requests (`user_turn` / `tool_loop`), and session-policy violation counters dropped from 16/8 to 0. **Honest caveat**: that run collapsed to a **single** served model, so the 0 violations alone do **not** prove a lock prevented a real model switch—only that the method executed and the phase header was filled. Continuing the honest split of sections 5 and 6.5: this is evidence that **the selection path was correctly engaged**, not proof that the session lock holds under real switch pressure.
 
+### 6.7 拓樸吞吐比較：single-box vs edge-2box / Topology throughput comparison (measured-on 2026-06-29)
+
+> 一句話框架：前面證明路由跨盒子正確、跨盒子那一跳便宜；本節回答「換成 2 盒子到底**值不值**」——用 [topology-bench.sh](../../deploy/recipes/strix-halo-2box/topology-bench.sh) 對**同一份負載**量兩種拓樸,把純網路跳數和 agentic 吞吐/尾延遲分開,結論明確:2-box 用 ~0.2ms 的網路代價換到 +25% 吞吐、尾延遲砍半。
+> One-line framing: earlier sections proved routing crosses boxes correctly and the hop is cheap; this section answers "is 2-box actually **worth it**"—[topology-bench.sh](../../deploy/recipes/strix-halo-2box/topology-bench.sh) drives the **same fixed load** through both topologies, separating pure network hop from agentic throughput/tail latency. Verdict: 2-box buys +25% throughput and roughly half the tail latency for a ~0.2 ms network cost.
+
+方法 / Method：同一負載(`tool-heavy` sessions=6 turns=8 concurrency=2 → 48 requests),先各自部署(single-box `poc-strix.yaml` 全本機;edge-2box `poc-client-edge.yaml` 小模型 Halo-A、大模型 Halo-B),再各跑一次量測,最後 `--report` 彙整。**實測 / measured**:
+
+| 拓樸 / Topology | rps | p50 ms | p95 ms | p99 ms | edge/dc % | 0-hop ms | 1-hop ms | hop Δ | success |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| edge-2box | 0.643 | 3127.4 | 3661.9 | 7477.8 | 62/38 | 0.316 | 0.491 | **0.175** | 100% |
+| single-box | 0.514 | 3262.0 | 7373.4 | 14185.1 | 62/38 | 0.442 | — | — | 100% |
+
+判讀(**推導 / derived**,正負號相對 2-box 基準）/ Reading (derived, relative to the 2-box baseline):
+
+- **吞吐 +25%** / **throughput +25%**：edge-2box 0.643 vs single-box 0.514 rps;分散後不再爭用。/ no contention once spread across boxes.
+- **p50 幾乎相同**(3127 vs 3262)/ p50 ~equal：單一不擁擠請求兩者無差。/ an uncontended single request is the same.
+- **尾延遲砍半** / **tail halved**:p95 3662 vs 7373(+101%)、p99 7478 vs 14185。single-box 把小+大模型擠在同一顆 APU,並發時互搶 → 尾延遲炸開;2-box 分散 → 收斂。This is the headline: shared-APU contention is what blows up the single-box tail, not the network.
+- **跨盒子那一跳 +0.175ms**(可忽略,對齊 6.3 的 ~0.2ms)/ the cross-box hop is +0.175 ms (negligible, matches 6.3); 省下的競爭遠大於多的一跳 / the contention saved dwarfs the extra hop.
+- 分流 62/38、distribution `qwen/qwen3.5-rocm`=30(edge)/`google/gemini-3.1-pro`=18(dc) 兩者相同 → 公平比較 / identical, so the comparison is apples-to-apples.
+
+**誠實邊界 / Honest caveat**:兩台都是 gfx1151 APU,差異反映 **topology/競爭/網路**,非硬體等級(延續 5、6.5);48 req / concurrency 2 樣本小,p99 會抖,要更硬的數字加大 `--sessions/--turns/--concurrency` 重跑。/ Both boxes are gfx1151 APUs, so this is topology/contention/network, not a hardware-tier claim; 48 req at concurrency 2 is a small sample (noisy p99)—scale the load for a firmer number.
+
 ---
 
 ## 參考連結 / Reference links
