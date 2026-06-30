@@ -76,9 +76,22 @@ export HALO_B_SSH=${HALO_B_SSH}
 EOF
 echo "    mode=${FLEET_MODE}  CCP=:${CCP_PORT}  state=${FLEET_STATE_DIR}  env=${ENV_FILE}"
 
+# In gateway mode, render the REAL gateway config on Halo-A and serve it as the
+# CCP desired (both real gateways converge to it). Gateway mode also needs the
+# semantic-router repo + models (strix-halo-poc Gate B) present on Halo-B.
+CCP_INIT_CONFIG="${SCRIPT_DIR}/sample-desired-config.yaml"
+if [ "${FLEET_MODE}" = "gateway" ]; then
+  : "${HALO_B_REPO:?gateway mode needs HALO_B_REPO (path to the semantic-router repo on Halo-B)}"
+  echo "    gateway mode: rendering the real gateway config for the CCP desired"
+  RENDER_ONLY=1 FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
+  GATEWAY_CONFIG="${FLEET_STATE_DIR}/gateway/config.yaml" \
+    bash "${SCRIPT_DIR}/gateway-bring-up.sh"
+  CCP_INIT_CONFIG="${FLEET_STATE_DIR}/gateway/config.yaml"
+fi
+
 echo "==> [2/6] Starting CCP on Halo-A"
 FLEET_SIGNING_KEY="${FLEET_SIGNING_KEY}" FLEET_TOKEN="${FLEET_TOKEN}" \
-CCP_PORT="${CCP_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
+CCP_PORT="${CCP_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" CCP_INIT_CONFIG="${CCP_INIT_CONFIG}" \
   bash "${SCRIPT_DIR}/ccp-bring-up.sh"
 
 echo "==> [3/6] Bringing up the Halo-A edge node (router + agent)"
@@ -99,18 +112,30 @@ if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" true; then
   echo "         ssh-copy-id ${HALO_B_SSH_PORT:+-p ${HALO_B_SSH_PORT}} ${HALO_B_SSH}" >&2
   exit 1
 fi
-ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
-# Ship only the self-contained recipe files Halo-B needs (stdlib python + scripts).
-scp "${SSH_BASE_OPTS[@]}" "${SCP_PORT_OPTS[@]}" \
-  "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/mock_router.py" \
-  "${SCRIPT_DIR}/fleet_common.sh" "${SCRIPT_DIR}/node-bring-up.sh" \
-  "${HALO_B_SSH}:${REMOTE_DIR}/"
-echo "    starting Halo-B edge node ..."
-ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-  "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=${FLEET_MODE} \
-   FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
-   ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
-   bash ${REMOTE_DIR}/node-bring-up.sh"
+if [ "${FLEET_MODE}" = "gateway" ]; then
+  # Gateway mode needs the full repo (models, poc-strix.yaml, vllm-sr CLI) on
+  # Halo-B; run node-bring-up.sh from there instead of shipping temp files.
+  REMOTE_RECIPE="${HALO_B_REPO%/}/deploy/recipes/strix-halo-fleet-2box"
+  echo "    starting Halo-B gateway node from ${REMOTE_RECIPE} (model pulls may be slow) ..."
+  ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+    "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=gateway \
+     FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
+     ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
+     bash ${REMOTE_RECIPE}/node-bring-up.sh"
+else
+  ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
+  # Ship only the self-contained recipe files Halo-B needs (stdlib python + scripts).
+  scp "${SSH_BASE_OPTS[@]}" "${SCP_PORT_OPTS[@]}" \
+    "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/mock_router.py" \
+    "${SCRIPT_DIR}/fleet_common.sh" "${SCRIPT_DIR}/node-bring-up.sh" \
+    "${HALO_B_SSH}:${REMOTE_DIR}/"
+  echo "    starting Halo-B edge node ..."
+  ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+    "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=${FLEET_MODE} \
+     FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
+     ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
+     bash ${REMOTE_DIR}/node-bring-up.sh"
+fi
 
 echo "==> [5/6] Waiting for both boxes to converge to the CCP desired config"
 if CCP_URL="${CCP_URL_LOCAL}" FLEET_TOKEN="${FLEET_TOKEN}" \

@@ -45,13 +45,13 @@ if [ "${FLEET_MODE}" = "mock" ]; then
     exit 1
   fi
 else
-  echo "==> [${BOX_ID}] gateway mode: expecting a real router on :${ROUTER_PORT}"
-  if ! fleet_wait_http "http://localhost:${ROUTER_PORT}/config/hash" 30; then
-    echo "ERROR: [${BOX_ID}] no router answering GET /config/hash on :${ROUTER_PORT}." >&2
-    echo "       Start it first (vllm-sr serve --config ${CONFIG_FILE} ...); see README." >&2
-    exit 1
-  fi
-  : "${CONFIG_FILE:?gateway mode needs CONFIG_FILE pointing at the served config}"
+  echo "==> [${BOX_ID}] gateway mode: starting a real vllm-sr gateway"
+  GATEWAY_CONFIG="${GATEWAY_CONFIG:-${FLEET_STATE_DIR}/gateway/config.yaml}"
+  GATEWAY_CONFIG="${GATEWAY_CONFIG}" ROUTER_PORT="${ROUTER_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
+    bash "${SCRIPT_DIR}/gateway-bring-up.sh"
+  # The agent manages the gateway's bind-mounted source config (GET /config/hash
+  # reads it; an external write triggers the router's fsnotify hot-reload).
+  CONFIG_FILE="${GATEWAY_CONFIG}"
 fi
 
 echo "==> [${BOX_ID}] starting pull agent -> CCP ${CCP_URL}"

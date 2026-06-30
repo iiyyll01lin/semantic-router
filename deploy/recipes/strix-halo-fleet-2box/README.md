@@ -44,11 +44,14 @@ exposure.
   implements `GET /config/hash` over a config file, so the WHOLE fan-out is
   one-click verifiable on the two boxes **without ROCm/models**. Best for proving
   the control plane and for the demo.
-- **`FLEET_MODE=gateway`** — each box runs a REAL `vllm-sr serve` router on
-  `:8080`; the agent manages the config file that gateway watches. Use this once
-  you have the ROCm gateway up on both boxes (start it the same way as
-  [strix-halo-2box](../strix-halo-2box/client-bring-up.sh), then point
-  `CONFIG_FILE` at the served config).
+- **`FLEET_MODE=gateway`** — each box runs a REAL `vllm-sr serve` ROCm gateway
+  (via `gateway-bring-up.sh`, which mirrors the proven single-box
+  [strix-halo-poc](../strix-halo-poc/bring-up.sh): local Ollama + tier models +
+  the ModernBERT PII ONNX export, served with `VLLM_SR_AMD_PRESERVE_CPU=1`). The
+  agent manages the gateway's bind-mounted source config: `GET /config/hash`
+  reads it, and an external write triggers the router's fsnotify hot-reload, so
+  the same agent code path works unchanged. Editing the fleet marker line at the
+  CCP converges both real routers.
 
 ## One-click on two Strix Halo
 
@@ -73,6 +76,27 @@ bash demo-fleet.sh                                  # narrated edit-once demo
 bash verify-fleet.sh                                # re-run headless PASS/FAIL
 HALO_B_SSH=ubuntu@192.0.2.20 bash teardown-fleet-2box.sh
 ```
+
+### Gateway mode (real `vllm-sr serve` on both boxes)
+
+Prerequisites (BOTH boxes): the semantic-router repo checked out, the `vllm-sr`
+CLI installed, and the strix-halo-poc models present (run that recipe's Gate B
+download once per box). Then, from Halo-A:
+
+```bash
+HALO_A_IP=192.0.2.10 \
+HALO_B_IP=192.0.2.20 \
+HALO_B_SSH=ubuntu@192.0.2.20 \
+HALO_B_REPO=/home/ubuntu/yy/workspace/semantic-router \
+FLEET_MODE=gateway \
+  bash deploy-fleet-2box.sh
+```
+
+- `HALO_B_REPO` is the repo path on Halo-B (gateway mode runs `node-bring-up.sh`
+  from there because it needs the models + `poc-strix.yaml`, not just temp files).
+- The CCP serves the rendered `poc-strix.yaml` (+ a `fleet-rule-marker` line) as
+  the desired config; both real gateways converge to it. Model pulls + serve make
+  the first run slow.
 
 ## Verify the logic offline (no hardware)
 

@@ -114,10 +114,12 @@ P1 - MVP pull fan-out:
 - [x] `EFC003` Implement the pull agent: poll `GET /fleet/desired`, compare to
   `GET localhost:8080/config/hash`, apply via `PUT localhost:8080/config/router`
   on drift, confirm hash, `POST /fleet/status`.
-- [ ] `EFC004` Stand up the two-edge-gateway topology: router+Envoy gateway on
-  BOTH boxes (Halo-B runs the router with `--platform amd`, not plain Ollama),
-  each with a co-located agent. (Mock-mode node bring-up done + verified;
-  real `vllm-sr serve` on both boxes is the on-hardware remainder.)
+- [x] `EFC004` Stand up the two-edge-gateway topology: `gateway-bring-up.sh`
+  serves a real `vllm-sr serve` ROCm gateway on BOTH boxes (`--platform amd`,
+  `VLLM_SR_AMD_PRESERVE_CPU=1` so agent-triggered reloads do not crash), and the
+  agent manages the gateway's bind-mounted source config (GET /config/hash +
+  fsnotify reload). Wired into `FLEET_MODE=gateway`; on-hardware end-to-end run
+  is the remaining verification.
 - [x] `EFC005` Implement `deploy-fleet-2box.sh` one-click orchestrator (preflight,
   start CCP on Halo-A, gateway+agent on Halo-A, SSH/scp-provision gateway+agent
   on Halo-B, wait for both to converge, print PASS/FAIL + log paths + teardown).
@@ -182,6 +184,17 @@ P4 - Pull-agent productionization:
   convergence on Windows-authored configs).
 - Pending on the Strix Halo hardware: the cross-box SSH provisioning path and
   `FLEET_MODE=gateway` against real `vllm-sr serve` routers (`EFC004`).
+- Mock mode is now verified END-TO-END on the real two Strix Halo boxes: a single
+  `deploy-fleet-2box.sh` brought up the CCP, SSH-provisioned Halo-B, converged
+  both boxes, and `verify-fleet.sh` (edit-once, drift self-heal, fleet rollback,
+  central audit) plus `demo-fleet.sh` all passed. Two runtime bugs were fixed in
+  the process (an apostrophe in a `${VAR:?...}` message; a stale `check` helper
+  call in verify-fleet.sh) — both because `bash -n` was initially sandbox-blocked.
+- Gateway mode (`gateway-bring-up.sh`) is implemented: it reuses the proven
+  strix-halo-poc setup and the agent's file-write path works unchanged because
+  `GET /config/hash` hashes the bind-mounted SOURCE config the agent writes
+  (confirmed in route_config_deploy.go). Its end-to-end ROCm run on both boxes is
+  the remaining hardware verification.
 
 ## Operating Rules
 
