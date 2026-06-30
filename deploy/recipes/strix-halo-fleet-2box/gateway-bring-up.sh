@@ -75,6 +75,28 @@ if [[ "${RENDER_ONLY:-}" == "1" ]]; then
   exit 0
 fi
 
+# This script may run over a NON-interactive SSH shell (Halo-B), which does not
+# load the conda/venv that provides `vllm-sr` (conda init lives in ~/.bashrc,
+# guarded out for non-interactive shells). Best-effort: if `vllm-sr` is not
+# already resolvable, prepend common conda/venv bin dirs so `vllm-sr serve` is
+# found; otherwise fail fast (before the slow model pulls) with clear guidance.
+if ! command -v vllm-sr >/dev/null 2>&1; then
+  for _vsr_bin in "${HOME}/miniconda3/bin" "${HOME}/anaconda3/bin" \
+                  "${HOME}/miniforge3/bin" "${HOME}/mambaforge/bin" \
+                  "${HOME}/.local/bin" "/opt/conda/bin"; do
+    if [[ -x "${_vsr_bin}/vllm-sr" ]]; then
+      PATH="${_vsr_bin}:${PATH}"; export PATH; break
+    fi
+  done
+fi
+if ! command -v vllm-sr >/dev/null 2>&1; then
+  echo "ERROR: 'vllm-sr' not found on PATH (also probed common conda/venv bin dirs)." >&2
+  echo "       Install it on this box: pip install -e <repo>/src/vllm-sr, or make it" >&2
+  echo "       resolvable for non-interactive SSH (symlink into /usr/local/bin, or put" >&2
+  echo "       'conda activate <env>' in ~/.profile)." >&2
+  exit 1
+fi
+
 echo "==> [gateway] ensuring Docker network '${NETWORK}'"
 docker network create "${NETWORK}" 2>/dev/null || true
 

@@ -119,14 +119,14 @@ if [ "${FLEET_MODE}" = "gateway" ]; then
   # branch that carries strix-halo-fleet-2box. Verify the repo prereqs first.
   REMOTE_POC="${HALO_B_REPO%/}/deploy/recipes/strix-halo-poc"
   if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-       "test -f ${REMOTE_POC}/poc-strix.yaml && command -v vllm-sr >/dev/null 2>&1"; then
-    echo "ERROR: Halo-B is missing gateway prerequisites under HALO_B_REPO=${HALO_B_REPO}:" >&2
-    echo "         need ${REMOTE_POC}/poc-strix.yaml AND the 'vllm-sr' CLI on the SSH PATH." >&2
-    echo "       On Halo-B (once): install the CLI and stage the single-box PoC assets:" >&2
-    echo "         cd ${HALO_B_REPO} && pip install -e src/vllm-sr" >&2
-    echo "         # ensure 'vllm-sr' resolves for non-interactive ssh (e.g. activate the venv in ~/.bashrc)" >&2
+       "test -f ${REMOTE_POC}/poc-strix.yaml"; then
+    echo "ERROR: Halo-B is missing ${REMOTE_POC}/poc-strix.yaml under HALO_B_REPO=${HALO_B_REPO}." >&2
+    echo "       Gateway mode reuses the strix-halo-poc config + staged models on Halo-B." >&2
+    echo "       On Halo-B (once): cd ${HALO_B_REPO} && bash deploy/recipes/strix-halo-poc/bring-up.sh" >&2
     exit 1
   fi
+  # vllm-sr itself is resolved on Halo-B by gateway-bring-up.sh (which also probes
+  # common conda/venv bin dirs for non-interactive SSH) and fails fast if absent.
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
   # Ship the self-contained gateway scripts (no mock_router.py); they target the
   # repo's strix-halo-poc via STRIX_POC_DIR below.

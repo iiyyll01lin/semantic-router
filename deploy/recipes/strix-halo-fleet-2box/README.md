@@ -81,9 +81,12 @@ HALO_B_SSH=ubuntu@192.0.2.20 bash teardown-fleet-2box.sh
 
 Prerequisites (BOTH boxes): the semantic-router repo checked out with the
 **strix-halo-poc** recipe present (its committed `poc-strix.yaml`) and the
-`vllm-sr` CLI installed and resolvable on the non-interactive SSH `PATH`. Halo-B
-does **not** need to be on the same branch as this fleet recipe — the orchestrator
-ships these scripts to it. Then, from Halo-A:
+`vllm-sr` CLI installed (e.g. `pip install -e src/vllm-sr`). Halo-B does **not**
+need to be on the same branch as this fleet recipe (the orchestrator ships these
+scripts to it), and `vllm-sr` does **not** need to be on the non-interactive SSH
+`PATH` — the bring-up also probes common conda/venv bin dirs
+(`~/miniconda3/bin`, `~/anaconda3/bin`, `~/miniforge3/bin`, `~/mambaforge/bin`,
+`~/.local/bin`, `/opt/conda/bin`). Then, from Halo-A:
 
 ```bash
 HALO_A_IP=192.0.2.10 \
@@ -98,8 +101,9 @@ FLEET_MODE=gateway \
   scripts to a temp dir on Halo-B and points them at `${HALO_B_REPO}/deploy/recipes/strix-halo-poc`
   (via `STRIX_POC_DIR`) for the proven `poc-strix.yaml` + staged models — so Halo-B
   only needs strix-halo-poc + the `vllm-sr` CLI, not this branch checked out.
-- The deploy does a fast Halo-B preflight (`poc-strix.yaml` present **and** `vllm-sr`
-  on `PATH`) and fails early with the exact fix if either is missing.
+- The deploy preflights `poc-strix.yaml` on Halo-B and fails early if it is
+  missing; `vllm-sr` is resolved (probing conda/venv dirs) by the bring-up, which
+  fails fast with the exact fix before any slow model pulls if it is truly absent.
 - The CCP serves the rendered `poc-strix.yaml` (+ a `fleet-rule-marker` line) as
   the desired config; both real gateways converge to it. Model pulls + serve make
   the first run slow.
