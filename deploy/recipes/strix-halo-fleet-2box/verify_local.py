@@ -10,6 +10,10 @@ asserts the PL-0036 exit criteria WITHOUT any AMD/ROCm hardware:
   4. fleet rollback          - setting desired back to a prior config converges both
   5. tamper rejection        - a wrong-key (untrusted) bundle is rejected, never applied
   6. central audit           - the CCP recorded every apply
+  7. in-place write          - the agent overwrites the config in place (same inode),
+                               so the real single-file-mounted gateway hot-reloads
+                               (an atomic rename would swap in a new inode the
+                               router container never sees -> no fsnotify reload)
 
 Exit code 0 means all checks passed. This verifies the NEW fan-out/drift/sign/
 audit logic; the real ROCm gateway path is exercised by deploy-fleet-2box.sh on
@@ -155,6 +159,31 @@ def main() -> int:
     audit_ok = status == 200 and len(applied_records) >= 4 and len(rejected_records) >= 1
     record("central audit log captured applies + the rejection", audit_ok,
            "applies=%d rejects=%d" % (len(applied_records), len(rejected_records)))
+
+    # --- 7. in-place write preserves the inode (real-gateway hot-reload safe) ---
+    # The real vllm-sr router bind-mounts the config as a SINGLE FILE
+    # (config.yaml:/app/config.yaml), so the agent must overwrite it IN PLACE
+    # (same inode). An atomic temp+rename would swap in a new inode the router
+    # container never sees -> the new config stays invisible and no fsnotify
+    # reload fires. Drive the REAL fleet_agent._write_config and assert the inode
+    # is preserved and the exact bytes land on disk.
+    inode_path = os.path.join(workdir, "inode-check-config.yaml")
+    with open(inode_path, "w", encoding="utf-8") as fh:
+        fh.write("version: v0.3\n# before\n")
+    ino_before = os.stat(inode_path).st_ino
+    inode_cfg = fleet_agent.AgentConfig(
+        ccp_url=ccp_url, router_api="http://127.0.0.1:1", config_file=inode_path,
+        signing_key=SIGNING_KEY, token=TOKEN, box_id="inode-check",
+        poll_interval=0.05, apply_timeout=1.0)
+    new_text = "version: v0.3\n# after, rewritten in place\n"
+    fleet_agent._write_config(inode_cfg, new_text)
+    ino_after = os.stat(inode_path).st_ino
+    with open(inode_path, "rb") as fh:
+        on_disk = fh.read()
+    inode_ok = (ino_before == ino_after and on_disk == new_text.encode("utf-8"))
+    record("in-place write keeps the inode (real-gateway reload safe)", inode_ok,
+           "inode %s preserved" % ino_before if inode_ok
+           else "inode %s -> %s" % (ino_before, ino_after))
 
     passed = sum(1 for _n, ok, _d in CHECKS if ok)
     total = len(CHECKS)
