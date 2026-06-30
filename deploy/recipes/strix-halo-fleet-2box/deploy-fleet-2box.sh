@@ -48,7 +48,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> [1/6] Preflight on Halo-A"
-: "${HALO_A_IP:?set HALO_A_IP (this box's address reachable from Halo-B)}"
+: "${HALO_A_IP:?set HALO_A_IP (this box address, reachable from Halo-B)}"
 : "${HALO_B_IP:?set HALO_B_IP}"
 : "${HALO_B_SSH:?set HALO_B_SSH (user@host for Halo-B)}"
 for bin in "${PYBIN}" ssh scp curl; do
