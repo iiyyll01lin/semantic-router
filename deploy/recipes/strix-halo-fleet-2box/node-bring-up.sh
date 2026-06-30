@@ -25,11 +25,13 @@ ROUTER_PIDFILE="${FLEET_STATE_DIR}/${BOX_ID}-router.pid"
 AGENT_PIDFILE="${FLEET_STATE_DIR}/${BOX_ID}-agent.pid"
 PYBIN="$(fleet_pybin)"
 
-# Idempotent restart.
+# Idempotent restart. Stop any prior agent AND any prior mock router on this
+# box's port -- gateway mode must also clear a leftover mock router so the real
+# gateway can bind the same host API port (8080).
 fleet_stop_pidfile "${AGENT_PIDFILE}"
+fleet_stop_pidfile "${ROUTER_PIDFILE}"
 
 if [ "${FLEET_MODE}" = "mock" ]; then
-  fleet_stop_pidfile "${ROUTER_PIDFILE}"
   if [ ! -f "${CONFIG_FILE}" ]; then
     printf 'version: v0.3\n# %s baseline (pre-convergence)\n' "${BOX_ID}" >"${CONFIG_FILE}"
   fi
