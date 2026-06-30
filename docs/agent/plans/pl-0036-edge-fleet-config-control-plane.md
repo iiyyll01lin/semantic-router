@@ -205,8 +205,15 @@ P4 - Pull-agent productionization:
   need this branch checked out (it failed before with `node-bring-up.sh: No such
   file or directory` because its checkout predated the fleet recipe). A fail-fast
   Halo-B preflight (`poc-strix.yaml` present and `vllm-sr` on the SSH `PATH`) was
-  added. Full two-box gateway convergence is the remaining hardware check.
-
+  added. Full two-box gateway convergence is the remaining hardware check.- Real-gateway reload root-cause fix: the router bind-mounts the config as a
+  SINGLE FILE (`<host>/config.yaml:/app/config.yaml:z`, `docker_start.py`) and
+  watches it with fsnotify (`server_config_watch.go`). The agent originally wrote
+  via an atomic temp-file rename, which swaps in a NEW inode the container never
+  sees through a file mount — so the new config would be invisible and no reload
+  would fire. `fleet_agent._write_config` now overwrites the file IN PLACE
+  (truncate + write + fsync, same inode), which the container observes and which
+  fires the `Write`-event hot-reload; it still writes exact bytes so the on-disk
+  `GET /config/hash` matches the bundle hash (`verify_local.py` stays 7/7).
 ## Operating Rules
 
 - Reuse, do not reinvent: the per-node hot-reload, validate/backup/write,

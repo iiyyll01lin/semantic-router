@@ -103,6 +103,12 @@ FLEET_MODE=gateway \
 - The CCP serves the rendered `poc-strix.yaml` (+ a `fleet-rule-marker` line) as
   the desired config; both real gateways converge to it. Model pulls + serve make
   the first run slow.
+- Reload mechanism: the router bind-mounts the config as a single file
+  (`config.yaml:/app/config.yaml`) and watches it with fsnotify, so the agent
+  overwrites the config **in place** (same inode) rather than via an atomic
+  rename — a rename would swap in a new inode the container never sees, so no
+  hot-reload would fire. Do not change `fleet_agent._write_config` back to a
+  temp-file rename.
 
 ## Verify the logic offline (no hardware)
 
