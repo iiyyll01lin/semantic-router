@@ -195,6 +195,17 @@ P4 - Pull-agent productionization:
   `GET /config/hash` hashes the bind-mounted SOURCE config the agent writes
   (confirmed in route_config_deploy.go). Its end-to-end ROCm run on both boxes is
   the remaining hardware verification.
+- Gateway hardware run progress: Halo-A now comes up **fully** in gateway mode
+  (tier models pulled, host API port proactively freed, `vllm-sr serve` ready,
+  `GET /config/hash` live, agent attached) — the earlier `:8080 address already
+  in use` failure is resolved (stop prior router before bring-up + remove a stale
+  router container before serve). Halo-B provisioning was then fixed: gateway mode
+  **ships** this recipe's scripts to Halo-B (like mock) and points them at the
+  repo's strix-halo-poc via an overridable `STRIX_POC_DIR`, so Halo-B does not
+  need this branch checked out (it failed before with `node-bring-up.sh: No such
+  file or directory` because its checkout predated the fleet recipe). A fail-fast
+  Halo-B preflight (`poc-strix.yaml` present and `vllm-sr` on the SSH `PATH`) was
+  added. Full two-box gateway convergence is the remaining hardware check.
 
 ## Operating Rules
 
