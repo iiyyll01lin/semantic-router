@@ -74,16 +74,25 @@ def _router_hash(cfg: AgentConfig) -> str:
 
 
 def _write_config(cfg: AgentConfig, config_text: str) -> None:
-    # Back up the current file next to it, then write atomically via a temp file
-    # rename so the router never observes a half-written config. Write the exact
-    # bytes (no newline translation) so the on-disk SHA256 matches the bundle
-    # hash that GET /config/hash reports, on every platform.
+    # Back up the current file next to it, then overwrite the config IN PLACE
+    # (same inode) -- NOT via a temp-file rename. The real vllm-sr gateway
+    # bind-mounts this file into the router container as a SINGLE FILE
+    # (`<host>/config.yaml:/app/config.yaml:z`, see docker_start.py), which pins
+    # the inode: an atomic rename swaps in a NEW inode the container never sees,
+    # so the new config would be invisible AND the in-container fsnotify file
+    # watch would never fire a reload. An in-place truncate+write keeps the
+    # inode, so the change is visible in the container and triggers the
+    # Write-event hot-reload (server_config_watch.go). The router debounces and
+    # waits ~300ms before reading, so it never observes the brief write window.
+    # Write the exact bytes (no newline translation) so the on-disk SHA256
+    # matches the bundle hash GET /config/hash reports, on every platform.
+    data = config_text.encode("utf-8")
     if os.path.exists(cfg.config_file):
         shutil.copy2(cfg.config_file, cfg.config_file + ".bak")
-    tmp = cfg.config_file + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(config_text.encode("utf-8"))
-    os.replace(tmp, cfg.config_file)
+    with open(cfg.config_file, "wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 def _wait_for_hash(cfg: AgentConfig, desired_hash: str) -> bool:
