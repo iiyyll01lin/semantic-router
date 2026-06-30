@@ -79,9 +79,11 @@ HALO_B_SSH=ubuntu@192.0.2.20 bash teardown-fleet-2box.sh
 
 ### Gateway mode (real `vllm-sr serve` on both boxes)
 
-Prerequisites (BOTH boxes): the semantic-router repo checked out, the `vllm-sr`
-CLI installed, and the strix-halo-poc models present (run that recipe's Gate B
-download once per box). Then, from Halo-A:
+Prerequisites (BOTH boxes): the semantic-router repo checked out with the
+**strix-halo-poc** recipe present (its committed `poc-strix.yaml`) and the
+`vllm-sr` CLI installed and resolvable on the non-interactive SSH `PATH`. Halo-B
+does **not** need to be on the same branch as this fleet recipe — the orchestrator
+ships these scripts to it. Then, from Halo-A:
 
 ```bash
 HALO_A_IP=192.0.2.10 \
@@ -92,8 +94,12 @@ FLEET_MODE=gateway \
   bash deploy-fleet-2box.sh
 ```
 
-- `HALO_B_REPO` is the repo path on Halo-B (gateway mode runs `node-bring-up.sh`
-  from there because it needs the models + `poc-strix.yaml`, not just temp files).
+- `HALO_B_REPO` is the repo path on Halo-B. Gateway mode ships this recipe's own
+  scripts to a temp dir on Halo-B and points them at `${HALO_B_REPO}/deploy/recipes/strix-halo-poc`
+  (via `STRIX_POC_DIR`) for the proven `poc-strix.yaml` + staged models — so Halo-B
+  only needs strix-halo-poc + the `vllm-sr` CLI, not this branch checked out.
+- The deploy does a fast Halo-B preflight (`poc-strix.yaml` present **and** `vllm-sr`
+  on `PATH`) and fails early with the exact fix if either is missing.
 - The CCP serves the rendered `poc-strix.yaml` (+ a `fleet-rule-marker` line) as
   the desired config; both real gateways converge to it. Model pulls + serve make
   the first run slow.

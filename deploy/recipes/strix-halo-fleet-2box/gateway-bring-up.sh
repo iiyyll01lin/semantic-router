@@ -25,7 +25,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/fleet_common.sh"
 
-STRIX_POC_DIR="${SCRIPT_DIR}/../strix-halo-poc"
+# STRIX_POC_DIR defaults to the sibling recipe, but can be OVERRIDDEN so the
+# orchestrator can ship THIS recipe's scripts to a bare Halo-B (a temp dir) while
+# still pointing at the repo's proven strix-halo-poc assets (poc-strix.yaml +
+# staged models). That way Halo-B does not have to be checked out on the branch
+# that carries strix-halo-fleet-2box. See deploy-fleet-2box.sh (gateway).
+STRIX_POC_DIR="${STRIX_POC_DIR:-${SCRIPT_DIR}/../strix-halo-poc}"
 SOURCE_CONFIG="${STRIX_POC_DIR}/poc-strix.yaml"
 GATEWAY_DIR="${FLEET_STATE_DIR}/gateway"
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-${GATEWAY_DIR}/config.yaml}"

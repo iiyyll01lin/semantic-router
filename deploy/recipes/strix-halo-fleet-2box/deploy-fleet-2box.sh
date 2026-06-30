@@ -113,15 +113,34 @@ if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" true; then
   exit 1
 fi
 if [ "${FLEET_MODE}" = "gateway" ]; then
-  # Gateway mode needs the full repo (models, poc-strix.yaml, vllm-sr CLI) on
-  # Halo-B; run node-bring-up.sh from there instead of shipping temp files.
-  REMOTE_RECIPE="${HALO_B_REPO%/}/deploy/recipes/strix-halo-fleet-2box"
-  echo "    starting Halo-B gateway node from ${REMOTE_RECIPE} (model pulls may be slow) ..."
+  # Gateway mode reuses the repo's proven strix-halo-poc assets (poc-strix.yaml +
+  # staged models) and the vllm-sr CLI on Halo-B, but SHIPS this recipe's own
+  # scripts to a temp dir -- so Halo-B does NOT need to be checked out on the
+  # branch that carries strix-halo-fleet-2box. Verify the repo prereqs first.
+  REMOTE_POC="${HALO_B_REPO%/}/deploy/recipes/strix-halo-poc"
+  if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+       "test -f ${REMOTE_POC}/poc-strix.yaml && command -v vllm-sr >/dev/null 2>&1"; then
+    echo "ERROR: Halo-B is missing gateway prerequisites under HALO_B_REPO=${HALO_B_REPO}:" >&2
+    echo "         need ${REMOTE_POC}/poc-strix.yaml AND the 'vllm-sr' CLI on the SSH PATH." >&2
+    echo "       On Halo-B (once): install the CLI and stage the single-box PoC assets:" >&2
+    echo "         cd ${HALO_B_REPO} && pip install -e src/vllm-sr" >&2
+    echo "         # ensure 'vllm-sr' resolves for non-interactive ssh (e.g. activate the venv in ~/.bashrc)" >&2
+    exit 1
+  fi
+  ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
+  # Ship the self-contained gateway scripts (no mock_router.py); they target the
+  # repo's strix-halo-poc via STRIX_POC_DIR below.
+  scp "${SSH_BASE_OPTS[@]}" "${SCP_PORT_OPTS[@]}" \
+    "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/fleet_common.sh" \
+    "${SCRIPT_DIR}/node-bring-up.sh" "${SCRIPT_DIR}/gateway-bring-up.sh" \
+    "${HALO_B_SSH}:${REMOTE_DIR}/"
+  echo "    starting Halo-B gateway node (scripts shipped; assets from ${REMOTE_POC}; model pulls may be slow) ..."
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
     "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=gateway \
      FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
      ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
-     bash ${REMOTE_RECIPE}/node-bring-up.sh"
+     STRIX_POC_DIR=${REMOTE_POC} \
+     bash ${REMOTE_DIR}/node-bring-up.sh"
 else
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
   # Ship only the self-contained recipe files Halo-B needs (stdlib python + scripts).
