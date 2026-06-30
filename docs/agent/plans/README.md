@@ -82,3 +82,4 @@ Tasks use stable IDs and checkbox status:
 - [pl-0032-architecture-scorecard-ratchet.md](pl-0032-architecture-scorecard-ratchet.md)
 - [pl-0034-fusion-api.md](pl-0034-fusion-api.md)
 - [pl-0035-strix-poc-pii-hardening.md](pl-0035-strix-poc-pii-hardening.md)
+- [pl-0036-edge-fleet-config-control-plane.md](pl-0036-edge-fleet-config-control-plane.md)

@@ -1,0 +1,7 @@
+# Runtime artifacts produced by the fleet recipe (never committed).
+__pycache__/
+*.pyc
+.ccp-state/
+.mock-router-config.yaml
+*.bak
+*.tmp

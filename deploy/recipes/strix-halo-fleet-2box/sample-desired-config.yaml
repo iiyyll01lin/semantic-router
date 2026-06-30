@@ -1,0 +1,16 @@
+# Sample desired router config served by the CCP for the fleet PoC.
+#
+# In MOCK mode this is opaque text the agents fan out and hot-reload (the demo
+# changes the marked rule line to show one edit converging both boxes).
+# In GATEWAY mode, replace this with a real router config.yaml (the canonical
+# version/listeners/providers/routing/global layout) that `vllm-sr serve`
+# accepts; the agent writes it to the file the gateway watches.
+version: v0.3
+listeners:
+  - name: http
+    address: 0.0.0.0
+    port: 8899
+# --- fleet-managed rule (the demo edits this line) ---
+routing:
+  default_model: qwen/qwen3.5-rocm
+  note: "rule-set A (edit me once at the CCP, watch both Strix Halo converge)"
