@@ -20,7 +20,17 @@ ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
 PYBIN="$(fleet_pybin)"
-ORIG_CFG="${SCRIPT_DIR}/sample-desired-config.yaml"
+# In gateway mode, edit/roll a STABLE SNAPSHOT of the REAL rendered gateway
+# config -- never the mock sample (pushing the minimal mock config to a real
+# router would replace its valid poc-strix.yaml config and break the live
+# gateway), and never the live file directly (convergence overwrites it, so the
+# rollback base must be a copy taken before the first edit).
+if [ "${FLEET_MODE:-mock}" = "gateway" ]; then
+  ORIG_CFG="${FLEET_STATE_DIR}/verify-orig-gateway.yaml"
+  cp -f "${FLEET_STATE_DIR}/gateway/config.yaml" "${ORIG_CFG}"
+else
+  ORIG_CFG="${SCRIPT_DIR}/sample-desired-config.yaml"
+fi
 FAIL=0
 
 fctl() { "${PYBIN}" "${SCRIPT_DIR}/fleetctl.py" "$@"; }

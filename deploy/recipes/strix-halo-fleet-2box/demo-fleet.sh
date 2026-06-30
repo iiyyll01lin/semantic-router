@@ -14,7 +14,15 @@ ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
 PYBIN="$(fleet_pybin)"
-ORIG_CFG="${SCRIPT_DIR}/sample-desired-config.yaml"
+# In gateway mode, edit/roll a STABLE SNAPSHOT of the REAL rendered gateway
+# config -- never the mock sample (it would replace the real router's valid
+# config) and never the live file directly (convergence overwrites it).
+if [ "${FLEET_MODE:-mock}" = "gateway" ]; then
+  ORIG_CFG="${FLEET_STATE_DIR}/demo-orig-gateway.yaml"
+  cp -f "${FLEET_STATE_DIR}/gateway/config.yaml" "${ORIG_CFG}"
+else
+  ORIG_CFG="${SCRIPT_DIR}/sample-desired-config.yaml"
+fi
 fctl() { "${PYBIN}" "${SCRIPT_DIR}/fleetctl.py" "$@"; }
 pause() { echo; read -r -p ">> ${1:-press Enter to continue} " _ || true; echo; }
 
@@ -27,7 +35,7 @@ fctl status
 
 pause "Now EDIT ONE RULE once at the CCP and watch both boxes converge (Enter)"
 DEMO="${FLEET_STATE_DIR}/demo-desired.yaml"
-sed 's/rule-set A.*/rule-set DEMO (changed once, centrally)"/' "${ORIG_CFG}" >"${DEMO}"
+sed 's/rule-set A.*/rule-set DEMO (changed once, centrally)/' "${ORIG_CFG}" >"${DEMO}"
 echo "+ fleetctl set-desired (rule-set DEMO)"
 fctl set-desired "${DEMO}"
 echo "+ waiting for halo-a and halo-b to hot-reload and converge ..."
