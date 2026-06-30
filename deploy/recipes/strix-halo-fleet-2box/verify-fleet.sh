@@ -60,7 +60,12 @@ run_check "fleet rollback (desired<-prior content converges both)" \
   fctl wait-converged --boxes halo-a,halo-b --timeout 60
 
 # 4. central audit ------------------------------------------------------------
-if [ "$(fctl audit | wc -l | tr -d ' ')" -gt 0 ]; then check 0 "central audit log captured applies"; else check 1 "central audit log captured applies"; fi
+if [ "$(fctl audit | wc -l | tr -d ' ')" -gt 0 ]; then
+  echo "[PASS] central audit log captured applies"
+else
+  echo "[FAIL] central audit log captured applies"
+  FAIL=1
+fi
 
 echo "== fleet status =="
 fctl status || true
