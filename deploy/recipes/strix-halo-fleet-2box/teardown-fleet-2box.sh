@@ -23,14 +23,20 @@ echo "==> Stopping local (Halo-A) CCP, router, and agent"
 fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-agent.pid"
 fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-router.pid"
 fleet_stop_pidfile "${FLEET_STATE_DIR}/ccp.pid"
+if [ "${FLEET_MODE:-mock}" = "gateway" ]; then
+  echo "    gateway mode: stopping the local vllm-sr gateway containers"
+  vllm-sr stop >/dev/null 2>&1 || true
+fi
 
 if [ -n "${HALO_B_SSH:-}" ]; then
   echo "==> Stopping Halo-B router and agent over SSH (${HALO_B_SSH})"
   SSH_OPTS=()
   [ -n "${HALO_B_SSH_KEY:-}" ] && SSH_OPTS+=(-i "${HALO_B_SSH_KEY}")
   [ -n "${HALO_B_SSH_PORT:-}" ] && SSH_OPTS+=(-p "${HALO_B_SSH_PORT}")
+  REMOTE_STOP=""
+  [ "${FLEET_MODE:-mock}" = "gateway" ] && REMOTE_STOP="vllm-sr stop >/dev/null 2>&1 || true; "
   ssh "${SSH_OPTS[@]}" "${HALO_B_SSH}" \
-    "for f in halo-b-agent halo-b-router; do p=${REMOTE_STATE}/\$f.pid; [ -f \"\$p\" ] && kill \"\$(cat \"\$p\")\" 2>/dev/null || true; rm -f \"\$p\"; done; rm -rf ${REMOTE_DIR}" \
+    "${REMOTE_STOP}for f in halo-b-agent halo-b-router; do p=${REMOTE_STATE}/\$f.pid; [ -f \"\$p\" ] && kill \"\$(cat \"\$p\")\" 2>/dev/null || true; rm -f \"\$p\"; done; rm -rf ${REMOTE_DIR}" \
     || echo "    (warning: could not reach Halo-B; stop it manually if it is still running)"
 else
   echo "==> HALO_B_SSH not set; skipping remote teardown (set it to clean Halo-B)"

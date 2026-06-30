@@ -117,6 +117,17 @@ PY
   [[ -f "${PII_ONNX_MODEL}" ]] || { echo "ERROR: ONNX export failed" >&2; exit 1; }
 fi
 
+echo "==> [gateway] freeing the host API port :${ROUTER_PORT} before serve"
+# A stale vllm-sr router container (or a leftover fleet mock router) would hold
+# the host API port and make 'vllm-sr serve' fail with 'address already in use'.
+# Remove the router container (serve recreates it); the per-box mock router is
+# already stopped by node-bring-up.sh before this script runs.
+docker rm -f vllm-sr-router-container >/dev/null 2>&1 || true
+if command -v ss >/dev/null 2>&1 && [ -n "$(ss -ltnH "( sport = :${ROUTER_PORT} )" 2>/dev/null)" ]; then
+  echo "WARNING: something still listens on :${ROUTER_PORT}; serve may fail to bind it." >&2
+  echo "         Free it first: 'vllm-sr stop' and/or stop the fleet mock router, then re-run." >&2
+fi
+
 echo "==> [gateway] serving vllm-sr (platform amd, classifiers pinned to CPU)"
 # VLLM_SR_AMD_PRESERVE_CPU=1 is REQUIRED: it reaches the container so that the
 # agent-triggered hot-reload keeps classifiers on CPU instead of re-creating
