@@ -50,9 +50,13 @@ else
   echo "==> [${BOX_ID}] gateway mode: starting a real vllm-sr gateway"
   GATEWAY_CONFIG="${GATEWAY_CONFIG:-${FLEET_STATE_DIR}/gateway/config.yaml}"
   # STRIX_POC_DIR (optional) lets the orchestrator point a shipped copy of this
-  # script at the repo's strix-halo-poc assets on a bare Halo-B.
+  # script at the repo's strix-halo-poc assets on a bare Halo-B. Export it rather
+  # than passing `${STRIX_POC_DIR:+STRIX_POC_DIR=...}` as an inline env prefix: an
+  # assignment produced by an expansion is NOT honored as an assignment by bash --
+  # it becomes the command name and (because the value has a '/') fails with
+  # "No such file or directory" (exit 127). gateway-bring-up.sh reads it from env.
+  [ -n "${STRIX_POC_DIR:-}" ] && export STRIX_POC_DIR
   GATEWAY_CONFIG="${GATEWAY_CONFIG}" ROUTER_PORT="${ROUTER_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
-  ${STRIX_POC_DIR:+STRIX_POC_DIR="${STRIX_POC_DIR}"} \
     bash "${SCRIPT_DIR}/gateway-bring-up.sh"
   # The agent manages the gateway's bind-mounted source config (GET /config/hash
   # reads it; an external write triggers the router's fsnotify hot-reload).
