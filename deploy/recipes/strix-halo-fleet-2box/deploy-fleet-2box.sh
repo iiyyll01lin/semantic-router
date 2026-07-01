@@ -118,9 +118,16 @@ if [ "${FLEET_MODE}" = "gateway" ]; then
   # scripts to a temp dir -- so Halo-B does NOT need to be checked out on the
   # branch that carries strix-halo-fleet-2box. Verify the repo prereqs first.
   REMOTE_POC="${HALO_B_REPO%/}/deploy/recipes/strix-halo-poc"
+  REMOTE_PII_DIR="${REMOTE_POC}/models/pii_classifier_modernbert-base_presidio_token_model"
+  # Fail fast on missing prereqs BEFORE the slow (~40GB) Ollama pulls: the gateway
+  # needs BOTH the committed poc-strix.yaml AND the staged PII model dir. Without
+  # this, gateway-bring-up.sh only discovers a missing PII model AFTER pulling
+  # every tier model on Halo-B. Report exactly which prereq is absent.
   if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-       "test -f ${REMOTE_POC}/poc-strix.yaml"; then
-    echo "ERROR: Halo-B is missing ${REMOTE_POC}/poc-strix.yaml under HALO_B_REPO=${HALO_B_REPO}." >&2
+       "test -f ${REMOTE_POC}/poc-strix.yaml && test -d ${REMOTE_PII_DIR}"; then
+    echo "ERROR: Halo-B is missing strix-halo-poc prereqs under HALO_B_REPO=${HALO_B_REPO}:" >&2
+    echo "         - ${REMOTE_POC}/poc-strix.yaml (the gateway config), and/or" >&2
+    echo "         - ${REMOTE_PII_DIR} (the staged PII model)" >&2
     echo "       Gateway mode reuses the strix-halo-poc config + staged models on Halo-B." >&2
     echo "       On Halo-B (once): cd ${HALO_B_REPO} && bash deploy/recipes/strix-halo-poc/bring-up.sh" >&2
     exit 1
