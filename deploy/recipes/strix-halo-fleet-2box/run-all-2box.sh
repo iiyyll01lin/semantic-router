@@ -63,6 +63,14 @@ fctl() { CCP_URL="${CCP_URL:-http://localhost:9300}" FLEET_TOKEN="${FLEET_TOKEN:
 fctl status >"${RUN_DIR}/fleet-status.txt" 2>&1 || true
 fctl audit  >"${RUN_DIR}/fleet-audit.txt"  2>&1 || true
 
+# Distil the bundle into machine-readable metrics (convergence latency, hash
+# agreement, router readiness, config size) -> metrics.json + metrics.txt. This
+# turns every hardware run into a structured, paper-grade data point. See
+# docs/research-pipeline.md for the metric definitions.
+CCP_URL="${CCP_URL:-http://localhost:9300}" FLEET_TOKEN="${FLEET_TOKEN:-}" \
+  "${PYBIN}" "${SCRIPT_DIR}/fleet_metrics.py" --bundle "${RUN_DIR}" 2>&1 \
+  | tee "${RUN_DIR}/metrics.txt" || true
+
 echo
 echo "=============================================================="
 if [ "${rc}" -eq 0 ]; then
