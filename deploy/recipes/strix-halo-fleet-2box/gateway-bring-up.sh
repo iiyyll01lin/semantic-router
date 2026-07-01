@@ -98,8 +98,20 @@ if ! command -v vllm-sr >/dev/null 2>&1; then
     done
   fi
 fi
+# Final fallback: ask the box's own LOGIN+INTERACTIVE shell where vllm-sr is.
+# `bash -lic` sources ~/.bash_profile + ~/.bashrc (where conda init lives)
+# exactly like an interactive SSH session, so it resolves vllm-sr wherever the
+# user actually has it (base OR the default-activated env, any conda location)
+# without us guessing paths. This is the general fix for "non-interactive SSH
+# does not load conda". Cheap and side-effect-free (it only reads the path).
 if ! command -v vllm-sr >/dev/null 2>&1; then
-  echo "ERROR: 'vllm-sr' not found on PATH (probed VLLM_SR_BIN + common conda/venv bin dirs)." >&2
+  _login_vsr="$(bash -lic 'command -v vllm-sr' 2>/dev/null | tr -d '[:space:]' || true)"
+  if [ -n "${_login_vsr}" ] && [ -x "${_login_vsr}" ]; then
+    PATH="$(dirname "${_login_vsr}"):${PATH}"; export PATH
+  fi
+fi
+if ! command -v vllm-sr >/dev/null 2>&1; then
+  echo "ERROR: 'vllm-sr' not found (probed VLLM_SR_BIN + conda/venv dirs + your login shell)." >&2
   echo "       Fix (deterministic): set VLLM_SR_BIN to the dir that holds vllm-sr on this box," >&2
   echo "       e.g. VLLM_SR_BIN=\$HOME/miniconda3/envs/<env>/bin -- pass it to deploy-fleet-2box.sh" >&2
   echo "       (it is forwarded to Halo-B). Or install vllm-sr into base / symlink it into" >&2
