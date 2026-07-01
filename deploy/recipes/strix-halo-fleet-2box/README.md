@@ -278,6 +278,14 @@ baseline converge, edit-once converge **via hot-reload (not restart)**, drift
 self-heal, fleet rollback, **signed-bundle tamper rejection**, and central audit.
 This is what proves the new logic in CI-like conditions.
 
+## Research & metrics
+
+Every run emits `metrics.json` (via [`fleet_metrics.py`](fleet_metrics.py)). For the
+paper-oriented pipeline (figure), per-stage data specs, efficiency metrics, and the
+novelty + feasibility argument, see
+[`docs/research-pipeline.md`](docs/research-pipeline.md); the next research
+directions (pick list) are in [`docs/research-roadmap.md`](docs/research-roadmap.md).
+
 ## Files
 
 | File | Description |
@@ -295,6 +303,7 @@ This is what proves the new logic in CI-like conditions.
 | [`ccp-bring-up.sh`](ccp-bring-up.sh) | Start the CCP process. |
 | [`verify-fleet.sh`](verify-fleet.sh) | Headless PASS/FAIL against the live fleet (converge / drift / rollback / audit). |
 | [`verify_local.py`](verify_local.py) | Offline in-process end-to-end verifier (no hardware). |
+| [`fleet_metrics.py`](fleet_metrics.py) | Distil a run bundle into `metrics.json`: convergence latency, hash agreement, router readiness, config size. |
 | [`demo-fleet.sh`](demo-fleet.sh) | Narrated demo: edit one rule -> both boxes converge -> audit -> rollback. |
 | [`teardown-fleet-2box.sh`](teardown-fleet-2box.sh) | Stop CCP + both nodes (Halo-B over SSH). |
 | [`sample-desired-config.yaml`](sample-desired-config.yaml) | The initial desired config the CCP serves. |
