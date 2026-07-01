@@ -39,6 +39,9 @@ ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
 for f in fleet.env ccp.log halo-a-agent.log halo-a-router.log; do
   cp -f "${FLEET_STATE_DIR}/${f}" "${RUN_DIR}/" 2>/dev/null || true
 done
+# Router CONTAINER logs (gateway mode): a hot-reload crash on the real ROCm
+# router surfaces HERE, not in the serve-wrapper halo-a-router.log above.
+docker logs --tail 500 vllm-sr-router-container >"${RUN_DIR}/halo-a-router-container.log" 2>&1 || true
 
 # Pull Halo-B logs + capture a final status/audit snapshot (best-effort).
 if [ -f "${ENV_FILE}" ]; then
@@ -51,6 +54,8 @@ if [ -n "${HALO_B_SSH:-}" ]; then
   [ -n "${HALO_B_SSH_PORT:-}" ] && SSH_OPTS+=(-p "${HALO_B_SSH_PORT}")
   ssh "${SSH_OPTS[@]}" "${HALO_B_SSH}" "cat ${REMOTE_STATE}/halo-b-agent.log" \
     >"${RUN_DIR}/halo-b-agent.log" 2>/dev/null || true
+  ssh "${SSH_OPTS[@]}" "${HALO_B_SSH}" "docker logs --tail 500 vllm-sr-router-container 2>&1" \
+    >"${RUN_DIR}/halo-b-router-container.log" 2>/dev/null || true
 fi
 PYBIN="$(fleet_pybin)"
 fctl() { CCP_URL="${CCP_URL:-http://localhost:9300}" FLEET_TOKEN="${FLEET_TOKEN:-}" \
