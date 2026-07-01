@@ -149,6 +149,34 @@ FLEET_MODE=gateway \
   hot-reload would fire. Do not change `fleet_agent._write_config` back to a
   temp-file rename.
 
+#### Pinning the router image (avoid `:latest` version skew)
+
+Both boxes resolve the router image as `vllm-sr-rocm:latest`. Because `:latest`
+moves, a box that pulls it later can get a **newer** image whose config schema no
+longer matches the committed `poc-strix.yaml` — e.g. a fatal
+`runtime_config_load_failed: removed config fields are no longer supported:
+global.router.model_selection.session_aware`. A fleet serves ONE config to both
+boxes, so they must run the **same** image. Pin it to a known-good digest:
+
+```bash
+# On a box that already serves poc-strix.yaml OK (e.g. Halo-A), get its image:
+docker inspect --format '{{index .RepoDigests 0}}' \
+  ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest
+# -> ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:…
+
+# Then pin every gateway to it (the deploy forwards this to Halo-B):
+VLLM_SR_ROUTER_IMAGE=ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:… \
+HALO_A_MODE=gateway HALO_B_MODE=gateway HALO_B_SSH=… HALO_B_REPO=… \
+  bash run-all-2box.sh
+```
+
+`VLLM_SR_ROUTER_IMAGE` is read by `vllm-sr serve`; the deploy forwards it to
+Halo-B, and Halo-A inherits it locally. The Halo-B default
+`VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent` pulls the pinned digest if it is not
+present yet. (The alternative — migrating `poc-strix.yaml` to the newer
+`global.router.learning.*` schema and running `:latest` on both — is a larger
+change tied to a specific vllm-sr release.)
+
 #### Auto-provisioning Halo-B (`HALO_B_PROVISION`)
 
 Set `HALO_B_MODE=gateway` (or `FLEET_MODE=gateway`) and the deploy makes Halo-B

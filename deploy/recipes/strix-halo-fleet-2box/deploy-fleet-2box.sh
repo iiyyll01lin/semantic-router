@@ -182,6 +182,7 @@ if [ "${HALO_B_MODE}" = "gateway" ]; then
      ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
      STRIX_POC_DIR=${REMOTE_POC} VLLM_SR_BIN=${VLLM_SR_BIN:-} \
      VLLM_SR_IMAGE_PULL_POLICY=${VLLM_SR_IMAGE_PULL_POLICY:-ifnotpresent} \
+     VLLM_SR_ROUTER_IMAGE=${VLLM_SR_ROUTER_IMAGE:-} \
      bash ${REMOTE_DIR}/node-bring-up.sh"
 else
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
