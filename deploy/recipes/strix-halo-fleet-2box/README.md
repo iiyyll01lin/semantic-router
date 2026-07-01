@@ -14,15 +14,53 @@ hot-reload + `GET /config/hash`) and adds only the central distribution + audit 
 signing layer.
 
 > **✅ Verified on hardware (2026-07-01).** A full one-shot
-> `HALO_A_MODE=gateway HALO_B_MODE=mock bash run-all-2box.sh` across two Strix
-> Halo boxes (Halo-A = HP Z2 Mini G1a, Halo-B = a minimal box) passed end to end:
-> Halo-A brought up a **real `vllm-sr` ROCm gateway** (router ready, `/config/hash`
-> live), Halo-B ran the pure-Python mock edge, and **both converged to the same
-> signed-config hash** (`76c08a3e…`). `verify-fleet.sh` passed (edit-once /
+> `HALO_A_MODE=gateway HALO_B_MODE=gateway bash run-all-2box.sh` across two Strix
+> Halo boxes (Halo-A = HP Z2 Mini G1a; Halo-B = a bare box, auto-provisioned) ran
+> a **real `vllm-sr` ROCm gateway on BOTH boxes** and **both converged to the same
+> signed-config hash** (`a78aebc5fd5f`). `verify-fleet.sh` passed (edit-once /
 > rollback / audit; drift-heal skipped in gateway mode) and the non-interactive
-> demo ran the full loop — one central edit → both boxes hot-reload → audit trail
-> → one-edit rollback. Run bundle: `run-20260701-114428`. See **Mixed fleet** and
-> **Gateway mode** below.
+> demo ran the full loop — one central edit → both real routers hot-reload
+> (`fc739baa…`) → central audit → one-edit rollback. Run bundle:
+> `run-20260701-154843`. (An earlier `HALO_B_MODE=mock` run — `run-20260701-114428`,
+> hash `76c08a3e…` — first proved real↔mock convergence.)
+
+## What this proves (verified on hardware)
+
+The dual-gateway run above put a **real `vllm-sr` ROCm router on BOTH boxes** under
+one central control plane — not a stub, not a single box. Concretely it proves:
+
+- **The signed-hash contract holds across two independent real routers.** The
+  Python CCP signs `sha256(config_bytes)`; each Go router independently returns the
+  same value from `GET /config/hash` over its bind-mounted source file. All three
+  agreed (`a78aebc5fd5f`) — the make-or-break of the design, and something a
+  mock↔mock or real↔mock run cannot show.
+- **The real router accepts and parses the fleet config.** Unlike the mock (which
+  only hashes bytes), the Go router validates the schema and builds the decision
+  tree — exactly the check that caught the removed `session_aware` field. Serving
+  means the distributed config is one the real router endorses.
+- **In-place write + fsnotify hot-reload works on a live ROCm router, no restart.**
+  One central edit converged both real gateways to a new hash (`fc739baa…`), and a
+  one-edit rollback returned them to `a78aebc5fd5f`, with the router containers
+  never restarting and continuing to serve.
+- **Zero-touch onboarding of a bare edge box.** Halo-B started with no `vllm-sr`,
+  no PII model, and an outdated config schema; the one-click provisioner installed
+  `vllm-sr`, fetched the (public) PII model, and brought up a real gateway.
+- **Signed + audited + pull-only.** Config is HMAC-signed (tampered/unsigned bundles
+  are rejected — see `verify_local.py`), every apply lands in a central audit log
+  (versions `v1`→`v5` across both boxes), and agents only dial **outbound**, so a
+  NAT'd Halo-B needs no inbound exposure.
+
+### What the real gateway adds over mock
+
+| | `mock` | `gateway` (this run) |
+| --- | --- | --- |
+| the "router" | stdlib `mock_router.py` hashing one file | real `vllm-sr serve` ROCm stack (Ollama + tier models + PII ONNX + Envoy) |
+| config schema validated | no (bytes only) | **yes** — real Go parser |
+| hot-reload | nothing to reload | **fsnotify on a bind-mounted single file, in place, no restart** |
+| proves | the control-plane logic (sign / fan-out / drift / rollback / audit) | all of that **against a production-shaped router that must accept + hot-reload + keep serving** |
+
+The topology and the per-agent loop are in **How it works** below; the two modes
+are in **Two modes**.
 
 ## How it works
 
