@@ -111,11 +111,14 @@ if ! command -v vllm-sr >/dev/null 2>&1; then
   fi
 fi
 if ! command -v vllm-sr >/dev/null 2>&1; then
-  echo "ERROR: 'vllm-sr' not found (probed VLLM_SR_BIN + conda/venv dirs + your login shell)." >&2
-  echo "       Fix (deterministic): set VLLM_SR_BIN to the dir that holds vllm-sr on this box," >&2
-  echo "       e.g. VLLM_SR_BIN=\$HOME/miniconda3/envs/<env>/bin -- pass it to deploy-fleet-2box.sh" >&2
-  echo "       (it is forwarded to Halo-B). Or install vllm-sr into base / symlink it into" >&2
-  echo "       /usr/local/bin, or put 'conda activate <env>' in ~/.profile." >&2
+  echo "ERROR: 'vllm-sr' is not installed / not found on this box." >&2
+  echo "       (Probed PATH, VLLM_SR_BIN, conda/venv dirs incl. envs/*/bin, and your login shell.)" >&2
+  echo "       Install it HERE (the console script lands in ~/.local/bin, which this script auto-detects):" >&2
+  echo "         pip install --user -e <semantic-router-repo>/src/vllm-sr" >&2
+  echo "       Already installed elsewhere? Point VLLM_SR_BIN at its bin dir and pass it to" >&2
+  echo "       deploy-fleet-2box.sh (forwarded to Halo-B), e.g. VLLM_SR_BIN=\$HOME/.local/bin." >&2
+  echo "       Or, if this box should NOT run a real gateway, deploy it as a mock edge instead:" >&2
+  echo "       run deploy-fleet-2box.sh with HALO_B_MODE=mock (Halo-A stays a real gateway)." >&2
   exit 1
 fi
 

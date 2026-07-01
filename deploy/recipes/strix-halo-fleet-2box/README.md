@@ -135,6 +135,29 @@ FLEET_MODE=gateway \
   hot-reload would fire. Do not change `fleet_agent._write_config` back to a
   temp-file rename.
 
+### Mixed fleet (real gateway on one box, mock edge on the other)
+
+If only one box can run a real `vllm-sr` gateway (e.g. Halo-B is a minimal box
+without `vllm-sr`/ROCm images), run each box in its own mode with `HALO_A_MODE`
+and `HALO_B_MODE` (each defaults to `FLEET_MODE`):
+
+```bash
+HALO_A_IP=192.0.2.10 HALO_B_IP=192.0.2.20 HALO_B_SSH=ubuntu@192.0.2.20 \
+HALO_A_MODE=gateway HALO_B_MODE=mock \
+  bash deploy-fleet-2box.sh
+```
+
+- Halo-A runs the **real** gateway; Halo-B runs the pure-Python **mock** edge (no
+  `vllm-sr`/GPU, no `HALO_B_REPO` needed). You still get the full control-plane
+  story across both boxes: signed fan-out, convergence, drift self-heal, rollback,
+  central audit.
+- When any box is a gateway, the CCP's desired config is the **real** rendered
+  gateway config (a mock edge just stores the bytes and reports their hash, so it
+  converges too). `verify-fleet.sh`/`demo-fleet.sh` edit that real config.
+- Upgrade Halo-B to a real gateway later by installing the CLI there
+  (`pip install --user -e <repo>/src/vllm-sr` → lands in `~/.local/bin`, which the
+  bring-up auto-detects) plus the `vllm-sr` ROCm images, then use `FLEET_MODE=gateway`.
+
 ## Verify the logic offline (no hardware)
 
 ```bash

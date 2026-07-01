@@ -29,6 +29,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/fleet_common.sh"
 
 FLEET_MODE="${FLEET_MODE:-mock}"
+# Per-box mode: each box defaults to FLEET_MODE but can be overridden so a capable
+# box runs a REAL gateway while a minimal box runs the lightweight mock edge, e.g.
+#   HALO_A_MODE=gateway HALO_B_MODE=mock bash deploy-fleet-2box.sh
+# The CCP's desired config is a real gateway config if EITHER box is a gateway
+# (mock routers accept any bytes and just report their content hash).
+HALO_A_MODE="${HALO_A_MODE:-${FLEET_MODE}}"
+HALO_B_MODE="${HALO_B_MODE:-${FLEET_MODE}}"
+if [ "${HALO_A_MODE}" = "gateway" ] || [ "${HALO_B_MODE}" = "gateway" ]; then
+  DESIRED_MODE="gateway"
+else
+  DESIRED_MODE="mock"
+fi
 PYBIN="$(fleet_pybin)"
 REMOTE_DIR="~/.vllm-sr-fleet-2box"
 REMOTE_STATE="\${TMPDIR:-/tmp}/vllm-sr-fleet"
@@ -69,20 +81,27 @@ export FLEET_TOKEN=${FLEET_TOKEN}
 export CCP_URL=${CCP_URL_LOCAL}
 export CCP_PORT=${CCP_PORT}
 export ROUTER_PORT=${ROUTER_PORT}
-export FLEET_MODE=${FLEET_MODE}
+export FLEET_MODE=${DESIRED_MODE}
+export HALO_A_MODE=${HALO_A_MODE}
+export HALO_B_MODE=${HALO_B_MODE}
 export HALO_A_IP=${HALO_A_IP}
 export HALO_B_IP=${HALO_B_IP}
 export HALO_B_SSH=${HALO_B_SSH}
 EOF
-echo "    mode=${FLEET_MODE}  CCP=:${CCP_PORT}  state=${FLEET_STATE_DIR}  env=${ENV_FILE}"
+echo "    modes: halo-a=${HALO_A_MODE} halo-b=${HALO_B_MODE} (desired=${DESIRED_MODE})  CCP=:${CCP_PORT}  state=${FLEET_STATE_DIR}"
 
 # In gateway mode, render the REAL gateway config on Halo-A and serve it as the
 # CCP desired (both real gateways converge to it). Gateway mode also needs the
 # semantic-router repo + models (strix-halo-poc Gate B) present on Halo-B.
 CCP_INIT_CONFIG="${SCRIPT_DIR}/sample-desired-config.yaml"
-if [ "${FLEET_MODE}" = "gateway" ]; then
-  : "${HALO_B_REPO:?gateway mode needs HALO_B_REPO (path to the semantic-router repo on Halo-B)}"
-  echo "    gateway mode: rendering the real gateway config for the CCP desired"
+if [ "${HALO_B_MODE}" = "gateway" ]; then
+  : "${HALO_B_REPO:?HALO_B_MODE=gateway needs HALO_B_REPO (path to the semantic-router repo on Halo-B)}"
+fi
+if [ "${DESIRED_MODE}" = "gateway" ]; then
+  # A real gateway is in the fleet, so the CCP desired must be a valid gateway
+  # config, rendered locally on Halo-A from its strix-halo-poc assets. (A mock
+  # edge just stores the bytes and reports their hash, so it converges too.)
+  echo "    rendering the real gateway config for the CCP desired"
   RENDER_ONLY=1 FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
   GATEWAY_CONFIG="${FLEET_STATE_DIR}/gateway/config.yaml" \
     bash "${SCRIPT_DIR}/gateway-bring-up.sh"
@@ -94,13 +113,13 @@ FLEET_SIGNING_KEY="${FLEET_SIGNING_KEY}" FLEET_TOKEN="${FLEET_TOKEN}" \
 CCP_PORT="${CCP_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" CCP_INIT_CONFIG="${CCP_INIT_CONFIG}" \
   bash "${SCRIPT_DIR}/ccp-bring-up.sh"
 
-echo "==> [3/6] Bringing up the Halo-A edge node (router + agent)"
-BOX_ID="halo-a" CCP_URL="${CCP_URL_LOCAL}" FLEET_MODE="${FLEET_MODE}" \
+echo "==> [3/6] Bringing up the Halo-A edge node (router + agent, mode=${HALO_A_MODE})"
+BOX_ID="halo-a" CCP_URL="${CCP_URL_LOCAL}" FLEET_MODE="${HALO_A_MODE}" \
 FLEET_SIGNING_KEY="${FLEET_SIGNING_KEY}" FLEET_TOKEN="${FLEET_TOKEN}" \
 ROUTER_PORT="${ROUTER_PORT}" POLL_INTERVAL="${POLL_INTERVAL}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
   bash "${SCRIPT_DIR}/node-bring-up.sh"
 
-echo "==> [4/6] Provisioning Halo-B over SSH (mode=${FLEET_MODE})"
+echo "==> [4/6] Provisioning Halo-B over SSH (mode=${HALO_B_MODE})"
 SSH_BASE_OPTS=(-o ControlMaster=auto -o ControlPath="${SSH_CTRL_PATH}" -o ControlPersist=2m)
 [ -n "${HALO_B_SSH_KEY:-}" ] && SSH_BASE_OPTS+=(-i "${HALO_B_SSH_KEY}")
 if [ -n "${HALO_B_SSH_PORT:-}" ]; then
@@ -112,7 +131,7 @@ if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" true; then
   echo "         ssh-copy-id ${HALO_B_SSH_PORT:+-p ${HALO_B_SSH_PORT}} ${HALO_B_SSH}" >&2
   exit 1
 fi
-if [ "${FLEET_MODE}" = "gateway" ]; then
+if [ "${HALO_B_MODE}" = "gateway" ]; then
   # Gateway mode reuses the repo's proven strix-halo-poc assets (poc-strix.yaml +
   # staged models) and the vllm-sr CLI on Halo-B, but SHIPS this recipe's own
   # scripts to a temp dir -- so Halo-B does NOT need to be checked out on the
@@ -157,7 +176,7 @@ else
     "${HALO_B_SSH}:${REMOTE_DIR}/"
   echo "    starting Halo-B edge node ..."
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-    "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=${FLEET_MODE} \
+    "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=${HALO_B_MODE} \
      FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
      ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
      bash ${REMOTE_DIR}/node-bring-up.sh"
@@ -185,7 +204,7 @@ fi
 
 cat <<EOF
 
-PASS: fleet is up and converged (mode=${FLEET_MODE}).
+PASS: fleet is up and converged (halo-a=${HALO_A_MODE}, halo-b=${HALO_B_MODE}).
   Demo:     bash ${SCRIPT_DIR}/demo-fleet.sh
   Re-verify: bash ${SCRIPT_DIR}/verify-fleet.sh
   Teardown: HALO_B_SSH=${HALO_B_SSH} bash ${SCRIPT_DIR}/teardown-fleet-2box.sh
