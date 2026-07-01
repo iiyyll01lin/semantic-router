@@ -90,9 +90,10 @@ FLEET_MODE=gateway bash run-all-2box.sh
 
 - The demo step runs non-interactively (no TTY needed); its exit code is the
   deploy/verify result. Add `SKIP_DEMO=1` to stop after verify.
-- Win or lose, a `run-<timestamp>/` bundle (CCP + Halo-A + Halo-B agent logs,
-  plus a final `fleetctl status`/`audit` snapshot) is printed at the end — share
-  that whole directory if anything failed.
+- Win or lose, a `run-<timestamp>/` bundle (CCP log, both boxes' agent **and
+  router container** logs, plus a final `fleetctl status`/`audit` snapshot) is
+  printed at the end — share that whole directory if anything failed. The router
+  container logs capture a hot-reload crash that the serve-wrapper log would not.
 
 ### Gateway mode (real `vllm-sr serve` on both boxes)
 
