@@ -184,8 +184,11 @@ echo "==> [gateway] serving vllm-sr (platform amd, classifiers pinned to CPU)"
 # VLLM_SR_AMD_PRESERVE_CPU=1 is REQUIRED: it reaches the container so that the
 # agent-triggered hot-reload keeps classifiers on CPU instead of re-creating
 # ROCm ONNX sessions (which would crash the router).
+# VLLM_SR_IMAGE_PULL_POLICY (default 'never' = use only local images) can be set
+# to 'ifnotpresent' so a freshly provisioned box pulls any missing runtime images.
 export VLLM_SR_AMD_PRESERVE_CPU=1
-vllm-sr serve --config "${GATEWAY_CONFIG}" --image-pull-policy never --platform amd
+vllm-sr serve --config "${GATEWAY_CONFIG}" \
+  --image-pull-policy "${VLLM_SR_IMAGE_PULL_POLICY:-never}" --platform amd
 
 echo "==> [gateway] waiting for the router config API on :${ROUTER_PORT}"
 if fleet_wait_http "http://localhost:${ROUTER_PORT}/config/hash" 60; then

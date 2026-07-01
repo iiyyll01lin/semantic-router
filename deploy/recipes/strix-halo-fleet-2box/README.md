@@ -13,6 +13,17 @@ This recipe reuses the router's existing per-node primitives (fsnotify
 hot-reload + `GET /config/hash`) and adds only the central distribution + audit +
 signing layer.
 
+> **✅ Verified on hardware (2026-07-01).** A full one-shot
+> `HALO_A_MODE=gateway HALO_B_MODE=mock bash run-all-2box.sh` across two Strix
+> Halo boxes (Halo-A = HP Z2 Mini G1a, Halo-B = a minimal box) passed end to end:
+> Halo-A brought up a **real `vllm-sr` ROCm gateway** (router ready, `/config/hash`
+> live), Halo-B ran the pure-Python mock edge, and **both converged to the same
+> signed-config hash** (`76c08a3e…`). `verify-fleet.sh` passed (edit-once /
+> rollback / audit; drift-heal skipped in gateway mode) and the non-interactive
+> demo ran the full loop — one central edit → both boxes hot-reload → audit trail
+> → one-edit rollback. Run bundle: `run-20260701-114428`. See **Mixed fleet** and
+> **Gateway mode** below.
+
 ## How it works
 
 ```
@@ -99,7 +110,9 @@ FLEET_MODE=gateway bash run-all-2box.sh
 
 Prerequisites (BOTH boxes): the semantic-router repo checked out with the
 **strix-halo-poc** recipe present (its committed `poc-strix.yaml`) and the
-`vllm-sr` CLI installed (e.g. `pip install -e src/vllm-sr`). Halo-B does **not**
+`vllm-sr` CLI installed (e.g. `pip install -e src/vllm-sr`) — though on **Halo-B**
+the deploy **auto-installs `vllm-sr` for you** when it is missing (see
+*Auto-provisioning Halo-B* below). Halo-B does **not**
 need to be on the same branch as this fleet recipe (the orchestrator ships these
 scripts to it), and `vllm-sr` does **not** need to be on the non-interactive SSH
 `PATH` — the bring-up probes common conda/venv bin dirs, **including named-env
@@ -122,9 +135,9 @@ FLEET_MODE=gateway \
   scripts to a temp dir on Halo-B and points them at `${HALO_B_REPO}/deploy/recipes/strix-halo-poc`
   (via `STRIX_POC_DIR`) for the proven `poc-strix.yaml` + staged models — so Halo-B
   only needs strix-halo-poc + the `vllm-sr` CLI, not this branch checked out.
-- The deploy preflights `poc-strix.yaml` on Halo-B and fails early if it is
-  missing; `vllm-sr` is resolved (probing conda/venv dirs) by the bring-up, which
-  fails fast with the exact fix before any slow model pulls if it is truly absent.
+- The deploy preflights `poc-strix.yaml` + the staged PII model on Halo-B and
+  fails early if either is missing. It then **auto-provisions** Halo-B (below):
+  it installs `vllm-sr` if absent and lets the first serve pull any missing images.
 - The CCP serves the rendered `poc-strix.yaml` (+ a `fleet-rule-marker` line) as
   the desired config; both real gateways converge to it. Model pulls + serve make
   the first run slow.
@@ -134,6 +147,26 @@ FLEET_MODE=gateway \
   rename — a rename would swap in a new inode the container never sees, so no
   hot-reload would fire. Do not change `fleet_agent._write_config` back to a
   temp-file rename.
+
+#### Auto-provisioning Halo-B (`HALO_B_PROVISION`)
+
+Set `HALO_B_MODE=gateway` (or `FLEET_MODE=gateway`) and the deploy makes Halo-B
+gateway-ready in **one shot** — no manual install step. When it detects Halo-B is
+**not** ready it:
+
+- checks the `vllm-sr` CLI over a login shell (`bash -lic 'command -v vllm-sr'`)
+  and, if missing, installs it in place with
+  `python3 -m pip install --user -e ${HALO_B_REPO}/src/vllm-sr` (the console
+  script lands in `~/.local/bin`, which the bring-up auto-detects — no `sudo`, no
+  system Python touched), then re-verifies; and
+- pulls any **missing** `vllm-sr` runtime images on the first serve by passing
+  `--image-pull-policy ifnotpresent` (override with `VLLM_SR_IMAGE_PULL_POLICY`).
+
+It does **not** auto-clone the repo or auto-download the large strix-halo-poc
+models — those stay a one-time manual prep (`bash
+deploy/recipes/strix-halo-poc/bring-up.sh` on Halo-B), and the preflight points
+you at the exact command if they are absent. Opt out of provisioning entirely
+with `HALO_B_PROVISION=skip` (then install `vllm-sr` on Halo-B yourself).
 
 ### Mixed fleet (real gateway on one box, mock edge on the other)
 
@@ -154,9 +187,10 @@ HALO_A_MODE=gateway HALO_B_MODE=mock \
 - When any box is a gateway, the CCP's desired config is the **real** rendered
   gateway config (a mock edge just stores the bytes and reports their hash, so it
   converges too). `verify-fleet.sh`/`demo-fleet.sh` edit that real config.
-- Upgrade Halo-B to a real gateway later by installing the CLI there
-  (`pip install --user -e <repo>/src/vllm-sr` → lands in `~/.local/bin`, which the
-  bring-up auto-detects) plus the `vllm-sr` ROCm images, then use `FLEET_MODE=gateway`.
+- Upgrade Halo-B to a real gateway later by just setting `HALO_B_MODE=gateway` —
+  the deploy **auto-provisions** it (installs `vllm-sr` via `pip --user` if
+  missing and pulls any missing ROCm images on first serve; see *Auto-provisioning
+  Halo-B* above). Set `HALO_B_PROVISION=skip` to manage Halo-B yourself.
 
 ## Verify the logic offline (no hardware)
 

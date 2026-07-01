@@ -151,8 +151,32 @@ if [ "${HALO_B_MODE}" = "gateway" ]; then
     echo "       On Halo-B (once): cd ${HALO_B_REPO} && bash deploy/recipes/strix-halo-poc/bring-up.sh" >&2
     exit 1
   fi
-  # vllm-sr itself is resolved on Halo-B by gateway-bring-up.sh (which also probes
-  # common conda/venv bin dirs for non-interactive SSH) and fails fast if absent.
+  # Auto-provision Halo-B for a REAL gateway (HALO_B_PROVISION=auto by default;
+  # set HALO_B_PROVISION=skip to opt out). If the vllm-sr CLI is not installed,
+  # install it in place with pip --user (the console script lands in ~/.local/bin,
+  # which gateway-bring-up.sh auto-detects). Runtime Docker images are pulled on
+  # the first serve via VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent (passed below).
+  if [ "${HALO_B_PROVISION:-auto}" != "skip" ]; then
+    if ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+         "bash -lic 'command -v vllm-sr' >/dev/null 2>&1"; then
+      echo "    Halo-B: vllm-sr already installed"
+    else
+      echo "    Halo-B: vllm-sr not found -> installing (pip install --user -e ${HALO_B_REPO%/}/src/vllm-sr) ..."
+      if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+           "bash -lic 'python3 -m pip install --user -e ${HALO_B_REPO%/}/src/vllm-sr'"; then
+        echo "ERROR: failed to auto-install vllm-sr on Halo-B." >&2
+        echo "       Ensure python3 + pip exist there ('sudo apt install -y python3-pip'), install" >&2
+        echo "       vllm-sr manually, or deploy Halo-B as a mock edge: HALO_B_MODE=mock." >&2
+        exit 1
+      fi
+      if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+           "bash -lic 'command -v vllm-sr' >/dev/null 2>&1 || test -x ~/.local/bin/vllm-sr"; then
+        echo "ERROR: vllm-sr still not found on Halo-B after install." >&2
+        exit 1
+      fi
+      echo "    Halo-B: vllm-sr installed (~/.local/bin)"
+    fi
+  fi
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
   # Ship the self-contained gateway scripts (no mock_router.py); they target the
   # repo's strix-halo-poc via STRIX_POC_DIR below.
@@ -166,6 +190,7 @@ if [ "${HALO_B_MODE}" = "gateway" ]; then
      FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
      ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
      STRIX_POC_DIR=${REMOTE_POC} VLLM_SR_BIN=${VLLM_SR_BIN:-} \
+     VLLM_SR_IMAGE_PULL_POLICY=${VLLM_SR_IMAGE_PULL_POLICY:-ifnotpresent} \
      bash ${REMOTE_DIR}/node-bring-up.sh"
 else
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
