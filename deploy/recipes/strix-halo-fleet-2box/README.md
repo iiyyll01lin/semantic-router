@@ -77,6 +77,23 @@ bash verify-fleet.sh                                # re-run headless PASS/FAIL
 HALO_B_SSH=ubuntu@192.0.2.20 bash teardown-fleet-2box.sh
 ```
 
+### Fully hands-off (one shot + log bundle)
+
+For an unattended run that does **deploy + verify + demo** in one go and
+collects every relevant log into a single directory for offline review, use the
+same env as `deploy-fleet-2box.sh`:
+
+```bash
+HALO_A_IP=192.0.2.10 HALO_B_IP=192.0.2.20 HALO_B_SSH=ubuntu@192.0.2.20 \
+FLEET_MODE=gateway bash run-all-2box.sh
+```
+
+- The demo step runs non-interactively (no TTY needed); its exit code is the
+  deploy/verify result. Add `SKIP_DEMO=1` to stop after verify.
+- Win or lose, a `run-<timestamp>/` bundle (CCP + Halo-A + Halo-B agent logs,
+  plus a final `fleetctl status`/`audit` snapshot) is printed at the end — share
+  that whole directory if anything failed.
+
 ### Gateway mode (real `vllm-sr serve` on both boxes)
 
 Prerequisites (BOTH boxes): the semantic-router repo checked out with the
@@ -130,6 +147,7 @@ This is what proves the new logic in CI-like conditions.
 | File | Description |
 | --- | --- |
 | [`deploy-fleet-2box.sh`](deploy-fleet-2box.sh) | One-click orchestrator (run on Halo-A): CCP + both edge nodes + convergence wait + verify. |
+| [`run-all-2box.sh`](run-all-2box.sh) | Hands-off one-shot: deploy + verify + non-interactive demo, capturing a full log bundle for offline review. |
 | [`ccp_server.py`](ccp_server.py) | Central control plane: versions/signs/serves desired config, central audit log. |
 | [`fleet_agent.py`](fleet_agent.py) | Pull agent: verify signature, detect drift via `/config/hash`, apply, report. |
 | [`fleet_lib.py`](fleet_lib.py) | Shared stdlib helpers: hashing, HMAC sign/verify, tiny HTTP. |

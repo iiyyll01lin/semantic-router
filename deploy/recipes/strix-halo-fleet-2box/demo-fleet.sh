@@ -24,7 +24,17 @@ else
   ORIG_CFG="${SCRIPT_DIR}/sample-desired-config.yaml"
 fi
 fctl() { "${PYBIN}" "${SCRIPT_DIR}/fleetctl.py" "$@"; }
-pause() { echo; read -r -p ">> ${1:-press Enter to continue} " _ || true; echo; }
+# Interactive narration when run by a human; in a non-interactive run (no tty on
+# stdin, e.g. via run-all-2box.sh) print the cue and keep going instead of blocking.
+pause() {
+  echo
+  if [ -t 0 ]; then
+    read -r -p ">> ${1:-press Enter to continue} " _ || true
+  else
+    echo ">> ${1:-continuing} (non-interactive)"
+  fi
+  echo
+}
 
 echo "=============================================================="
 echo " Edge-fleet config control plane demo (pull mode, 2x Strix Halo)"
