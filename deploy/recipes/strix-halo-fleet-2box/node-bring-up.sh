@@ -56,6 +56,7 @@ else
   # it becomes the command name and (because the value has a '/') fails with
   # "No such file or directory" (exit 127). gateway-bring-up.sh reads it from env.
   [ -n "${STRIX_POC_DIR:-}" ] && export STRIX_POC_DIR
+  [ -n "${VLLM_SR_BIN:-}" ] && export VLLM_SR_BIN
   GATEWAY_CONFIG="${GATEWAY_CONFIG}" ROUTER_PORT="${ROUTER_PORT}" FLEET_STATE_DIR="${FLEET_STATE_DIR}" \
     bash "${SCRIPT_DIR}/gateway-bring-up.sh"
   # The agent manages the gateway's bind-mounted source config (GET /config/hash

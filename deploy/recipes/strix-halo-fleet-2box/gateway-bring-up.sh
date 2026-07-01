@@ -77,23 +77,33 @@ fi
 
 # This script may run over a NON-interactive SSH shell (Halo-B), which does not
 # load the conda/venv that provides `vllm-sr` (conda init lives in ~/.bashrc,
-# guarded out for non-interactive shells). Best-effort: if `vllm-sr` is not
-# already resolvable, prepend common conda/venv bin dirs so `vllm-sr serve` is
-# found; otherwise fail fast (before the slow model pulls) with clear guidance.
+# guarded out for non-interactive shells). Resolution order: an explicit
+# VLLM_SR_BIN override (deterministic for ANY layout), else probe common conda/
+# venv bin dirs INCLUDING named-env bin dirs (vllm-sr is usually in a named env
+# like ~/miniconda3/envs/<env>/bin, not base); otherwise fail fast (before the
+# slow model pulls) with clear guidance.
 if ! command -v vllm-sr >/dev/null 2>&1; then
-  for _vsr_bin in "${HOME}/miniconda3/bin" "${HOME}/anaconda3/bin" \
-                  "${HOME}/miniforge3/bin" "${HOME}/mambaforge/bin" \
-                  "${HOME}/.local/bin" "/opt/conda/bin"; do
-    if [[ -x "${_vsr_bin}/vllm-sr" ]]; then
-      PATH="${_vsr_bin}:${PATH}"; export PATH; break
-    fi
-  done
+  if [ -n "${VLLM_SR_BIN:-}" ] && [ -x "${VLLM_SR_BIN%/}/vllm-sr" ]; then
+    PATH="${VLLM_SR_BIN%/}:${PATH}"; export PATH
+  else
+    for _vsr_bin in "${HOME}/miniconda3/bin" "${HOME}/anaconda3/bin" \
+                    "${HOME}/miniforge3/bin" "${HOME}/mambaforge/bin" \
+                    "${HOME}/.local/bin" "/opt/conda/bin" \
+                    "${HOME}"/miniconda3/envs/*/bin "${HOME}"/anaconda3/envs/*/bin \
+                    "${HOME}"/miniforge3/envs/*/bin "${HOME}"/mambaforge/envs/*/bin \
+                    /opt/conda/envs/*/bin; do
+      if [[ -x "${_vsr_bin}/vllm-sr" ]]; then
+        PATH="${_vsr_bin}:${PATH}"; export PATH; break
+      fi
+    done
+  fi
 fi
 if ! command -v vllm-sr >/dev/null 2>&1; then
-  echo "ERROR: 'vllm-sr' not found on PATH (also probed common conda/venv bin dirs)." >&2
-  echo "       Install it on this box: pip install -e <repo>/src/vllm-sr, or make it" >&2
-  echo "       resolvable for non-interactive SSH (symlink into /usr/local/bin, or put" >&2
-  echo "       'conda activate <env>' in ~/.profile)." >&2
+  echo "ERROR: 'vllm-sr' not found on PATH (probed VLLM_SR_BIN + common conda/venv bin dirs)." >&2
+  echo "       Fix (deterministic): set VLLM_SR_BIN to the dir that holds vllm-sr on this box," >&2
+  echo "       e.g. VLLM_SR_BIN=\$HOME/miniconda3/envs/<env>/bin -- pass it to deploy-fleet-2box.sh" >&2
+  echo "       (it is forwarded to Halo-B). Or install vllm-sr into base / symlink it into" >&2
+  echo "       /usr/local/bin, or put 'conda activate <env>' in ~/.profile." >&2
   exit 1
 fi
 

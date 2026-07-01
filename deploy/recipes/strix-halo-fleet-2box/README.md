@@ -102,9 +102,12 @@ Prerequisites (BOTH boxes): the semantic-router repo checked out with the
 `vllm-sr` CLI installed (e.g. `pip install -e src/vllm-sr`). Halo-B does **not**
 need to be on the same branch as this fleet recipe (the orchestrator ships these
 scripts to it), and `vllm-sr` does **not** need to be on the non-interactive SSH
-`PATH` — the bring-up also probes common conda/venv bin dirs
-(`~/miniconda3/bin`, `~/anaconda3/bin`, `~/miniforge3/bin`, `~/mambaforge/bin`,
-`~/.local/bin`, `/opt/conda/bin`). Then, from Halo-A:
+`PATH` — the bring-up probes common conda/venv bin dirs, **including named-env
+bin dirs** (`~/miniconda3/bin`, `~/anaconda3/bin`, `~/miniforge3/bin`,
+`~/mambaforge/bin`, `~/.local/bin`, `/opt/conda/bin`, and `.../envs/*/bin`). If
+`vllm-sr` lives somewhere else on Halo-B, set `VLLM_SR_BIN` to the directory that
+holds it (e.g. `VLLM_SR_BIN=$HOME/miniconda3/envs/vsr/bin`); it is forwarded to
+Halo-B and wins over the probe. Then, from Halo-A:
 
 ```bash
 HALO_A_IP=192.0.2.10 \
