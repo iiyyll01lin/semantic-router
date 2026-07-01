@@ -132,59 +132,50 @@ if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" true; then
   exit 1
 fi
 if [ "${HALO_B_MODE}" = "gateway" ]; then
-  # Gateway mode reuses the repo's proven strix-halo-poc assets (poc-strix.yaml +
-  # staged models) and the vllm-sr CLI on Halo-B, but SHIPS this recipe's own
-  # scripts to a temp dir -- so Halo-B does NOT need to be checked out on the
-  # branch that carries strix-halo-fleet-2box. Verify the repo prereqs first.
+  # Gateway mode SHIPS this recipe's own scripts (incl. provision-halo-b.sh) to a
+  # temp dir on Halo-B and points them at the repo's strix-halo-poc assets via
+  # STRIX_POC_DIR -- so Halo-B does NOT need this fleet branch checked out. The
+  # shipped provisioner then makes Halo-B gateway-ready in one shot: it installs
+  # vllm-sr if missing and downloads the (public) PII source model if absent.
   REMOTE_POC="${HALO_B_REPO%/}/deploy/recipes/strix-halo-poc"
   REMOTE_PII_DIR="${REMOTE_POC}/models/pii_classifier_modernbert-base_presidio_token_model"
-  # Fail fast on missing prereqs BEFORE the slow (~40GB) Ollama pulls: the gateway
-  # needs BOTH the committed poc-strix.yaml AND the staged PII model dir. Without
-  # this, gateway-bring-up.sh only discovers a missing PII model AFTER pulling
-  # every tier model on Halo-B. Report exactly which prereq is absent.
-  if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-       "test -f ${REMOTE_POC}/poc-strix.yaml && test -d ${REMOTE_PII_DIR}"; then
-    echo "ERROR: Halo-B is missing strix-halo-poc prereqs under HALO_B_REPO=${HALO_B_REPO}:" >&2
-    echo "         - ${REMOTE_POC}/poc-strix.yaml (the gateway config), and/or" >&2
-    echo "         - ${REMOTE_PII_DIR} (the staged PII model)" >&2
-    echo "       Gateway mode reuses the strix-halo-poc config + staged models on Halo-B." >&2
-    echo "       On Halo-B (once): cd ${HALO_B_REPO} && bash deploy/recipes/strix-halo-poc/bring-up.sh" >&2
-    exit 1
-  fi
-  # Auto-provision Halo-B for a REAL gateway (HALO_B_PROVISION=auto by default;
-  # set HALO_B_PROVISION=skip to opt out). If the vllm-sr CLI is not installed,
-  # install it in place with pip --user (the console script lands in ~/.local/bin,
-  # which gateway-bring-up.sh auto-detects). Runtime Docker images are pulled on
-  # the first serve via VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent (passed below).
-  if [ "${HALO_B_PROVISION:-auto}" != "skip" ]; then
-    if ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-         "bash -lic 'command -v vllm-sr' >/dev/null 2>&1"; then
-      echo "    Halo-B: vllm-sr already installed"
-    else
-      echo "    Halo-B: vllm-sr not found -> installing (pip install --user -e ${HALO_B_REPO%/}/src/vllm-sr) ..."
-      if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-           "bash -lic 'python3 -m pip install --user -e ${HALO_B_REPO%/}/src/vllm-sr'"; then
-        echo "ERROR: failed to auto-install vllm-sr on Halo-B." >&2
-        echo "       Ensure python3 + pip exist there ('sudo apt install -y python3-pip'), install" >&2
-        echo "       vllm-sr manually, or deploy Halo-B as a mock edge: HALO_B_MODE=mock." >&2
-        exit 1
-      fi
-      if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
-           "bash -lic 'command -v vllm-sr' >/dev/null 2>&1 || test -x ~/.local/bin/vllm-sr"; then
-        echo "ERROR: vllm-sr still not found on Halo-B after install." >&2
-        exit 1
-      fi
-      echo "    Halo-B: vllm-sr installed (~/.local/bin)"
-    fi
-  fi
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"
   # Ship the self-contained gateway scripts (no mock_router.py); they target the
-  # repo's strix-halo-poc via STRIX_POC_DIR below.
+  # repo's strix-halo-poc via STRIX_POC_DIR below, and provision-halo-b.sh runs
+  # natively on Halo-B (no fragile multi-shell SSH quoting).
   scp "${SSH_BASE_OPTS[@]}" "${SCP_PORT_OPTS[@]}" \
     "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/fleet_common.sh" \
     "${SCRIPT_DIR}/node-bring-up.sh" "${SCRIPT_DIR}/gateway-bring-up.sh" \
+    "${SCRIPT_DIR}/provision-halo-b.sh" \
     "${HALO_B_SSH}:${REMOTE_DIR}/"
-  echo "    starting Halo-B gateway node (scripts shipped; assets from ${REMOTE_POC}; model pulls may be slow) ..."
+  # Auto-provision Halo-B for a REAL gateway (HALO_B_PROVISION=auto by default;
+  # set HALO_B_PROVISION=skip to opt out). The provisioner is idempotent and
+  # user-space only (pip --user, no sudo): it installs vllm-sr if missing and
+  # downloads the public PII source model if absent. It fails fast with the exact
+  # fix if poc-strix.yaml is absent (a checkout problem it must not auto-fix).
+  if [ "${HALO_B_PROVISION:-auto}" != "skip" ]; then
+    echo "    provisioning Halo-B for a real gateway (vllm-sr + PII model; first run may download) ..."
+    if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+         "STRIX_POC_DIR=${REMOTE_POC} HALO_B_REPO=${HALO_B_REPO} bash ${REMOTE_DIR}/provision-halo-b.sh"; then
+      echo "ERROR: Halo-B provisioning failed (see the message above)." >&2
+      echo "       Fix the reported prereq on Halo-B, or run it as a mock edge: HALO_B_MODE=mock" >&2
+      echo "       (or manage Halo-B yourself and re-run with HALO_B_PROVISION=skip)." >&2
+      exit 1
+    fi
+  else
+    # Provisioning opted out: still fail fast on missing prereqs BEFORE the slow
+    # (~40GB) Ollama pulls, reporting exactly which asset is absent.
+    if ! ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
+         "test -f ${REMOTE_POC}/poc-strix.yaml && test -d ${REMOTE_PII_DIR}"; then
+      echo "ERROR: Halo-B is missing strix-halo-poc prereqs under HALO_B_REPO=${HALO_B_REPO}:" >&2
+      echo "         - ${REMOTE_POC}/poc-strix.yaml (the gateway config), and/or" >&2
+      echo "         - ${REMOTE_PII_DIR} (the staged PII model)" >&2
+      echo "       You set HALO_B_PROVISION=skip; re-run WITHOUT it to auto-provision these," >&2
+      echo "       or set them up on Halo-B once: cd ${HALO_B_REPO} && bash deploy/recipes/strix-halo-poc/bring-up.sh" >&2
+      exit 1
+    fi
+  fi
+  echo "    starting Halo-B gateway node (assets from ${REMOTE_POC}; model pulls may be slow) ..."
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" \
     "BOX_ID=halo-b CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=gateway \
      FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
