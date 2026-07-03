@@ -285,6 +285,8 @@ paper-oriented pipeline (figure), per-stage data specs, efficiency metrics, and 
 novelty + feasibility argument, see
 [`docs/research-pipeline.md`](docs/research-pipeline.md); the next research
 directions (pick list) are in [`docs/research-roadmap.md`](docs/research-roadmap.md).
+A git-attributed inventory of the tests, experiments, and data across the three
+Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
 
 ## Files
 
