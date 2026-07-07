@@ -97,10 +97,23 @@ COMMON_MODEL_HINT="${COMMON_MODEL_HINT:-qwen2.5-7b}"
 
 WORK="$(mktemp -d "${FLEET_STATE_DIR}/server-XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
+LOG_DIR="$(dirname "${OUT}")/server-logs"
+mkdir -p "${LOG_DIR}"
 echo "==> [server-bench] box=${BOX}  servers='${SERVERS}'  router-path=${SERVER_BENCH_ROUTER}"
 echo "    common base model: ${COMMON_MODEL_HINT} (quant differs per server -- see report)"
+# Test 2 measures each server WHILE the vllm-sr stack is co-resident ("bundled").
+# If the router API is down the stack is not up, so footprint/router-overhead will
+# not reflect bundling -- warn loudly rather than report a misleading number.
+if ! curl -fsS "${ROUTER_CONFIG_URL}" >/dev/null 2>&1; then
+  echo "    WARNING: vllm-sr router not answering at ${ROUTER_CONFIG_URL}; the stack" >&2
+  echo "             looks DOWN, so these numbers are NOT 'bundled'. Bring the gateway" >&2
+  echo "             up first for a true Test 2 (see gateway-bring-up.sh)." >&2
+fi
 
 svar() { local name="$1_$2"; echo "${!name}"; }   # svar OLLAMA API -> $OLLAMA_API
+
+# Map a server key to its container name (for logs + teardown of skipped servers).
+container_of() { case "$1" in llamacpp) echo llama-server;; vllm) echo vllm;; lemonade) echo lemonade;; *) echo "$1";; esac; }
 
 wait_url() { local url="$1" tries="${2:-90}" i; for ((i=0;i<tries;i++)); do curl -fsS "${url}" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 
@@ -150,14 +163,18 @@ for srv_lc in ${SERVERS}; do
   fi
   echo "==> [server-bench] ${lc}: bring up"
   if ! eval "$(svar "${SRV}" UP_CMD)" >"${WORK}/${lc}-up.log" 2>&1; then
-    echo "    SKIP ${lc}: bring-up command failed (see ${lc}-up.log)"
+    echo "    SKIP ${lc}: bring-up command failed (see server-logs/${lc}-up.log)"
+    cp -f "${WORK}/${lc}-up.log" "${LOG_DIR}/${lc}-up.log" 2>/dev/null || true
     echo "{\"server\":\"${lc}\",\"status\":\"skipped\",\"reason\":\"bring-up failed\",\"quant\":\"$(svar "${SRV}" QUANT)\"}" >"${meta}"
     continue
   fi
   if ! wait_url "$(svar "${SRV}" READY_URL)" 120; then
-    echo "    SKIP ${lc}: never became ready at $(svar "${SRV}" READY_URL)"
+    echo "    SKIP ${lc}: never became ready at $(svar "${SRV}" READY_URL) (see server-logs/${lc}-*.log)"
+    cname="$(container_of "${lc}")"
+    cp -f "${WORK}/${lc}-up.log" "${LOG_DIR}/${lc}-up.log" 2>/dev/null || true
+    docker logs --tail 150 "${cname}" >"${LOG_DIR}/${lc}-container.log" 2>&1 || true
     echo "{\"server\":\"${lc}\",\"status\":\"skipped\",\"reason\":\"not ready\",\"quant\":\"$(svar "${SRV}" QUANT)\"}" >"${meta}"
-    [[ "$(svar "${SRV}" TEARDOWN)" == "1" ]] && docker rm -f "${lc}" >/dev/null 2>&1 || true
+    [[ "$(svar "${SRV}" TEARDOWN)" == "1" ]] && docker rm -f "${cname}" >/dev/null 2>&1 || true
     continue
   fi
   echo "==> [server-bench] ${lc}: measure direct"
