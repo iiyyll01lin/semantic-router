@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#
+# run-perf-fleet.sh -- FLEET-WIDE runner for the two perf tests, aggregated into
+# one bundle. It runs Test 1 (overhead-bench.sh) and Test 2 (server-bench.sh) on
+# Halo-A locally and, best-effort, on Halo-B over SSH, then rolls every per-box
+# JSON into a single fleet record with perf_metrics.py.
+#
+# It is the turnkey entry point for:
+#   Test 1 -- "how much does vllm-sr occupy, how much throughput drops, which
+#              models become unusable" (per box, fleet-aggregated)
+#   Test 2 -- "performance difference of different inference servers bundled with
+#              vllm-sr" (per box, fleet-aggregated)
+#
+# SAFETY: overhead-bench.sh stops/restarts the local vllm-sr stack. Run this as a
+# dedicated measurement pass; do not interleave it with a live convergence demo.
+#
+# Env (all optional):
+#   BUNDLE        output dir for per-box JSON + aggregate (default: a timestamped
+#                 dir under the fleet state dir; run-all passes its RUN_DIR here)
+#   HALO_A_BOX / HALO_B_BOX   box labels (default halo-a / halo-b)
+#   RUN_OVERHEAD / RUN_SERVER 1/0 toggles (default 1 / 1)
+#   HALO_B_PERF   1 => also measure Halo-B over SSH (default 0; needs the perf dir
+#                 present on Halo-B under HALO_B_REPO and the stack up there)
+#   HALO_B_SSH / HALO_B_REPO / HALO_B_SSH_KEY / HALO_B_SSH_PORT  (from env/fleet.env)
+#   plus any overhead-bench.sh / server-bench.sh env (TIERS, SERVERS, RUNS, ...)
+#
+# Usage:
+#   bash run-perf-fleet.sh
+#   HALO_B_PERF=1 HALO_B_SSH=user@halo-b HALO_B_REPO=~/semantic-router bash run-perf-fleet.sh
+set -uo pipefail   # NOT -e: always reach the aggregation step
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=/dev/null
+source "${RECIPE_DIR}/fleet_common.sh"
+PY_BIN="$(fleet_pybin)"
+
+# Offline proof path: exercise the whole harness against mock backends (no ROCm,
+# no Docker, no gateway) so the pipeline can be validated before any HW run.
+if [ "${SELFTEST:-0}" = "1" ]; then
+  echo "==> [perf-fleet] SELFTEST=1: offline verifier (no hardware)"
+  exec "${PY_BIN}" "${SCRIPT_DIR}/verify_perf_local.py"
+fi
+
+# Pull SSH env from the deploy's fleet.env if present (same pattern as run-all).
+ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
+if [ -f "${ENV_FILE}" ]; then
+  # shellcheck source=/dev/null
+  source "${ENV_FILE}"
+fi
+
+BUNDLE="${BUNDLE:-${FLEET_STATE_DIR}/perf-run-$(date +%Y%m%d-%H%M%S)}"
+HALO_A_BOX="${HALO_A_BOX:-halo-a}"
+HALO_B_BOX="${HALO_B_BOX:-halo-b}"
+RUN_OVERHEAD="${RUN_OVERHEAD:-1}"
+RUN_SERVER="${RUN_SERVER:-1}"
+HALO_B_PERF="${HALO_B_PERF:-0}"
+mkdir -p "${BUNDLE}"
+echo "==> [perf-fleet] bundle=${BUNDLE}"
+
+run_local() {
+  if [ "${RUN_OVERHEAD}" = "1" ]; then
+    echo "==> [perf-fleet] Halo-A Test 1 (overhead-bench)"
+    BOX="${HALO_A_BOX}" OUT="${BUNDLE}/overhead-${HALO_A_BOX}.json" \
+      bash "${SCRIPT_DIR}/overhead-bench.sh" || echo "    (overhead-bench returned nonzero; continuing)"
+  fi
+  if [ "${RUN_SERVER}" = "1" ]; then
+    echo "==> [perf-fleet] Halo-A Test 2 (server-bench)"
+    BOX="${HALO_A_BOX}" OUT="${BUNDLE}/server-${HALO_A_BOX}.json" \
+      bash "${SCRIPT_DIR}/server-bench.sh" || echo "    (server-bench returned nonzero; continuing)"
+  fi
+}
+
+run_halo_b() {
+  [ "${HALO_B_PERF}" = "1" ] || { echo "==> [perf-fleet] Halo-B perf skipped (HALO_B_PERF!=1)"; return 0; }
+  [ -n "${HALO_B_SSH:-}" ] || { echo "==> [perf-fleet] Halo-B perf skipped (no HALO_B_SSH)"; return 0; }
+  local repo="${HALO_B_REPO:-}"
+  [ -n "${repo}" ] || { echo "    WARNING: HALO_B_PERF=1 but HALO_B_REPO unset; skipping Halo-B." >&2; return 0; }
+  local perf_dir="${repo}/deploy/recipes/strix-halo-fleet-2box/perf"
+  local remote_tmp="\${TMPDIR:-/tmp}/vllm-sr-perf"
+  local SSH_OPTS=()
+  [ -n "${HALO_B_SSH_KEY:-}" ] && SSH_OPTS+=(-i "${HALO_B_SSH_KEY}")
+  [ -n "${HALO_B_SSH_PORT:-}" ] && SSH_OPTS+=(-p "${HALO_B_SSH_PORT}")
+  echo "==> [perf-fleet] Halo-B perf over SSH (${HALO_B_SSH}, perf=${perf_dir})"
+  ssh "${SSH_OPTS[@]}" "${HALO_B_SSH}" "bash -lc '\
+    set -e; mkdir -p ${remote_tmp}; \
+    if [ ! -d ${perf_dir} ]; then echo MISSING_PERF_DIR; exit 3; fi; \
+    cd ${perf_dir}; \
+    ${RUN_OVERHEAD:+ BOX=${HALO_B_BOX} OUT=${remote_tmp}/overhead-${HALO_B_BOX}.json bash overhead-bench.sh || true;} \
+    ${RUN_SERVER:+ BOX=${HALO_B_BOX} OUT=${remote_tmp}/server-${HALO_B_BOX}.json bash server-bench.sh || true;} \
+    '" 2>&1 | sed 's/^/    [halo-b] /' || echo "    (Halo-B perf run returned nonzero; continuing)"
+  # Best-effort copy the per-box JSON back into the bundle.
+  for f in "overhead-${HALO_B_BOX}.json" "server-${HALO_B_BOX}.json"; do
+    scp "${SSH_OPTS[@]}" "${HALO_B_SSH}:${remote_tmp//\\/}/${f}" "${BUNDLE}/${f}" 2>/dev/null \
+      || echo "    (no ${f} from Halo-B)"
+  done
+}
+
+run_local
+run_halo_b
+
+echo "==> [perf-fleet] aggregating -> ${BUNDLE}/perf-metrics.json + perf-summary.md"
+"${PY_BIN}" "${SCRIPT_DIR}/perf_metrics.py" --bundle "${BUNDLE}" || true
+
+echo
+echo "=============================================================="
+echo "Fleet perf bundle:"
+echo "  ${BUNDLE}"
+ls -1 "${BUNDLE}" 2>/dev/null | sed 's/^/    /'
+echo "=============================================================="

@@ -71,6 +71,15 @@ CCP_URL="${CCP_URL:-http://localhost:9300}" FLEET_TOKEN="${FLEET_TOKEN:-}" \
   "${PYBIN}" "${SCRIPT_DIR}/fleet_metrics.py" --bundle "${RUN_DIR}" 2>&1 \
   | tee "${RUN_DIR}/metrics.txt" || true
 
+# Optional: fleet-wide PERF benchmarks (Test 1 co-location overhead + Test 2
+# inference-server comparison). Opt-in because they stop/restart the local stack
+# and take time; results (overhead-*/server-*/perf-metrics.json/perf-summary.md)
+# land in the SAME run bundle. See perf/README.md.
+if [ "${PERF_BENCH:-0}" = "1" ]; then
+  echo "==> [run-all] PERF_BENCH=1: fleet-wide perf benchmarks" | tee -a "${MAIN_LOG}"
+  BUNDLE="${RUN_DIR}" bash "${SCRIPT_DIR}/perf/run-perf-fleet.sh" 2>&1 | tee -a "${MAIN_LOG}" || true
+fi
+
 echo
 echo "=============================================================="
 if [ "${rc}" -eq 0 ]; then
