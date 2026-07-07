@@ -36,6 +36,7 @@ measurement methodology for the third.
 | 2box | `smoke_test.py` (382) | **Cross-box routing assertions**: easy request → EDGE model on Halo-A (0 network hops), hard request → DATACENTER model on Halo-B (1 hop), no double-hops |
 | fleet | `verify_local.py` (195) | Offline in-process **8/8**: baseline converge, edit-once via **hot-reload (not restart)**, drift self-heal, rollback, **signed-bundle tamper rejection**, central audit, **inode preservation** |
 | fleet | `verify-fleet.sh` (83) | Headless PASS/FAIL against a live fleet (converge / drift / rollback / audit) |
+| fleet | `perf/verify_perf_local.py` (7/7) | Offline: tok/s probe (Ollama+OpenAI dialects), resource summarize, in-place backend rewrite (**inode preserved**), fleet perf aggregation — no ROCm/Docker |
 
 ## 2. Experiments I ran, classified (+ the data each produces)
 
@@ -49,6 +50,7 @@ measurement methodology for the third.
 | F | Capacity / TCO simulation | `export-replay-trace.sh` (98) | **real** router-replay decisions → fleet-sim JSONL → capacity/TCO simulation (real workload, not synthetic) | fleet-sim-loadable trace |
 | G | Security / data governance | `pii_mask_demo.py`, smoke/probes security lane, fleet tamper test | PII masking placeholders; jailbreak/PII → `security_guard`; **untrusted bundle rejected, config unchanged** | deny + mask + tamper-reject |
 | H | Fleet config control plane (original) | `fleet_metrics.py` (257) + `run-all-2box.sh` | `metrics.json`: **cross-box convergence span, hash agreement, router cold-start (565 s), config bytes, audit counts** | both boxes same signed hash |
+| P | Perf: co-location overhead + inference-server compare | `perf/overhead-bench.sh`, `perf/server-bench.sh`, `perf/perf_metrics.py` | **stack RAM/CPU footprint, throughput drop %% (contention + end-to-end), max-usable model / OOM boundary, per-server tok/s / TTFT / router-overhead** → `perf-metrics.json` + `perf-summary.md` | offline-verified 7/7; HW run supplies numbers |
 
 ```mermaid
 flowchart LR

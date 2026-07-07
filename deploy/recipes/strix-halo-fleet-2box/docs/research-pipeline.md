@@ -100,6 +100,29 @@ latency* (config-write → router serving new config) is currently bounded by th
 needs the agent to emit a write→converge timer. See
 [research-roadmap.md](research-roadmap.md).
 
+### 4a. Co-location overhead & inference-server metrics (perf harnesses)
+
+Beyond the control-plane metrics above, the [`perf/`](../perf/README.md) harnesses
+quantify what it *costs* to run vllm-sr on a Strix Halo box and how backends
+compare. Each gateway box emits `overhead-<box>.json` (Test 1) and
+`server-<box>.json` (Test 2); [`perf_metrics.py`](../perf/perf_metrics.py) rolls
+them fleet-wide into `perf-metrics.json` + `perf-summary.md` (same run bundle as
+`metrics.json`).
+
+| Metric | Definition | Unit | Source |
+| --- | --- | --- | --- |
+| stack footprint | router+Envoy+dashboard+Grafana container RAM (and host-mem delta stack-down→up) | GiB | `overhead-*.json:stack_footprint` |
+| throughput drop (contention) | `(baseline − colocated_direct) / baseline` decode tok/s, same direct path | % | `overhead-*.json:tiers[].throughput_drop_pct_contention` |
+| throughput drop (end-to-end) | same vs the through-router path (adds routing + classification) | % | `…throughput_drop_pct_end_to_end` |
+| max usable model | largest tier/tag that still serves with the stack up (hard-fail or GTT-spill cliff) | tag | `overhead-*.json:max_usable_tag`; fleet-safe = worst box |
+| server decode tok/s | direct decode rate per inference server (bundled context) | tok/s | `server-*.json:servers[].direct_decode_tps` |
+| router overhead per server | `(direct − through-router) / direct` decode tok/s | % | `server-*.json:servers[].router_overhead_pct` |
+| peak VRAM / GTT | unified-memory allocation during load (GTT = spill signal) | bytes | `resource_sampler.py` summaries |
+
+Unlike the byte-exact convergence contract, these are **empirical performance
+numbers**: report them with the box + quant + load shape they were measured under
+(the JSON carries `shape` and, for servers, per-row `quant`).
+
 ## 5. Feasibility (evidence)
 
 - **Runs on real hardware.** Two physical Strix Halo boxes (Halo-A = HP Z2 Mini
@@ -110,6 +133,11 @@ needs the agent to emit a write→converge timer. See
   CCP + two routers + two agents in-process and asserts baseline converge,
   edit-once via hot-reload (not restart), drift self-heal, rollback, **signed-bundle
   tamper rejection**, and central audit — **8/8**, no hardware.
+- **Perf harness offline proof.** [`perf/verify_perf_local.py`](../perf/verify_perf_local.py)
+  stands up mock backends and exercises the *real* tok/s probe (Ollama + OpenAI
+  dialects), the in-place backend rewrite, and the fleet perf aggregation —
+  **7/7**, no ROCm/Docker. So the overhead/server harnesses are validated before a
+  hardware run supplies the actual numbers.
 - **Cost to stand up** is dominated by the one-time model pull (≈ 44 GB) and the
   real router cold-start (≈ 9 min here); the control-plane steady state is tiny
   (one small signed config per poll, outbound only).
