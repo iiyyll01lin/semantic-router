@@ -28,6 +28,8 @@ OLLAMA_CONTAINER="ollama"
 OLLAMA_PORT="11434"
 OLLAMA_VOLUME="ollama"
 OLLAMA_IMAGE="ollama/ollama:rocm"
+ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest}"
+IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
 
 # One genuinely different model per tier (runbook section 2.2 / 5.1).
 TIER_TAGS=(
@@ -46,6 +48,65 @@ PII_MODEL_DIR="${SCRIPT_DIR}/models/pii_classifier_modernbert-base_presidio_toke
 PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
 # One-time export venv kept outside the repo tree so it never pollutes git.
 ONNX_EXPORT_VENV="${TMPDIR:-/tmp}/vllm-sr-pii-onnx-export-venv"
+
+preflight_router_image() {
+  if ! command -v vllm-sr >/dev/null 2>&1; then
+    echo "ERROR: 'vllm-sr' is not installed / not found on PATH." >&2
+    echo "       Install/build it first (runbook section 4), then re-run this script." >&2
+    exit 1
+  fi
+
+  case "${IMAGE_PULL_POLICY}" in
+    never|ifnotpresent|always) ;;
+    *)
+      echo "ERROR: invalid VLLM_SR_IMAGE_PULL_POLICY='${IMAGE_PULL_POLICY}'" >&2
+      echo "       Expected one of: never, ifnotpresent, always" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "${ROUTER_IMAGE}" == \[* || "${ROUTER_IMAGE}" == *']('* || \
+        "${ROUTER_IMAGE}" == http://* || "${ROUTER_IMAGE}" == https://* ]]; then
+    echo "ERROR: VLLM_SR_ROUTER_IMAGE does not look like a Docker image reference:" >&2
+    echo "       ${ROUTER_IMAGE}" >&2
+    echo "       Paste the bare image ref, not a Markdown link or URL, for example:" >&2
+    echo "         ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest" >&2
+    exit 1
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker is not available to this shell." >&2
+    echo "       Start Docker / check daemon permissions, then re-run." >&2
+    exit 1
+  fi
+
+  if docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+    echo "    router image present locally: ${ROUTER_IMAGE}"
+    return 0
+  fi
+
+  if [[ "${IMAGE_PULL_POLICY}" == "never" ]]; then
+    echo "ERROR: router image is not present locally, and VLLM_SR_IMAGE_PULL_POLICY=never:" >&2
+    echo "       ${ROUTER_IMAGE}" >&2
+    echo "       Pre-pull the image, or rerun with VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent." >&2
+    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
+      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
+    fi
+    exit 1
+  fi
+
+  echo "    router image missing locally; pulling now (${IMAGE_PULL_POLICY}): ${ROUTER_IMAGE}"
+  if ! docker pull "${ROUTER_IMAGE}"; then
+    echo "ERROR: unable to pull router image: ${ROUTER_IMAGE}" >&2
+    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
+      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
+    fi
+    exit 1
+  fi
+}
+
+echo "==> [0/5] Preflighting the vllm-sr ROCm router image"
+preflight_router_image
 
 echo "==> [1/5] Ensuring Docker network '${NETWORK}' exists"
 docker network create "${NETWORK}" 2>/dev/null || true
@@ -116,13 +177,22 @@ PY
 fi
 
 echo "==> [5/5] Serving the router with $(basename "${CONFIG_PATH}") (platform amd)"
+# Provision the demo UI credentials consistently across vLLM-SR Dashboard and
+# Grafana. Override these envs before running for non-demo use.
+export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-yingylin@amd.com}"
+export DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-aupaup123}"
+export DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-yingylin}"
+export GF_SECURITY_ADMIN_USER="${GF_SECURITY_ADMIN_USER:-${DASHBOARD_ADMIN_EMAIL}}"
+export GF_SECURITY_ADMIN_PASSWORD="${GF_SECURITY_ADMIN_PASSWORD:-${DASHBOARD_ADMIN_PASSWORD}}"
+export VLLM_SR_ROUTER_IMAGE="${ROUTER_IMAGE}"
+echo "    dashboard/grafana admin: ${DASHBOARD_ADMIN_EMAIL} (password hidden; override via DASHBOARD_ADMIN_PASSWORD)"
 # Keep the mmBERT/embedding classifiers on CPU so the iGPU is reserved for the
 # LLM backends (see runbook section 7).
 export VLLM_SR_AMD_PRESERVE_CPU=1
 
 vllm-sr serve \
   --config "${CONFIG_PATH}" \
-  --image-pull-policy never \
+  --image-pull-policy "${IMAGE_PULL_POLICY}" \
   --platform amd
 
 echo "==> Bring-up complete. Verify with: vllm-sr status"

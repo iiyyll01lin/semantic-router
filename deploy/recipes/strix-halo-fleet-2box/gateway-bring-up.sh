@@ -41,10 +41,62 @@ OLLAMA_PORT="11434"
 OLLAMA_VOLUME="ollama"
 OLLAMA_IMAGE="ollama/ollama:rocm"
 TIER_TAGS=("llama3.2:3b" "qwen2.5:7b" "qwen2.5:14b" "qwen3:14b" "qwen2.5:32b")
+ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest}"
+IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
 
 PII_MODEL_DIR="${STRIX_POC_DIR}/models/pii_classifier_modernbert-base_presidio_token_model"
 PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
 ONNX_EXPORT_VENV="${TMPDIR:-/tmp}/vllm-sr-pii-onnx-export-venv"
+
+preflight_router_image() {
+  case "${IMAGE_PULL_POLICY}" in
+    never|ifnotpresent|always) ;;
+    *)
+      echo "ERROR: invalid VLLM_SR_IMAGE_PULL_POLICY='${IMAGE_PULL_POLICY}'" >&2
+      echo "       Expected one of: never, ifnotpresent, always" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "${ROUTER_IMAGE}" == \[* || "${ROUTER_IMAGE}" == *']('* || \
+        "${ROUTER_IMAGE}" == http://* || "${ROUTER_IMAGE}" == https://* ]]; then
+    echo "ERROR: VLLM_SR_ROUTER_IMAGE does not look like a Docker image reference:" >&2
+    echo "       ${ROUTER_IMAGE}" >&2
+    echo "       Paste the bare image ref, not a Markdown link or URL, for example:" >&2
+    echo "         ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest" >&2
+    exit 1
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker is not available to this shell." >&2
+    echo "       Start Docker / check daemon permissions, then re-run." >&2
+    exit 1
+  fi
+
+  if docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+    echo "    router image present locally: ${ROUTER_IMAGE}"
+    return 0
+  fi
+
+  if [[ "${IMAGE_PULL_POLICY}" == "never" ]]; then
+    echo "ERROR: router image is not present locally, and VLLM_SR_IMAGE_PULL_POLICY=never:" >&2
+    echo "       ${ROUTER_IMAGE}" >&2
+    echo "       Pre-pull the image, or rerun with VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent." >&2
+    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
+      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
+    fi
+    exit 1
+  fi
+
+  echo "    router image missing locally; pulling now (${IMAGE_PULL_POLICY}): ${ROUTER_IMAGE}"
+  if ! docker pull "${ROUTER_IMAGE}"; then
+    echo "ERROR: unable to pull router image: ${ROUTER_IMAGE}" >&2
+    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
+      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
+    fi
+    exit 1
+  fi
+}
 
 # --- Render the gateway config the agent will manage ----------------------
 # Deterministic across boxes: same committed poc-strix.yaml + same marker line,
@@ -122,6 +174,9 @@ if ! command -v vllm-sr >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "==> [gateway] preflighting the vllm-sr ROCm router image"
+preflight_router_image
+
 echo "==> [gateway] ensuring Docker network '${NETWORK}'"
 docker network create "${NETWORK}" 2>/dev/null || true
 
@@ -181,6 +236,14 @@ if command -v ss >/dev/null 2>&1 && [ -n "$(ss -ltnH "( sport = :${ROUTER_PORT} 
 fi
 
 echo "==> [gateway] serving vllm-sr (platform amd, classifiers pinned to CPU)"
+# Provision the demo UI credentials consistently across vLLM-SR Dashboard and
+# Grafana. Override these envs before running for non-demo use.
+export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-yingylin@amd.com}"
+export DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-aupaup123}"
+export DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-yingylin}"
+export GF_SECURITY_ADMIN_USER="${GF_SECURITY_ADMIN_USER:-${DASHBOARD_ADMIN_EMAIL}}"
+export GF_SECURITY_ADMIN_PASSWORD="${GF_SECURITY_ADMIN_PASSWORD:-${DASHBOARD_ADMIN_PASSWORD}}"
+echo "    dashboard/grafana admin: ${DASHBOARD_ADMIN_EMAIL} (password hidden; override via DASHBOARD_ADMIN_PASSWORD)"
 # VLLM_SR_AMD_PRESERVE_CPU=1 is REQUIRED: it reaches the container so that the
 # agent-triggered hot-reload keeps classifiers on CPU instead of re-creating
 # ROCm ONNX sessions (which would crash the router).
@@ -188,7 +251,7 @@ echo "==> [gateway] serving vllm-sr (platform amd, classifiers pinned to CPU)"
 # to 'ifnotpresent' so a freshly provisioned box pulls any missing runtime images.
 export VLLM_SR_AMD_PRESERVE_CPU=1
 vllm-sr serve --config "${GATEWAY_CONFIG}" \
-  --image-pull-policy "${VLLM_SR_IMAGE_PULL_POLICY:-never}" --platform amd
+  --image-pull-policy "${IMAGE_PULL_POLICY}" --platform amd
 
 echo "==> [gateway] waiting for the router config API on :${ROUTER_PORT}"
 if fleet_wait_http "http://localhost:${ROUTER_PORT}/config/hash" 60; then

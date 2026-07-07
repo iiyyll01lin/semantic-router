@@ -41,6 +41,13 @@ if [ "${HALO_A_MODE}" = "gateway" ] || [ "${HALO_B_MODE}" = "gateway" ]; then
 else
   DESIRED_MODE="mock"
 fi
+DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-yingylin@amd.com}"
+DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-aupaup123}"
+DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-yingylin}"
+GF_SECURITY_ADMIN_USER="${GF_SECURITY_ADMIN_USER:-${DASHBOARD_ADMIN_EMAIL}}"
+GF_SECURITY_ADMIN_PASSWORD="${GF_SECURITY_ADMIN_PASSWORD:-${DASHBOARD_ADMIN_PASSWORD}}"
+export DASHBOARD_ADMIN_EMAIL DASHBOARD_ADMIN_PASSWORD DASHBOARD_ADMIN_NAME
+export GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD
 PYBIN="$(fleet_pybin)"
 REMOTE_DIR="~/.vllm-sr-fleet-2box"
 REMOTE_STATE="\${TMPDIR:-/tmp}/vllm-sr-fleet"
@@ -67,9 +74,11 @@ for bin in "${PYBIN}" ssh scp curl; do
   command -v "${bin}" >/dev/null 2>&1 || { echo "ERROR: '${bin}' not found on Halo-A" >&2; exit 1; }
 done
 
-# Generate the per-deployment signing key + token (the CCP<->agent trust boundary).
-FLEET_SIGNING_KEY="$("${PYBIN}" -c 'import secrets; print(secrets.token_hex(32))')"
-FLEET_TOKEN="$("${PYBIN}" -c 'import secrets; print(secrets.token_hex(32))')"
+# Generate the per-deployment signing key and use a demo-friendly CCP bearer
+# token by default. FLEET_SIGNING_KEY is not a login password; keep it random
+# unless explicitly overridden.
+FLEET_SIGNING_KEY="${FLEET_SIGNING_KEY:-$("${PYBIN}" -c 'import secrets; print(secrets.token_hex(32))')}"
+FLEET_TOKEN="${FLEET_TOKEN:-aupaup123}"
 CCP_URL_LOCAL="http://localhost:${CCP_PORT}"
 CCP_URL_REMOTE="http://${HALO_A_IP}:${CCP_PORT}"
 
@@ -78,6 +87,11 @@ ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
 cat >"${ENV_FILE}" <<EOF
 export FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY}
 export FLEET_TOKEN=${FLEET_TOKEN}
+export DASHBOARD_ADMIN_EMAIL=${DASHBOARD_ADMIN_EMAIL}
+export DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD}
+export DASHBOARD_ADMIN_NAME=${DASHBOARD_ADMIN_NAME}
+export GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+export GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
 export CCP_URL=${CCP_URL_LOCAL}
 export CCP_PORT=${CCP_PORT}
 export ROUTER_PORT=${ROUTER_PORT}
@@ -181,8 +195,11 @@ if [ "${HALO_B_MODE}" = "gateway" ]; then
      FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
      ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
      STRIX_POC_DIR=${REMOTE_POC} VLLM_SR_BIN=${VLLM_SR_BIN:-} \
-     VLLM_SR_IMAGE_PULL_POLICY=${VLLM_SR_IMAGE_PULL_POLICY:-ifnotpresent} \
+    VLLM_SR_IMAGE_PULL_POLICY=${VLLM_SR_IMAGE_PULL_POLICY:-always} \
      VLLM_SR_ROUTER_IMAGE=${VLLM_SR_ROUTER_IMAGE:-} \
+    DASHBOARD_ADMIN_EMAIL=${DASHBOARD_ADMIN_EMAIL} DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD} \
+    DASHBOARD_ADMIN_NAME='${DASHBOARD_ADMIN_NAME}' GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER} \
+    GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD} \
      bash ${REMOTE_DIR}/node-bring-up.sh"
 else
   ssh "${SSH_BASE_OPTS[@]}" "${SSH_PORT_OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${REMOTE_DIR}"

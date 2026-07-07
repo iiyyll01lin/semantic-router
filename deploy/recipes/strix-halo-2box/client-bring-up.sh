@@ -248,19 +248,24 @@ fi
 # EnsureBootstrapAdmin is idempotent (it skips creation if the account already
 # exists), so this is safe to run against an already-bootstrapped DB -- no
 # volume wipe needed. Override any of them via the environment for non-demo use.
-export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-admin@demo.local}"
-export DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-vllmsr-demo}"
-export DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-Admin}"
-echo "    dashboard admin provisioned: ${DASHBOARD_ADMIN_EMAIL} (password hidden; override via DASHBOARD_ADMIN_PASSWORD)"
+export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-yingylin@amd.com}"
+export DASHBOARD_ADMIN_PASSWORD="${DASHBOARD_ADMIN_PASSWORD:-aupaup123}"
+export DASHBOARD_ADMIN_NAME="${DASHBOARD_ADMIN_NAME:-yingylin}"
+export GF_SECURITY_ADMIN_USER="${GF_SECURITY_ADMIN_USER:-${DASHBOARD_ADMIN_EMAIL}}"
+export GF_SECURITY_ADMIN_PASSWORD="${GF_SECURITY_ADMIN_PASSWORD:-${DASHBOARD_ADMIN_PASSWORD}}"
+echo "    dashboard/grafana admin: ${DASHBOARD_ADMIN_EMAIL} (password hidden; override via DASHBOARD_ADMIN_PASSWORD)"
 
 echo "==> [6/6] Serving the gateway with the rendered config (platform amd)"
 # Keep the mmBERT/embedding classifiers on CPU so the iGPU is reserved for the
 # local LLM backends.
 export VLLM_SR_AMD_PRESERVE_CPU=1
+export VLLM_SR_ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest}"
+VLLM_SR_IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
+export VLLM_SR_IMAGE_PULL_POLICY
 
 vllm-sr serve \
   --config "${RENDERED_CONFIG}" \
-  --image-pull-policy never \
+  --image-pull-policy "${VLLM_SR_IMAGE_PULL_POLICY}" \
   --platform amd
 
 echo "==> Client bring-up complete. Verify with: vllm-sr status"
