@@ -155,37 +155,45 @@ for entry in ${TIERS}; do
   measure "baseline-$(echo "${tag}" | tr '/:' '__')" "${OLLAMA_URL}" ollama "${tag}"
 done
 
-# --- phase 2: COLOCATED (stack up) ----------------------------------------- #
-stack_up
-sleep 3
-snapshot idle-colo
-for entry in ${TIERS}; do
-  tag="${entry%%=*}"; alias="${entry#*=}"; [[ "${alias}" == "${entry}" ]] && alias=""
-  safe="$(echo "${tag}" | tr '/:' '__')"
-  echo "==> [overhead] colocated direct: ${tag}"
-  measure "colo-direct-${safe}" "${OLLAMA_URL}" ollama "${tag}"
-  if [[ -n "${alias}" ]]; then
-    echo "==> [overhead] colocated through-router: ${tag} (alias ${alias})"
-    measure "colo-router-${safe}" "${ROUTER_URL}" openai "${alias}"
-  fi
-done
-
-# --- phase 3: OOM sweep (ascending, stack up) ------------------------------ #
+# --- phase 2 + 3: COLOCATED + OOM (need the stack up) ---------------------- #
+# Fail-soft: if the stack cannot come back up we STILL assemble a BASELINE-ONLY
+# report rather than leaving the run with zero output files (the assembler treats
+# the missing colocated/OOM files as nulls). stack_up runs inside `if` so its
+# nonzero return does not trip `set -e`.
 oom_index=""
-for tag in ${OVERSIZED_TAGS}; do
-  safe="$(echo "${tag}" | tr '/:' '__')"
-  echo "==> [overhead] OOM sweep: attempting ${tag}"
-  if pull_tag "${tag}"; then
-    measure "oom-${safe}" "${OLLAMA_URL}" ollama "${tag}"
-  else
-    echo "{\"ok\":false,\"error\":\"pull failed (model unavailable or does not fit)\"}" \
-      >"${WORK}/oom-${safe}.json"
-    echo "{}" >"${WORK}/oom-${safe}-res.json"
-  fi
-  oom_index="${oom_index} ${tag}"
-done
+if stack_up; then
+  sleep 3
+  snapshot idle-colo
+  for entry in ${TIERS}; do
+    tag="${entry%%=*}"; alias="${entry#*=}"; [[ "${alias}" == "${entry}" ]] && alias=""
+    safe="$(echo "${tag}" | tr '/:' '__')"
+    echo "==> [overhead] colocated direct: ${tag}"
+    measure "colo-direct-${safe}" "${OLLAMA_URL}" ollama "${tag}"
+    if [[ -n "${alias}" ]]; then
+      echo "==> [overhead] colocated through-router: ${tag} (alias ${alias})"
+      measure "colo-router-${safe}" "${ROUTER_URL}" openai "${alias}"
+    fi
+  done
 
-[[ "${RESTORE_STACK}" == "1" ]] || echo "==> [overhead] RESTORE_STACK!=1; leaving stack in its current state."
+  # OOM sweep (ascending, stack up).
+  for tag in ${OVERSIZED_TAGS}; do
+    safe="$(echo "${tag}" | tr '/:' '__')"
+    echo "==> [overhead] OOM sweep: attempting ${tag}"
+    if pull_tag "${tag}"; then
+      measure "oom-${safe}" "${OLLAMA_URL}" ollama "${tag}"
+    else
+      echo "{\"ok\":false,\"error\":\"pull failed (model unavailable or does not fit)\"}" \
+        >"${WORK}/oom-${safe}.json"
+      echo "{}" >"${WORK}/oom-${safe}-res.json"
+    fi
+    oom_index="${oom_index} ${tag}"
+  done
+
+  [[ "${RESTORE_STACK}" == "1" ]] || echo "==> [overhead] RESTORE_STACK!=1; leaving stack in its current state."
+else
+  echo "WARNING: the vllm-sr stack did not come up -- writing a BASELINE-ONLY report" >&2
+  echo "         (co-location + OOM skipped). Fix the stack, then re-run for full data." >&2
+fi
 
 # --- assemble the report --------------------------------------------------- #
 echo "==> [overhead] assembling ${OUT}"
