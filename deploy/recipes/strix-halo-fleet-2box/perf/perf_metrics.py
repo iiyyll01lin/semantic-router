@@ -148,7 +148,7 @@ def to_markdown(m):
             out.append("| %s | %s | %s | %s | %s |" % (
                 b, r["unified_mem_gib"], r["stack_footprint_gib"], r["max_usable_tag"], r["first_unusable_tag"]))
         out.append("")
-        out.append("| model tier | mean drop %% (contention) | mean drop %% (end-to-end) |")
+        out.append("| model tier | mean drop % (contention) | mean drop % (end-to-end) |")
         out.append("|---|---|---|")
         for t in ov["per_tier_drop"]:
             out.append("| %s | %s | %s |" % (
@@ -166,7 +166,7 @@ def to_markdown(m):
         for b, rec in sorted(sv["per_box"].items()):
             out.append("### %s (base %s, fastest: %s)" % (b, rec.get("common_base_model"), rec.get("fastest_server")))
             out.append("")
-            out.append("| server | status | decode tok/s | TTFT ms | vs ollama | router overhead %% | quant |")
+            out.append("| server | status | decode tok/s | TTFT ms | vs ollama | router overhead % | quant |")
             out.append("|---|---|---|---|---|---|---|")
             for r in rec["servers"]:
                 out.append("| %s | %s | %s | %s | %s | %s | %s |" % (

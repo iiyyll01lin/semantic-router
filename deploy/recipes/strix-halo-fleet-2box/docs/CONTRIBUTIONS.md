@@ -50,7 +50,7 @@ measurement methodology for the third.
 | F | Capacity / TCO simulation | `export-replay-trace.sh` (98) | **real** router-replay decisions → fleet-sim JSONL → capacity/TCO simulation (real workload, not synthetic) | fleet-sim-loadable trace |
 | G | Security / data governance | `pii_mask_demo.py`, smoke/probes security lane, fleet tamper test | PII masking placeholders; jailbreak/PII → `security_guard`; **untrusted bundle rejected, config unchanged** | deny + mask + tamper-reject |
 | H | Fleet config control plane (original) | `fleet_metrics.py` (257) + `run-all-2box.sh` | `metrics.json`: **cross-box convergence span, hash agreement, router cold-start (565 s), config bytes, audit counts** | both boxes same signed hash |
-| P | Perf: co-location overhead + inference-server compare | `perf/overhead-bench.sh`, `perf/server-bench.sh`, `perf/perf_metrics.py` | **stack RAM/CPU footprint, throughput drop %% (contention + end-to-end), max-usable model / OOM boundary, per-server tok/s / TTFT / router-overhead** → `perf-metrics.json` + `perf-summary.md` | offline-verified 7/7; HW run supplies numbers |
+| P | Perf: co-location overhead + inference-server compare | `perf/overhead-bench.sh`, `perf/server-bench.sh`, `perf/perf_metrics.py` | **stack RAM/CPU footprint, throughput drop % (contention + end-to-end), max-usable model / OOM boundary, per-server tok/s / TTFT / router-overhead** → `perf-metrics.json` + `perf-summary.md` | offline-verified 7/7; HW run supplies numbers |
 
 ```mermaid
 flowchart LR
