@@ -49,7 +49,7 @@ cp -f "${GATEWAY_CONFIG}" "${GATEWAY_CONFIG}.cachebak"
 
 echo "==> [cache-sweep] box=${BOX}  thresholds='${THRESHOLDS}'  out=${OUT}"
 "${PY_BIN}" - "${GATEWAY_CONFIG}" "${ROUTER_URL}" "${ROUTER_CONFIG_URL}" "${OUT}" "${HIT_MS}" "${THRESHOLDS}" <<'PYEOF'
-import json, statistics, sys, time, urllib.request
+import json, statistics, sys, time, urllib.request, urllib.error
 
 CFG, ROUTER, CONFIGH, OUT, HIT_MS, THRESHOLDS = sys.argv[1:7]
 HIT_MS = float(HIT_MS)
@@ -98,14 +98,29 @@ def chash():
 
 
 def ask(q):
+    # Returns (ttft_ms, hit_bool, similarity). A cache HIT is detected from the
+    # router's x-vsr-cache-hit response header (set on the immediate cached
+    # response in utils/http/response.go CreateCacheHitResponse) -- deterministic,
+    # unlike a latency guess, because a hit still pays the embedding cost.
     body = json.dumps({"model": "auto", "messages": [{"role": "user", "content": q}], "max_tokens": 16}).encode()
-    req = urllib.request.Request(CHAT, data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(CHAT, data=body, headers={"Content-Type": "application/json", "x-vsr-debug": "true"})
     t0 = time.perf_counter()
     try:
-        urllib.request.urlopen(req, timeout=180).read()
+        resp = urllib.request.urlopen(req, timeout=180)
+        hdrs = {k.lower(): v for k, v in resp.getheaders()}
+        resp.read()
+    except urllib.error.HTTPError as e:
+        hdrs = {k.lower(): v for k, v in (list(e.headers.items()) if e.headers else [])}
+        try:
+            e.read()
+        except Exception:
+            pass
     except Exception:
-        return 999999.0
-    return (time.perf_counter() - t0) * 1000.0
+        return 999999.0, False, None
+    ttft = (time.perf_counter() - t0) * 1000.0
+    hit = str(hdrs.get("x-vsr-cache-hit", "")).lower() == "true"
+    sim = hdrs.get("x-vsr-cache-similarity")
+    return ttft, hit, (float(sim) if sim else None)
 
 
 with open(OUT, "w", encoding="utf-8") as fh:
@@ -121,11 +136,14 @@ for t in THRESHOLDS.split():
     miss, hits, tp, fp = [], [], 0, 0
     for i, (base, para, dist) in enumerate(CASES):
         salt = " (run %s.%d)" % (t, i)        # per-threshold namespace -> base is always a fresh miss
-        miss.append(ask(base + salt))         # populate
-        thit = ask(para + salt); ok = thit < HIT_MS; tp += ok
-        if ok:
-            hits.append(thit)
-        fp += ask(dist + salt) < HIT_MS       # a hit here = WRONG cached answer
+        tp0, _, _ = ask(base + salt)          # populate (first-ever = miss)
+        miss.append(tp0)
+        thit, hit, _ = ask(para + salt)       # paraphrase SHOULD hit (semantic match)
+        if hit:
+            tp += 1; hits.append(thit)
+        _, dhit, _ = ask(dist + salt)         # distractor should NOT hit -> a hit here is WRONG
+        if dhit:
+            fp += 1
     n = len(CASES)
     row = "%.2f,%.2f,%.2f,%.0f,%s" % (
         float(t), tp / n, fp / n, statistics.mean(miss),

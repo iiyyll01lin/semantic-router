@@ -52,6 +52,14 @@ RECIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${RECIPE_DIR}/fleet_common.sh"
 PY_BIN="$(fleet_pybin)"
 
+# Make user-installed CLIs resolvable in this non-login shell. `lemonade-server`
+# lands in ~/.local/bin (pip --user) or a pipx shim dir; a bare docker/ssh
+# subprocess does NOT inherit the login-shell PATH, which is why the first HW run
+# skipped Lemonade with "lemonade-server: command not found" despite it being
+# installed. Prepend the common user-bin dirs so the bring-up command finds it.
+_user_base_bin="$("${PY_BIN}" -c 'import site,os;print(os.path.join(site.USER_BASE,"bin"))' 2>/dev/null || true)"
+export PATH="${HOME}/.local/bin${_user_base_bin:+:${_user_base_bin}}:${PATH}"
+
 ROUTER_URL="${ROUTER_URL:-http://localhost:8899/v1}"
 ROUTER_CONFIG_URL="${ROUTER_CONFIG_URL:-http://localhost:8080/config/hash}"
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-${FLEET_STATE_DIR}/gateway/config.yaml}"
