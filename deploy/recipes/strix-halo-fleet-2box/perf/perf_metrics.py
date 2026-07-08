@@ -58,14 +58,18 @@ def aggregate_overhead(files):
     tier_drops = {}
     for rep in boxes.values():
         for tier in rep.get("tiers", []):
-            d = tier_drops.setdefault(tier["tag"], {"contention": [], "end_to_end": []})
+            d = tier_drops.setdefault(tier["tag"], {"contention": [], "end_to_end": [], "base_ttft": [], "router_ttft": []})
             d["contention"].append(tier.get("throughput_drop_pct_contention"))
             d["end_to_end"].append(tier.get("throughput_drop_pct_end_to_end"))
+            d["base_ttft"].append(tier.get("baseline_ttft_ms"))
+            d["router_ttft"].append(tier.get("colocated_router_ttft_ms"))
     per_tier = [
         {
             "tag": tag,
             "mean_drop_pct_contention": _mean(v["contention"]),
             "mean_drop_pct_end_to_end": _mean(v["end_to_end"]),
+            "mean_baseline_ttft_ms": _mean(v["base_ttft"]),
+            "mean_router_ttft_ms": _mean(v["router_ttft"]),
         }
         for tag, v in sorted(tier_drops.items())
     ]
@@ -148,13 +152,15 @@ def to_markdown(m):
             out.append("| %s | %s | %s | %s | %s |" % (
                 b, r["unified_mem_gib"], r["stack_footprint_gib"], r["max_usable_tag"], r["first_unusable_tag"]))
         out.append("")
-        out.append("| model tier | mean drop % (contention) | mean drop % (end-to-end) |")
-        out.append("|---|---|---|")
+        out.append("| model tier | mean drop % (contention) | mean drop % (end-to-end) | direct TTFT ms | router TTFT ms |")
+        out.append("|---|---|---|---|---|")
         for t in ov["per_tier_drop"]:
-            out.append("| %s | %s | %s |" % (
+            out.append("| %s | %s | %s | %s | %s |" % (
                 t["tag"],
                 "-" if t["mean_drop_pct_contention"] is None else "%.1f" % t["mean_drop_pct_contention"],
-                "-" if t["mean_drop_pct_end_to_end"] is None else "%.1f" % t["mean_drop_pct_end_to_end"]))
+                "-" if t["mean_drop_pct_end_to_end"] is None else "%.1f" % t["mean_drop_pct_end_to_end"],
+                "-" if t.get("mean_baseline_ttft_ms") is None else "%.0f" % t["mean_baseline_ttft_ms"],
+                "-" if t.get("mean_router_ttft_ms") is None else "%.0f" % t["mean_router_ttft_ms"]))
         out.append("")
     sv = m.get("servers")
     if sv:

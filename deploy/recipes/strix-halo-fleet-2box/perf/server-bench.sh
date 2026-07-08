@@ -83,10 +83,10 @@ COMMON_MODEL_HINT="${COMMON_MODEL_HINT:-qwen2.5-7b}"
 : "${LLAMACPP_READY_URL:=http://localhost:8081/health}" ; : "${LLAMACPP_TEARDOWN:=1}"
 
 : "${LEMONADE_ENABLE:=1}"  ; : "${LEMONADE_API:=openai}"
-: "${LEMONADE_DIRECT_URL:=http://localhost:8000/api/v1}" ; : "${LEMONADE_MODEL:=Qwen2.5-7B-Instruct-GGUF}"
-: "${LEMONADE_ROUTER_NET:=host.docker.internal:8000}" ; : "${LEMONADE_QUANT:=Q4_0 (lemonade registry)}"
-: "${LEMONADE_UP_CMD:=lemonade-server serve --port 8000}"
-: "${LEMONADE_READY_URL:=http://localhost:8000/api/v1/models}" ; : "${LEMONADE_TEARDOWN:=1}"
+: "${LEMONADE_DIRECT_URL:=http://localhost:13305/api/v1}" ; : "${LEMONADE_MODEL:=Qwen2.5-7B-Instruct-GGUF}"
+: "${LEMONADE_ROUTER_NET:=host.docker.internal:13305}" ; : "${LEMONADE_QUANT:=Q4_0 (lemonade registry)}"
+: "${LEMONADE_UP_CMD:=lemonade-server serve --port 13305}"
+: "${LEMONADE_READY_URL:=http://localhost:13305/api/v1/models}" ; : "${LEMONADE_TEARDOWN:=1}"
 
 : "${VLLM_ENABLE:=1}"      ; : "${VLLM_API:=openai}"
 : "${VLLM_DIRECT_URL:=http://localhost:8002/v1}" ; : "${VLLM_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
@@ -161,6 +161,12 @@ for srv_lc in ${SERVERS}; do
   if [[ "$(svar "${SRV}" ENABLE)" != "1" ]]; then
     echo "{\"server\":\"${lc}\",\"status\":\"disabled\"}" >"${meta}"; continue
   fi
+  # Remove any stale ephemeral container from a prior crashed run so `docker run
+  # --name` does not fail with a name conflict (ollama is persistent -- never touched).
+  case "${lc}" in
+    llamacpp) docker rm -f llama-server >/dev/null 2>&1 || true ;;
+    vllm)     docker rm -f vllm >/dev/null 2>&1 || true ;;
+  esac
   echo "==> [server-bench] ${lc}: bring up"
   if ! eval "$(svar "${SRV}" UP_CMD)" >"${WORK}/${lc}-up.log" 2>&1; then
     echo "    SKIP ${lc}: bring-up command failed (see server-logs/${lc}-up.log)"
