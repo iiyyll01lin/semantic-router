@@ -74,12 +74,10 @@ OLLAMA_CONTAINER="${OLLAMA_CONTAINER:-ollama}"
 BOX="${BOX:-$(hostname 2>/dev/null || echo box)}"
 OUT="${OUT:-${SCRIPT_DIR}/overhead-${BOX}.json}"
 
-# When we restart the stack we must REUSE the image that was just running -- never
-# force a re-pull. gateway-bring-up.sh otherwise defaults to 'always', and a stale
-# or removed pinned VLLM_SR_ROUTER_IMAGE digest (registry "not found") then aborts
-# the whole restart even though the image is present locally. 'ifnotpresent' uses
-# the local image and only pulls if it is genuinely absent.
-export VLLM_SR_IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-ifnotpresent}"
+# On restart, grab the latest pullable router image with NO flag needed:
+# gateway-bring-up resolves the image itself (auto-falling back to :latest when a
+# pinned digest is stale/unpullable), so we leave the pull policy at its default.
+# Set VLLM_SR_IMAGE_PULL_POLICY=never yourself only for a deliberately offline box.
 
 WORK="$(mktemp -d "${FLEET_STATE_DIR}/overhead-XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -112,10 +110,9 @@ stack_up() {
   echo "==> [overhead] bringing the vllm-sr stack UP (${STACK_UP_CMD})"
   eval "${STACK_UP_CMD}" || {
     echo "ERROR: STACK_UP_CMD failed to bring the stack up." >&2
-    echo "       If it failed PULLING a pinned router image (registry 'not found')," >&2
-    echo "       the local image is usually fine -- re-run with the default" >&2
-    echo "       VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent, or 'unset VLLM_SR_ROUTER_IMAGE'" >&2
-    echo "       to drop a stale pinned digest and use :latest." >&2
+    echo "       (gateway-bring-up auto-falls-back to :latest when a pinned router" >&2
+    echo "       image is stale/unpullable; if it still failed, check Docker and the" >&2
+    echo "       network, or set VLLM_SR_IMAGE_PULL_POLICY=never for an offline box.)" >&2
     return 1
   }
   wait_for stack_up_now 1 600 || { echo "ERROR: router config API never came up." >&2; return 1; }

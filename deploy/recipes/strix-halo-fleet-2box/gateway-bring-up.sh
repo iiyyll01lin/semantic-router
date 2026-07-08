@@ -41,7 +41,8 @@ OLLAMA_PORT="11434"
 OLLAMA_VOLUME="ollama"
 OLLAMA_IMAGE="ollama/ollama:rocm"
 TIER_TAGS=("llama3.2:3b" "qwen2.5:7b" "qwen2.5:14b" "qwen3:14b" "qwen2.5:32b")
-ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest}"
+DEFAULT_ROUTER_IMAGE="ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest"
+ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-${DEFAULT_ROUTER_IMAGE}}"
 IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
 
 PII_MODEL_DIR="${STRIX_POC_DIR}/models/pii_classifier_modernbert-base_presidio_token_model"
@@ -73,29 +74,47 @@ preflight_router_image() {
     exit 1
   fi
 
-  if docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
-    echo "    router image present locally: ${ROUTER_IMAGE}"
-    return 0
-  fi
-
+  # Resolve to the newest PULLABLE image with no flag required. Under a pulling
+  # policy we try the requested ref first; if a pinned ref cannot be pulled (e.g.
+  # a removed digest -> registry "not found"), we auto-fall-back to :latest, so a
+  # stale pin never blocks the run. A still-pullable pin is respected; 'never'
+  # stays local-only. Whatever we resolve, we then serve EXACTLY that image and
+  # tell the CLI not to re-pull it (a re-pull of a stale digest would fail again).
   if [[ "${IMAGE_PULL_POLICY}" == "never" ]]; then
-    echo "ERROR: router image is not present locally, and VLLM_SR_IMAGE_PULL_POLICY=never:" >&2
-    echo "       ${ROUTER_IMAGE}" >&2
-    echo "       Pre-pull the image, or rerun with VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent." >&2
-    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
-      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
+    if docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    router image present locally: ${ROUTER_IMAGE}"
+    elif [[ "${ROUTER_IMAGE}" != "${DEFAULT_ROUTER_IMAGE}" ]] && docker image inspect "${DEFAULT_ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    WARNING: '${ROUTER_IMAGE}' absent locally; using local '${DEFAULT_ROUTER_IMAGE}'." >&2
+      ROUTER_IMAGE="${DEFAULT_ROUTER_IMAGE}"
+    else
+      echo "ERROR: router image not present locally and VLLM_SR_IMAGE_PULL_POLICY=never:" >&2
+      echo "       ${ROUTER_IMAGE}" >&2
+      echo "       Pre-pull it, or rerun with VLLM_SR_IMAGE_PULL_POLICY=always." >&2
+      exit 1
     fi
-    exit 1
+  else
+    if docker pull "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    router image pulled (latest available): ${ROUTER_IMAGE}"
+    elif [[ "${ROUTER_IMAGE}" != "${DEFAULT_ROUTER_IMAGE}" ]] && docker pull "${DEFAULT_ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    WARNING: '${ROUTER_IMAGE}' is not pullable (stale pin?); using latest instead:" >&2
+      echo "             ${DEFAULT_ROUTER_IMAGE}" >&2
+      ROUTER_IMAGE="${DEFAULT_ROUTER_IMAGE}"
+    elif docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    WARNING: could not pull '${ROUTER_IMAGE}'; using the local copy." >&2
+    elif docker image inspect "${DEFAULT_ROUTER_IMAGE}" >/dev/null 2>&1; then
+      echo "    WARNING: could not pull; using local '${DEFAULT_ROUTER_IMAGE}'." >&2
+      ROUTER_IMAGE="${DEFAULT_ROUTER_IMAGE}"
+    else
+      echo "ERROR: no pullable or local router image found." >&2
+      echo "       Tried: ${ROUTER_IMAGE} and ${DEFAULT_ROUTER_IMAGE}" >&2
+      exit 1
+    fi
   fi
 
-  echo "    router image missing locally; pulling now (${IMAGE_PULL_POLICY}): ${ROUTER_IMAGE}"
-  if ! docker pull "${ROUTER_IMAGE}"; then
-    echo "ERROR: unable to pull router image: ${ROUTER_IMAGE}" >&2
-    if [[ -n "${VLLM_SR_ROUTER_IMAGE:-}" ]]; then
-      echo "       If this pinned digest is stale, unset VLLM_SR_ROUTER_IMAGE and use :latest." >&2
-    fi
-    exit 1
-  fi
+  # Serve exactly the image we resolved; it is now local, so tell the CLI to reuse
+  # it (never re-hit a stale-digest pull).
+  export VLLM_SR_ROUTER_IMAGE="${ROUTER_IMAGE}"
+  IMAGE_PULL_POLICY="ifnotpresent"
 }
 
 # --- Render the gateway config the agent will manage ----------------------
