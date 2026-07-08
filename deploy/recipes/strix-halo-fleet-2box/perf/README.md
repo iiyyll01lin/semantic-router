@@ -17,6 +17,11 @@ non-Ollama backends):
 Both roll up **fleet-wide** via [`perf_metrics.py`](perf_metrics.py) into
 `perf-metrics.json` + `perf-summary.md`.
 
+> **Written up with measured data:** see the
+> [performance report](../docs/perf-report.md) — co-location footprint, the
+> decode-vs-TTFT story, the OOM ceiling, concurrency, semantic-cache tuning,
+> mmBERT levers, Lemonade install, and the gfx1151/vLLM workaround.
+
 ## Why Strix Halo makes this interesting
 
 Strix Halo (Ryzen AI Max+ 395, gfx1151) has **unified LPDDR5X memory** shared by
@@ -39,6 +44,8 @@ carveout).
 | [`repoint_backend.py`](repoint_backend.py) | In-place (same-inode) rewrite of one model card's backend, for the optional through-router path. |
 | [`perf_metrics.py`](perf_metrics.py) | Aggregates per-box `overhead-*`/`server-*` JSON into a fleet record + markdown. |
 | [`run-perf-fleet.sh`](run-perf-fleet.sh) | Turnkey fleet-wide runner (Halo-A local + Halo-B over SSH) → one bundle. |
+| [`cache-sweep.sh`](cache-sweep.sh) | Semantic-cache tuning sweep: for each `similarity_threshold` records true/false hit-rate + TTFT (hit vs miss) to CSV, via in-place config rewrite + hot-reload. |
+| [`install-lemonade.sh`](install-lemonade.sh) | Idempotent per-box provisioner for the Lemonade server (`lemonade-sdk`, port 13305 `/api/v1`) — the practical vLLM+rocm workaround for gfx1151. |
 | [`verify_perf_local.py`](verify_perf_local.py) | **Offline CI-grade verifier (7/7)** — mock backends exercise the real probe / in-place rewrite / aggregate code paths, no ROCm/Docker/gateway. |
 
 ## Quick start
