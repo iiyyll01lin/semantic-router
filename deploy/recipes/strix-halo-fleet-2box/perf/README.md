@@ -44,6 +44,7 @@ carveout).
 | [`repoint_backend.py`](repoint_backend.py) | In-place (same-inode) rewrite of one model card's backend, for the optional through-router path. |
 | [`perf_metrics.py`](perf_metrics.py) | Aggregates per-box `overhead-*`/`server-*` JSON into a fleet record + markdown. |
 | [`run-perf-fleet.sh`](run-perf-fleet.sh) | Turnkey fleet-wide runner (Halo-A local + Halo-B over SSH) → one bundle. |
+| [`collect-report-data.sh`](collect-report-data.sh) | **One-shot report data collection** — runs steps [1]–[7] (verify → lemonade → Test 1+2 → concurrency → cache) into one bundle and stitches a filled `report-data.md`. |
 | [`cache-sweep.sh`](cache-sweep.sh) | Semantic-cache tuning sweep: for each `similarity_threshold` records true/false hit-rate + TTFT (hit vs miss) to CSV, via in-place config rewrite + hot-reload. |
 | [`install-lemonade.sh`](install-lemonade.sh) | Idempotent per-box provisioner for the Lemonade server (`lemonade-sdk`, port 13305 `/api/v1`) — the practical vLLM+rocm workaround for gfx1151. |
 | [`verify_perf_local.py`](verify_perf_local.py) | **Offline CI-grade verifier (7/7)** — mock backends exercise the real probe / in-place rewrite / aggregate code paths, no ROCm/Docker/gateway. |
@@ -58,6 +59,9 @@ python3 verify_perf_local.py          # or: SELFTEST=1 bash run-perf-fleet.sh
 Then, on a gateway box with the stack up:
 
 ```bash
+# EASIEST -- one shot: verify -> lemonade -> Test 1+2 -> concurrency -> cache -> report-data.md
+bash collect-report-data.sh
+
 # Test 1 only
 bash overhead-bench.sh
 

@@ -12,6 +12,10 @@
 > committed code. The whole harness is offline-verifiable first (`python3
 > perf/verify_perf_local.py` → **7/7**), so a [P] cell is a *scheduling* gap, not
 > an unknown.
+>
+> **To fill every [P] row in one shot:** `bash perf/collect-report-data.sh` — it
+> runs steps [1]–[7] on Halo-A into one bundle and writes a stitched
+`report-data.md`. See §11.
 
 ---
 
@@ -148,9 +152,9 @@ regenerates with two boxes and no code change. **Prerequisite:** provision Halo-
 
 ```bash
 for c in 1 2 4 8 16; do
-  python3 perf/tokrate_probe.py --api ollama --url http://localhost:11434 \
+  python3 perf/tokrate_probe.py --backend-url http://localhost:11434 --api ollama \
     --model qwen2.5:7b --concurrency "$c" --runs 1 --max-tokens 128 \
-    --label "c$c" >> conc-sweep.jsonl
+    --label "c$c" --out "conc-c$c.json"
 done
 ```
 
@@ -272,6 +276,20 @@ SERVERS="ollama llamacpp lemonade" SERVER_BENCH_ROUTER=1 bash perf/server-bench.
 ---
 
 ## 11. Reproduce everything
+
+**One shot — run on Halo-A, collect every number below into one bundle:**
+
+```bash
+bash perf/collect-report-data.sh
+#   → <bundle>/report-data.md  (perf-summary + concurrency + cache tables, filled)
+# add Halo-B:
+#   HALO_B_PERF=1 HALO_B_SSH=user@halo-b HALO_B_REPO=~/semantic-router \
+#     bash perf/collect-report-data.sh
+```
+
+That script runs, in order: [1] offline verifier → [2] install Lemonade → [3] Test 1
++ Test 2 (fleet) → [4] ensure stack up → [5] concurrency sweep → [6] cache sweep →
+[7] stitch `report-data.md`. Or run the pieces by hand:
 
 ```bash
 # 0. Prove the harness offline (no HW/Docker/gateway) — expect 7/7
