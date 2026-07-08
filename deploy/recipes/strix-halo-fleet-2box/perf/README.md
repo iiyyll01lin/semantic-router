@@ -44,8 +44,10 @@ carveout).
 | [`repoint_backend.py`](repoint_backend.py) | In-place (same-inode) rewrite of one model card's backend, for the optional through-router path. |
 | [`perf_metrics.py`](perf_metrics.py) | Aggregates per-box `overhead-*`/`server-*` JSON into a fleet record + markdown. |
 | [`run-perf-fleet.sh`](run-perf-fleet.sh) | Turnkey fleet-wide runner (Halo-A local + Halo-B over SSH) → one bundle. |
-| [`collect-report-data.sh`](collect-report-data.sh) | **One-shot report data collection** — runs steps [1]–[7] (verify → lemonade → Test 1+2 → concurrency → cache) into one bundle and stitches a filled `report-data.md`. |
-| [`cache-sweep.sh`](cache-sweep.sh) | Semantic-cache tuning sweep: for each `similarity_threshold` records true/false hit-rate + TTFT (hit vs miss) to CSV, via in-place config rewrite + hot-reload. |
+| [`collect-report-data.sh`](collect-report-data.sh) | **One-shot report data collection** — runs steps [1]–[7] (verify → lemonade → Test 1+2 → **max-model/Halo-B** → concurrency → cache) into one bundle and stitches `report-data.md` + `customer-report.md`. |
+| [`maxmodel-bench.sh`](maxmodel-bench.sh) | Max-usable-model probe with **near-full fallback**: estimates each big model's footprint and offloads it to Halo-B over SSH when Halo-A would exceed `NEARFULL_PCT` (default 85%) of unified memory; skips-with-reason if Halo-B is unreachable. |
+| [`gen-customer-report.py`](gen-customer-report.py) | Renders a **customer-facing** `customer-report.md` from a bundle: feasibility boundary (quant × max-model), latency tax + cache mitigation, concurrency boundary, server comparison, and a 3-baseline cost story. |
+| [`cache-sweep.sh`](cache-sweep.sh) | Semantic-cache tuning sweep: for each `similarity_threshold` records true/false hit-rate (via the `x-vsr-cache-hit` header) + TTFT (hit vs miss) to CSV, via in-place config rewrite + hot-reload. |
 | [`install-lemonade.sh`](install-lemonade.sh) | Idempotent per-box provisioner for the Lemonade server (`lemonade-sdk`, port 13305 `/api/v1`) — the practical vLLM+rocm workaround for gfx1151. |
 | [`verify_perf_local.py`](verify_perf_local.py) | **Offline CI-grade verifier (7/7)** — mock backends exercise the real probe / in-place rewrite / aggregate code paths, no ROCm/Docker/gateway. |
 

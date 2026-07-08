@@ -43,6 +43,10 @@ RECIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${RECIPE_DIR}/fleet_common.sh"
 PY_BIN="$(fleet_pybin)"
 
+# Make user-installed CLIs (lemonade-server) resolvable in this non-login shell.
+_user_base_bin="$("${PY_BIN}" -c 'import site,os;print(os.path.join(site.USER_BASE,"bin"))' 2>/dev/null || true)"
+export PATH="${HOME}/.local/bin${_user_base_bin:+:${_user_base_bin}}:${PATH}"
+
 RUN_SELFTEST="${RUN_SELFTEST:-1}"
 DO_LEMONADE="${DO_LEMONADE:-1}"
 DO_CONCURRENCY="${DO_CONCURRENCY:-1}"
@@ -79,6 +83,14 @@ fi
 log "[3/7] Test 1 + Test 2 (fleet) -> ${BUNDLE}"
 BUNDLE="${BUNDLE}" bash "${SCRIPT_DIR}/run-perf-fleet.sh" \
   || log "    (run-perf-fleet returned nonzero; continuing)"
+
+# [3.5] Max-model probe: estimate each big model's footprint and, if Halo-A would
+#       exceed NEARFULL_PCT of unified memory, OFFLOAD that probe to Halo-B (skip
+#       with reason if Halo-B is unreachable). Small tiers stay on Halo-A (step 3).
+log "[3.5/7] max-model probe (near-full -> Halo-B fallback)"
+BOX="${BOX}" OUT="${BUNDLE}/maxmodel-${BOX}.json" \
+  bash "${SCRIPT_DIR}/maxmodel-bench.sh" \
+  || log "    (maxmodel-bench returned nonzero; continuing)"
 
 # [4] Defensive: cache-sweep + concurrency need the backend/router up.
 log "[4/7] ensuring the vllm-sr stack is UP"
@@ -135,17 +147,25 @@ for p in sorted(glob.glob(os.path.join(BUNDLE, "conc-c*-*.json"))):
     rows.append((a.get("concurrency"), a.get("aggregate_decode_tps"),
                  a.get("ttft_ms_mean"), a.get("ttft_ms_p95"), a.get("success_rate")))
 if rows:
+    rows.sort(key=lambda r: (r[0] if r[0] is not None else 0))
+    base_tps = next((r[1] for r in rows if r[1]), None)
     out.append("## Concurrency sweep (%s)" % model)
     out.append("")
-    out.append("| concurrency | aggregate decode tok/s | TTFT mean ms | TTFT p95 ms | success |")
-    out.append("|---|---|---|---|---|")
-    for c, tps, tm, tp, sr in sorted(rows, key=lambda r: (r[0] if r[0] is not None else 0)):
-        out.append("| %s | %s | %s | %s | %s |" % (
+    out.append("| concurrency | aggregate decode tok/s | scaling vs c1 | TTFT mean ms | TTFT p95 ms | success |")
+    out.append("|---|---|---|---|---|---|")
+    for c, tps, tm, tp, sr in rows:
+        scal = (tps / base_tps) if (tps and base_tps) else None
+        out.append("| %s | %s | %s | %s | %s | %s |" % (
             "-" if c is None else c,
             "-" if tps is None else "%.0f" % tps,
+            "-" if scal is None else "%.2fx" % scal,
             "-" if tm is None else "%.0f" % tm,
             "-" if tp is None else "%.0f" % tp,
             "-" if sr is None else "%.0f%%" % (sr * 100)))
+    out.append("")
+    out.append("_Ollama default serializes (single slot): aggregate throughput stays flat while TTFT "
+               "grows with the queue -- concurrency queues, it does not scale. Raise OLLAMA_NUM_PARALLEL, "
+               "or use llama.cpp/vLLM, for true parallel throughput._")
     out.append("")
 
 # Semantic-cache sweep CSV -> table.
@@ -171,11 +191,16 @@ with open(os.path.join(BUNDLE, "report-data.md"), "w", encoding="utf-8") as fh:
 print("report-data.md written (%d concurrency rows, cache=%s)" % (len(rows), os.path.exists(csv)))
 PYEOF
 
+# Customer-facing report (feasibility boundary + cost) from the same bundle.
+"${PY_BIN}" "${SCRIPT_DIR}/gen-customer-report.py" "${BUNDLE}" >/dev/null 2>&1 \
+  || log "    (gen-customer-report returned nonzero; skipping)"
+
 echo
 echo "=============================================================="
 echo "Report data bundle:  ${BUNDLE}"
 ls -1 "${BUNDLE}" 2>/dev/null | sed 's/^/    /'
 echo "--------------------------------------------------------------"
 echo "FILLED REPORT ->      ${BUNDLE}/report-data.md"
+echo "CUSTOMER REPORT ->    ${BUNDLE}/customer-report.md"
 echo "Narrative template -> docs/perf-report.md (swap [P] rows for the collected tables)"
 echo "=============================================================="
