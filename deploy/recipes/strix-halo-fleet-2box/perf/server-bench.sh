@@ -60,6 +60,12 @@ PY_BIN="$(fleet_pybin)"
 _user_base_bin="$("${PY_BIN}" -c 'import site,os;print(os.path.join(site.USER_BASE,"bin"))' 2>/dev/null || true)"
 export PATH="${HOME}/.local/bin${_user_base_bin:+:${_user_base_bin}}:${PATH}"
 
+# Resolve the Lemonade CLI once: prefer the stable `lemonade-server`, else the
+# pipx dev shim `lemonade-server-dev` (what lemonade-sdk v9.x installs today).
+# Baked into the LEMONADE_UP_CMD default below.
+_lemonade_bin() { command -v lemonade-server 2>/dev/null || command -v lemonade-server-dev 2>/dev/null || echo lemonade-server; }
+LEMONADE_BIN="${LEMONADE_BIN:-$(_lemonade_bin)}"
+
 ROUTER_URL="${ROUTER_URL:-http://localhost:8899/v1}"
 ROUTER_CONFIG_URL="${ROUTER_CONFIG_URL:-http://localhost:8080/config/hash}"
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-${FLEET_STATE_DIR}/gateway/config.yaml}"
@@ -91,9 +97,11 @@ COMMON_MODEL_HINT="${COMMON_MODEL_HINT:-qwen2.5-7b}"
 : "${LLAMACPP_READY_URL:=http://localhost:8081/health}" ; : "${LLAMACPP_TEARDOWN:=1}"
 
 : "${LEMONADE_ENABLE:=1}"  ; : "${LEMONADE_API:=openai}"
-: "${LEMONADE_DIRECT_URL:=http://localhost:13305/api/v1}" ; : "${LEMONADE_MODEL:=Qwen2.5-7B-Instruct-GGUF}"
-: "${LEMONADE_ROUTER_NET:=host.docker.internal:13305}" ; : "${LEMONADE_QUANT:=Q4_0 (lemonade registry)}"
-: "${LEMONADE_UP_CMD:=lemonade-server serve --port 13305}"
+: "${LEMONADE_DIRECT_URL:=http://localhost:13305/api/v1}" ; : "${LEMONADE_MODEL:=Qwen3-8B-GGUF}"
+: "${LEMONADE_ROUTER_NET:=host.docker.internal:13305}" ; : "${LEMONADE_QUANT:=Q4_1 (lemonade Qwen3-8B-GGUF)}"
+# `serve` runs in the FOREGROUND -> background it (nohup ... &) so the synchronous
+# bring-up returns and wait_url can poll /api/v1/models for readiness.
+: "${LEMONADE_UP_CMD:=nohup ${LEMONADE_BIN} serve --port 13305 >/tmp/lemonade-server.log 2>&1 &}"
 : "${LEMONADE_READY_URL:=http://localhost:13305/api/v1/models}" ; : "${LEMONADE_TEARDOWN:=1}"
 
 : "${VLLM_ENABLE:=1}"      ; : "${VLLM_API:=openai}"
@@ -202,7 +210,7 @@ for srv_lc in ${SERVERS}; do
     case "${lc}" in
       llamacpp) docker rm -f llama-server >/dev/null 2>&1 || true ;;
       vllm)     docker rm -f vllm >/dev/null 2>&1 || true ;;
-      lemonade) pkill -f "lemonade-server" >/dev/null 2>&1 || true ;;
+      lemonade) pkill -f "lemonade-server(-dev)? serve" >/dev/null 2>&1 || true ;;
     esac
   fi
 done

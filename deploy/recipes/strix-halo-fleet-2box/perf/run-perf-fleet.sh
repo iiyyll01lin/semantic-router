@@ -77,8 +77,13 @@ run_halo_b() {
   local repo="${HALO_B_REPO:-}"
   [ -n "${repo}" ] || { echo "    WARNING: HALO_B_PERF=1 but HALO_B_REPO unset; skipping Halo-B." >&2; return 0; }
   local perf_dir="${repo}/deploy/recipes/strix-halo-fleet-2box/perf"
-  local remote_tmp="\${TMPDIR:-/tmp}/vllm-sr-perf"
-  local SSH_OPTS=()
+  # Concrete path (NOT \${TMPDIR:-/tmp}): scp uses SFTP and does NOT shell-expand
+  # the remote path, so a literal \${TMPDIR...} dir would make the copy-back fail.
+  local remote_tmp="/tmp/vllm-sr-perf"
+  # Harden every ssh/scp: with a key they work, WITHOUT one they fail fast to a
+  # clean "skipped" instead of dropping to an interactive password prompt that
+  # would hang the whole run (the root cause of run-20260709-020717 stalling).
+  local SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15)
   [ -n "${HALO_B_SSH_KEY:-}" ] && SSH_OPTS+=(-i "${HALO_B_SSH_KEY}")
   [ -n "${HALO_B_SSH_PORT:-}" ] && SSH_OPTS+=(-p "${HALO_B_SSH_PORT}")
   echo "==> [perf-fleet] Halo-B perf over SSH (${HALO_B_SSH}, perf=${perf_dir})"

@@ -157,7 +157,18 @@ def run_openai(base_url, model, prompt, max_tokens, extra_body, timeout):
                 usage = obj["usage"]
             for choice in obj.get("choices", []):
                 delta = choice.get("delta", {}) or {}
-                if delta.get("content"):
+                # Native thinking models (e.g. qwen3:14b through the router) stream
+                # their decode work as delta.reasoning / delta.reasoning_content with
+                # content="" (Ollama-style key is literally "reasoning"). Count any of
+                # them as a decode token so a reasoning server is measured instead of
+                # reading as zero tok/s. Non-reasoning servers still stream
+                # delta.content, so this is a strict superset -- no regression.
+                piece = (
+                    delta.get("content")
+                    or delta.get("reasoning")
+                    or delta.get("reasoning_content")
+                )
+                if piece:
                     if t_first is None:
                         t_first = time.perf_counter()
                     chunk_tokens += 1

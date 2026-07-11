@@ -53,14 +53,50 @@ DO_CONCURRENCY="${DO_CONCURRENCY:-1}"
 DO_CACHE="${DO_CACHE:-1}"
 CONC_MODEL="${CONC_MODEL:-qwen2.5:7b}"
 CONC_LEVELS="${CONC_LEVELS:-1 2 4 8 16}"
+# Lemonade model for Test 2: Qwen3-8B-GGUF is a valid GPU GGUF in the registry
+# (Qwen2.5-7B-Instruct-GGUF is NOT). Exported so run-perf-fleet -> server-bench
+# serves the same model that step [2] pre-pulls.
+LEMONADE_MODEL="${LEMONADE_MODEL:-Qwen3-8B-GGUF}"; export LEMONADE_MODEL
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 ROUTER_CONFIG_URL="${ROUTER_CONFIG_URL:-http://localhost:8080/config/hash}"
 BOX="${BOX:-$(hostname 2>/dev/null || echo box)}"
 BUNDLE="${BUNDLE:-${FLEET_STATE_DIR}/report-run-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "${BUNDLE}"
 
-log() { echo "==> [collect] $*"; }
+CURRENT_STEP="init"
+log() {
+  echo "==> [collect] $*"
+  # Remember the last step marker ("[N/7]") so an interrupted run records where
+  # it stopped (see the interrupted-run guard below).
+  case "${1:-}" in
+    "["*) CURRENT_STEP="${1%% *}" ;;
+  esac
+}
 log "bundle=${BUNDLE}  box=${BOX}"
+
+# --- interrupted-run guard --------------------------------------------------
+# A crash / kill / SSH-hang used to leave a directory of 0-byte files that
+# looked exactly like a real bundle (e.g. report-run-20260709-235809: 10 files,
+# all empty). Stamp a run-status marker (RUNNING -> COMPLETE) and, on any early
+# exit or signal, prune the 0-byte shells and flip the marker to INTERRUPTED so
+# a partial run is unmistakable. Best-effort throughout (|| true): consistent
+# with this script's fail-soft `set -uo pipefail` (no -e) style -- the guard
+# must never itself abort the run.
+STATUS_FILE="${BUNDLE}/run-status.txt"
+RUN_COMPLETE=0
+_mark_status() { printf '%s\n' "$*" >"${STATUS_FILE}" 2>/dev/null || true; }
+_prune_empty() {
+  find "${BUNDLE}" -maxdepth 1 -type f -empty ! -name "$(basename "${STATUS_FILE}")" \
+    -delete 2>/dev/null || true
+}
+_on_exit() {
+  local rc=$?
+  [ "${RUN_COMPLETE}" = "1" ] && return 0
+  _prune_empty
+  _mark_status "INTERRUPTED step=${CURRENT_STEP} rc=${rc} at=$(date +%Y%m%d-%H%M%S)"
+}
+trap _on_exit EXIT INT TERM
+_mark_status "RUNNING step=${CURRENT_STEP} started=$(date +%Y%m%d-%H%M%S)"
 
 # [1] Offline verifier -- prove the harness before touching the box.
 if [ "${RUN_SELFTEST}" = "1" ]; then
@@ -73,8 +109,8 @@ fi
 
 # [2] Install Lemonade FIRST so the Test 2 Lemonade leg is measured, not skipped.
 if [ "${DO_LEMONADE}" = "1" ]; then
-  log "[2/7] install Lemonade (idempotent)"
-  bash "${SCRIPT_DIR}/install-lemonade.sh" \
+  log "[2/7] install Lemonade (idempotent) + pre-pull ${LEMONADE_MODEL}"
+  PULL_MODEL="${LEMONADE_MODEL}" bash "${SCRIPT_DIR}/install-lemonade.sh" \
     || log "    (lemonade install returned nonzero; Test 2 will just skip it -- continuing)"
 fi
 
@@ -194,6 +230,13 @@ PYEOF
 # Customer-facing report (feasibility boundary + cost) from the same bundle.
 "${PY_BIN}" "${SCRIPT_DIR}/gen-customer-report.py" "${BUNDLE}" >/dev/null 2>&1 \
   || log "    (gen-customer-report returned nonzero; skipping)"
+
+# Finalize: prune any 0-byte artifacts left by failed sub-steps so the bundle
+# never ships empty shells, then flag the run COMPLETE for consumers. Reaching
+# here means every step ran (individually skippable); the EXIT trap now no-ops.
+_prune_empty
+RUN_COMPLETE=1
+_mark_status "COMPLETE steps=7/7 finished=$(date +%Y%m%d-%H%M%S)"
 
 echo
 echo "=============================================================="

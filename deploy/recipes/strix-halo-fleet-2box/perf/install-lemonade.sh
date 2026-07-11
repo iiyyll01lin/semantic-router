@@ -11,7 +11,7 @@
 # Env (all optional):
 #   PORT         serve port                       (default 13305 -- Lemonade default)
 #   START        1 => launch `lemonade-server serve` after install (default 0)
-#   PULL_MODEL   model id to pre-pull, e.g. Qwen2.5-7B-Instruct-GGUF (default: none)
+#   PULL_MODEL   model id to pre-pull, e.g. Qwen3-8B-GGUF (default: none)
 #   PIPX         1 => prefer pipx (isolated)      (default 1, falls back to pip --user)
 #
 # Usage:  bash install-lemonade.sh                 # install + verify
@@ -25,10 +25,15 @@ PIPX="${PIPX:-1}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Resolve the Lemonade CLI. Prefer the stable `lemonade-server`; fall back to the
+# pipx dev build `lemonade-server-dev` (lemonade-sdk v9.x ships ONLY the -dev shim
+# today, which is what is installed on this box). Echoes "" until installed.
+lemonade_bin() { command -v lemonade-server 2>/dev/null || command -v lemonade-server-dev 2>/dev/null || true; }
+
 echo "==> [lemonade] target port=${PORT}  host=$(hostname 2>/dev/null || echo box)"
 
-if have lemonade-server; then
-  echo "==> [lemonade] already installed: $(lemonade-server --version 2>/dev/null || echo present)"
+if [[ -n "$(lemonade_bin)" ]]; then
+  echo "==> [lemonade] already installed: $("$(lemonade_bin)" --version 2>/dev/null || echo present)"
 else
   installed=0
   if [[ "${PIPX}" == "1" ]] && have pipx; then
@@ -48,23 +53,25 @@ else
   fi
 fi
 
-if ! have lemonade-server; then
-  echo "ERROR: lemonade-server still not on PATH after install." >&2
+BIN="$(lemonade_bin)"
+if [[ -z "${BIN}" ]]; then
+  echo "ERROR: neither lemonade-server nor lemonade-server-dev on PATH after install." >&2
   echo "       Add your pip user bin dir to PATH (e.g. ~/.local/bin) and re-run." >&2
   exit 1
 fi
-echo "==> [lemonade] installed OK: $(lemonade-server --version 2>/dev/null || echo present)"
+echo "==> [lemonade] installed OK: ${BIN} ($("${BIN}" --version 2>/dev/null || echo present))"
 
 if [[ -n "${PULL_MODEL}" ]]; then
   echo "==> [lemonade] pulling model: ${PULL_MODEL}"
-  lemonade-server pull "${PULL_MODEL}" || echo "WARN: pull failed (continuing)"
+  "${BIN}" pull "${PULL_MODEL}" || echo "WARN: pull failed (continuing)"
 fi
 
 if [[ "${START}" == "1" ]]; then
   echo "==> [lemonade] starting server on :${PORT} (background)"
-  pkill -f "lemonade-server serve" 2>/dev/null || true
-  nohup lemonade-server serve --port "${PORT}" >/tmp/lemonade-server.log 2>&1 &
-  for _ in $(seq 1 30); do
+  pkill -f "lemonade-server(-dev)? serve" 2>/dev/null || true
+  # `serve` runs in the FOREGROUND, so background it (nohup ... &) and poll.
+  nohup "${BIN}" serve --port "${PORT}" >/tmp/lemonade-server.log 2>&1 &
+  for _ in $(seq 1 60); do
     curl -fsS "http://localhost:${PORT}/api/v1/models" >/dev/null 2>&1 && break
     sleep 1
   done
@@ -74,5 +81,5 @@ if [[ "${START}" == "1" ]]; then
     echo "WARN: server not answering yet on :${PORT}; check /tmp/lemonade-server.log" >&2
   fi
 else
-  echo "==> [lemonade] to serve:  lemonade-server serve --port ${PORT}"
+  echo "==> [lemonade] to serve:  ${BIN} serve --port ${PORT}"
 fi

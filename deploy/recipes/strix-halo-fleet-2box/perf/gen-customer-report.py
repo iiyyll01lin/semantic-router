@@ -93,13 +93,35 @@ def main():
         o.append("| model | est. footprint (GiB) | projected mem use | ran on | decode tok/s | verdict |")
         o.append("|---|---|---|---|---|---|")
         for r in maxmodel["results"]:
+            verdict = r.get("verdict") or "-"
+            box = r.get("chosen_box") or "-"
+            tps = r.get("decode_tps")
+            reason = (r.get("reason") or "").strip()
+            # Report where the model ACTUALLY ran, not where it was routed. maxmodel-bench
+            # sets chosen_box to the offload TARGET (halo-b) as an intent even when the probe
+            # is then skipped because Halo-B is unreachable/unprovisioned -- so the raw
+            # chosen_box would claim a run that never happened. Reflect the true verdict:
+            #   usable    -> measured on <box>
+            #   load-fail -> attempted on <box>, produced no tokens
+            #   skipped   -> never ran anywhere; keep the skip reason
+            if verdict == "usable" and tps is not None:
+                ran_on, verdict_disp = box, "usable (measured)"
+            elif verdict == "load-fail":
+                ran_on = "%s (load failed)" % box
+                verdict_disp = ("load-fail — %s" % reason) if reason else "load-fail"
+            elif verdict == "skipped":
+                ran_on = "not run"
+                verdict_disp = ("skipped — %s" % reason) if reason else "skipped"
+            else:
+                ran_on, verdict_disp = box, verdict
             o.append("| %s | %s | %s%% | %s | %s | %s |" % (
                 r.get("tag"), fmt(r.get("est_footprint_gib")), fmt(r.get("projected_pct")),
-                r.get("chosen_box"), fmt(r.get("decode_tps"), "%.1f"), r.get("verdict")))
+                ran_on, fmt(tps, "%.1f"), verdict_disp))
         o.append("")
-        o.append("_Models whose projected memory use exceeds %s%% of one box are automatically run "
-                 "on Halo-B; a model that fits neither box is the hard boundary._"
-                 % maxmodel.get("nearfull_pct", 85))
+        o.append("_Models whose projected memory use exceeds %s%% of one box are offloaded to Halo-B; "
+                 "when Halo-B is unprovisioned/unreachable the oversized model is skipped-with-reason "
+                 "(never attributed to a box it did not run on). A model that fits neither box is the "
+                 "hard boundary._" % maxmodel.get("nearfull_pct", 85))
         o.append("")
 
     if unified_gib:

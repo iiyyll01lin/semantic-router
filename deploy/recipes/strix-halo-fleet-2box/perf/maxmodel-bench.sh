@@ -83,20 +83,34 @@ probe_local() {  # tag safe -> echoes decode_tps or ""
   [ -f "${WORK}/${safe}.json" ] && decode_of "${WORK}/${safe}.json"
 }
 
-probe_halo_b() {  # tag safe -> echoes decode_tps or "" ; return 1 unreachable, 2 not-configured
+probe_halo_b() {  # tag safe -> echoes decode_tps or "" ; return: 1 unreachable, 2 not-configured, 3 reachable-but-unprovisioned
   local tag="$1" safe="$2"
   [ -n "${HALO_B_SSH:-}" ] || return 2
-  local repo="${HALO_B_REPO:-}"; [ -n "${repo}" ] || return 2
-  local perf="${repo}/deploy/recipes/strix-halo-fleet-2box/perf"
-  local rtmp="\${TMPDIR:-/tmp}/vllm-sr-maxmodel"
-  local OPTS=(); [ -n "${HALO_B_SSH_KEY:-}" ] && OPTS+=(-i "${HALO_B_SSH_KEY}")
+  # Concrete path (NOT \${TMPDIR:-/tmp}): scp uses SFTP and does NOT shell-expand
+  # the remote path, so a literal \${TMPDIR...} would be a bogus dir and scp would
+  # fail -> a false "halo-b unreachable" skip. ssh below still resolves it fine.
+  local rtmp="/tmp/vllm-sr-maxmodel"
+  # Harden ssh/scp so a keyless/unreachable Halo-B fails FAST (return 1 -> clean
+  # skip-with-reason) instead of hanging on an interactive password prompt.
+  local OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15)
+  [ -n "${HALO_B_SSH_KEY:-}" ] && OPTS+=(-i "${HALO_B_SSH_KEY}")
   [ -n "${HALO_B_SSH_PORT:-}" ] && OPTS+=(-p "${HALO_B_SSH_PORT}")
-  ssh -o ConnectTimeout=10 "${OPTS[@]}" "${HALO_B_SSH}" "bash -lc '\
-    set -e; mkdir -p ${rtmp}; \
+  # PUSH the stdlib-only probe to Halo-B rather than depending on the repo's perf/
+  # dir being checked out there (the box may have an older/partial checkout -- as
+  # observed, ~/yy/.../perf was absent). A ~40GB 70B pull can be slow;
+  # ServerAliveInterval keeps the channel alive through the idle pull.
+  # The mkdir is the reachability gate: if SSH itself cannot connect, Halo-B is
+  # genuinely UNREACHABLE (return 1). Once connected, any later failure (missing
+  # ollama/repo, no result file) means the box is REACHABLE BUT UNPROVISIONED
+  # (return 3) -- a materially different, more honest skip reason than "unreachable".
+  ssh "${OPTS[@]}" "${HALO_B_SSH}" "mkdir -p ${rtmp}" >/dev/null 2>&1 || return 1
+  scp "${OPTS[@]}" "${SCRIPT_DIR}/tokrate_probe.py" "${HALO_B_SSH}:${rtmp//\\/}/tokrate_probe.py" >/dev/null 2>&1 || return 3
+  ssh "${OPTS[@]}" "${HALO_B_SSH}" "bash -lc '\
+    set -e; \
     docker exec ${OLLAMA_CONTAINER} ollama pull ${tag} >/dev/null 2>&1 || true; \
-    python3 ${perf}/tokrate_probe.py --backend-url ${OLLAMA_URL} --api ollama --model ${tag} \
-      --runs 1 --max-tokens ${PROBE_TOKENS} --warmup 0 --out ${rtmp}/${safe}.json >/dev/null 2>&1 || true'" >/dev/null 2>&1 || return 1
-  scp -o ConnectTimeout=10 "${OPTS[@]}" "${HALO_B_SSH}:${rtmp//\\/}/${safe}.json" "${WORK}/${safe}.json" 2>/dev/null || return 1
+    python3 ${rtmp}/tokrate_probe.py --backend-url ${OLLAMA_URL} --api ollama --model ${tag} \
+      --runs 1 --max-tokens ${PROBE_TOKENS} --warmup 0 --out ${rtmp}/${safe}.json >/dev/null 2>&1 || true'" >/dev/null 2>&1 || return 3
+  scp "${OPTS[@]}" "${HALO_B_SSH}:${rtmp//\\/}/${safe}.json" "${WORK}/${safe}.json" 2>/dev/null || return 3
   [ -f "${WORK}/${safe}.json" ] && decode_of "${WORK}/${safe}.json"
 }
 
@@ -119,7 +133,12 @@ for tag in ${MAXMODEL_TAGS}; do
     else
       rc=$?
       verdict="skipped"
-      reason="halo-a near-full (${proj_pct}%) AND halo-b $([ "$rc" = 2 ] && echo not-configured || echo unreachable)"
+      case "${rc}" in
+        2) hb_state="not-configured" ;;
+        3) hb_state="reachable but unprovisioned (no repo/ollama)" ;;
+        *) hb_state="unreachable" ;;
+      esac
+      reason="halo-a near-full (${proj_pct}%) AND halo-b ${hb_state}"
       echo "    SKIP ${tag}: ${reason}"
     fi
   else
