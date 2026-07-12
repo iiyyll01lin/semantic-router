@@ -401,6 +401,55 @@ right lever when the *upstream* is the expensive part, but the ~0.7 s router tax
 itself is only addressable by shortening signal extraction — i.e. **head-trimming
 (§7 lever "fewer classifiers")**, not the cache.
 
+### 7.2 Routing-accuracy baseline — the guardrail for head-trimming **[M]**
+
+Before trimming any classifier head (§7 "fewer classifiers"), we need a routing
+baseline to prove no regression. Harness
+[`perf/route-accuracy.py`](../perf/route-accuracy.py) — a stdlib replay of the
+e2e corpus `e2e/testcases/testdata/domain_classify_cases.json` (**261 labeled
+MMLU-style cases, 14 domains**), the standalone counterpart of the k8s e2e tests
+`domain_classify.go` / `model_selection.go`. It scores against the router's own
+classification API `:8080/api/v1/classify/intent` (the **same decision engine**
+the `:8899` data-path uses — cross-checked equal on locally-routed queries — but
+upstream-independent, so cloud-tier routes don't 503 away their headers).
+
+**Overall domain-classification accuracy: 88.9% (232/261).** Per category, with
+the dominant decision → model each domain routes to:
+
+| domain | acc | n | top decision | top model |
+| --- | --- | --- | --- | --- |
+| biology | 88% | 16 | simple_general | qwen/qwen3.5-rocm |
+| business | 89% | 18 | medium_explainer | qwen/qwen3.5-rocm |
+| chemistry | 95% | 19 | complex_specialist | qwen/qwen3.5-rocm |
+| computer science | 95% | 19 | complex_specialist | qwen/qwen3.5-rocm |
+| economics | 95% | 21 | medium_explainer | qwen/qwen3.5-rocm |
+| engineering | 95% | 20 | complex_specialist | google/gemini-3.1-pro |
+| health | 82% | 17 | casual_chat | qwen/qwen3.5-rocm |
+| history | 77% | 22 | medium_explainer | qwen/qwen3.5-rocm |
+| law | 89% | 19 | premium_legal | anthropic/claude-opus-4.6 |
+| math | 84% | 19 | reasoning_deep | google/gemini-3.1-pro |
+| other | 100% | 15 | simple_general | qwen/qwen3.5-rocm |
+| philosophy | 88% | 16 | casual_chat | qwen/qwen3.5-rocm |
+| physics | 79% | 19 | simple_general | qwen/qwen3.5-rocm |
+| psychology | 90% | 21 | medium_explainer | qwen/qwen3.5-rocm |
+
+Decision mix (all 261): `simple_general` 62, `medium_explainer` 40, `casual_chat`
+36, `complex_specialist` 30, `premium_legal` 23, `reasoning_deep` 19,
+`verified_explainer` 19, `fast_qa` 13, `medium_code_general` 9, `medium_creative`
+6, `security_guard` **3**, `verified_health` 1. Model mix: `qwen/qwen3.5-rocm`
+169, `google/gemini-3.1-pro` 50, `anthropic/claude-opus-4.6` 23,
+`google/gemini-2.5-flash-lite` 19. Full per-case records:
+[`perf/route-accuracy-halo-a.json`](../perf/route-accuracy-halo-a.json).
+
+_Note: **3 legit science questions** (a plant-genetics, a heat-of-combustion, and
+a nozzle-shock problem) route to `security_guard` — i.e. the jailbreak/PII guard
+false-positives on them. That is a real (small) accuracy cost of keeping those
+safety heads, and a data point for the §7-head-trim trade-off below._
+
+```bash
+BOX=halo-a python3 perf/route-accuracy.py baseline        # writes route-accuracy-halo-a.json
+```
+
 ---
 
 ## 8. Can Lemonade be auto-installed? Is it on both boxes? — **Yes / Yes (now)**
