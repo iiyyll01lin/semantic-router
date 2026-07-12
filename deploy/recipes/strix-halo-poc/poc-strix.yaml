@@ -1406,10 +1406,12 @@ routing:
           rules:
             operator: OR
             conditions:
-                - type: jailbreak
-                  name: jailbreak_attempt
-                - type: pii
-                  name: contains_pii
+                # HEAD-TRIM EXPERIMENT (approved): the ML pii + jailbreak ONNX heads are
+                # disabled to cut router TTFT (they are the two heaviest signal heads).
+                # Removing their conditions here makes UsesSignalTypeInRouting(pii|jailbreak)
+                # false so the heads are never initialized/run; prompt_guard.enabled is also
+                # set false below. security_guard still fires on the keyword markers, which
+                # catch obvious PII/injection cases without the per-request ONNX cost.
                 - type: keyword
                   name: sensitive_pii_markers
                 - type: keyword
@@ -2570,7 +2572,9 @@ global:
                 enabled: false
                 max_tokens: 0
             prompt_guard:
-                enabled: true
+                # HEAD-TRIM EXPERIMENT (approved): jailbreak head disabled to cut TTFT.
+                # IsJailbreakEnabled() gates on this flag, so false = head not initialized.
+                enabled: false
                 model_id: models/mmbert32k-jailbreak-detector-merged
                 threshold: 0.7
                 use_cpu: true
