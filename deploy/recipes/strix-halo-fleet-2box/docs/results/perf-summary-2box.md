@@ -41,8 +41,9 @@ from-source router image) and `docs/perf-report.md` §7.5 for detail.
 
 - **Exact-repeat cache (landed):** identical prompt served in **~1–2 ms** (was
   ~0.7–0.9 s), skipping classify+route; accuracy unchanged 88.9%.
-- **Head-trim (applied, approved):** `signal.evaluation` **716 → 313 ms (−56%)**
-  by dropping the PII+jailbreak heads; accuracy unchanged 88.9%.
+- **Head-trim (measured option, reverted on the live box):** `signal.evaluation`
+  **716 → 313 ms (−56%)** by dropping the PII+jailbreak heads; accuracy unchanged
+  88.9%. Reverted to keep full safety on the live router — kept as an opt-in lever.
 - **INT8/OpenVINO (C) and GPU-offload (D):** documented blockers, not landed
   (OpenVINO not integrated; GPU flip SIGSEGVs on gfx1151). Router stays CPU.
 

@@ -5,7 +5,7 @@ _Fleet: 2× Ryzen AI Max+ 395 · halo-a (94.1 GiB visible / 32 GiB VRAM carveout
 ## 1. Bottom line
 
 - **It runs today:** router + backend share one box; the router costs ~8.6 GiB of memory and near-zero decode throughput.
-- **The real cost is first-token latency:** direct ~158 ms -> through the router ~1436 ms (**+1.3 s**). Two levers now cut it at the source: an **exact-repeat cache** returns identical prompts in **~1–2 ms** (the entire tax gone), and **trimming the two heaviest safety heads** cuts the classify stage by **~56%** (both measured, accuracy unchanged).
+- **The real cost is first-token latency:** direct ~158 ms -> through the router ~1436 ms (**+1.3 s**). An **exact-repeat cache** (live) returns identical prompts in **~1–2 ms** — the entire tax gone. A second, **optional** lever — **trimming the two heaviest safety heads** — cuts the classify stage by a measured **~56%**, but it drops PII/jailbreak detection, so the live box **keeps those heads ON** (accuracy unchanged either way).
 - **Feasibility is memory-bound:** the biggest model a box serves = unified memory ÷ quantization (below).
 - **The max model moves with the box topology:** Halo-A tops out at `qwen2.5:32b` (70B fails to load); Halo-B, run headless to free its whole 64 GiB VRAM carveout, reaches **`gpt-oss:120b` (120B MoE) @ ~30 tok/s, fully VRAM-resident**.
 
@@ -59,7 +59,7 @@ _Recommended threshold: **0.92** — the lowest that never serves a wrong cached
 | **Exact-repeat cache** | identical prompt still paid ~0.7–0.9 s | **~1–2 ms** | serve byte-identical repeats *before* classification/routing |
 | **Head-trim** (drop PII+jailbreak ML heads) | classify stage ~0.72 s | **~0.31 s (−56%)** | remove the two heaviest signal heads; keyword guards remain |
 
-_Both keep routing accuracy at **88.9%** (unchanged). The semantic cache above still helps paraphrases and removes the model-call leg; the exact-repeat cache additionally removes the classification tax for repeats. Head-trim is a **safety-vs-latency trade** — it drops ML PII/jailbreak detection, so re-enable those heads for adversarial or PII-bearing traffic._
+_Both keep routing accuracy at **88.9%** (unchanged). The **exact-repeat cache is live**; the semantic cache still helps paraphrases and removes the model-call leg. Head-trim is a **safety-vs-latency trade** — it drops ML PII/jailbreak detection — so it is **NOT enabled on the live box** (both safety heads stay on); it is documented here as an optional lever for latency-critical, low-risk deployments only._
 
 ## 4. Concurrency boundary
 

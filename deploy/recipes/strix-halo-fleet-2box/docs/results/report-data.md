@@ -68,12 +68,16 @@ accuracy 88.9% (232/261), `signal.evaluation` median 701 ms == baseline.
 | exact repeat (NEW) | skipped | **~1–2 ms** | 88.9% |
 | semantic/paraphrase hit | ~0.70 s | ~0.72–0.85 s | 88.9% |
 
-### B — head-trim (drop PII + jailbreak heads; approved)
+### B — head-trim (drop PII + jailbreak heads) — measured, then REVERTED (optional)
 
 | config | signal.evaluation median | Δ | routing accuracy | security_guard routes |
 |---|---|---|---|---|
-| all heads on (baseline) | 716 ms | — | 88.9% | 3 |
-| pii + jailbreak off (applied) | **313 ms** | **−56%** | **88.9%** | **0** |
+| all heads on (**live default**) | 716 ms | — | 88.9% | 3 |
+| pii + jailbreak off (measured option) | **313 ms** | **−56%** | **88.9%** | **0** |
+
+_Reverted on the live box to keep full PII + jailbreak safety (per-head metrics
+again show pii+jailbreak active; security_guard back to 3). The −56% is retained
+as a documented opt-in lever, not the shipped default._
 
 ### C — INT8 / OpenVINO — documented blocker (not landed)
 

@@ -41,7 +41,7 @@ below is that sentence, with the numbers.
 | Best **semantic-cache** threshold? | **0.92** (false-hit **0%**, true-hit **83–100%**) — **now enabled on the live path** (was gated off); a hit skips the upstream leg (~0.7–0.9 s hit vs ~1.2 s miss) | §6, §7.1 **[M]** |
 | Can a cache hit skip the **router tax** too? | **Yes, for exact repeats — now landed.** A pre-routing exact-match cache (custom from-source image) short-circuits an identical prompt in **~1–2 ms**, skipping embed+classify+routing entirely (vs ~0.7–0.9 s before) | §7.5 **[M]** |
 | **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by both the cache reorder and the head-trim | §7.2 **[M]** |
-| **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim now **applied (approved)**: **−56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged); GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
+| **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
 | **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
@@ -493,23 +493,29 @@ So on this benign MMLU corpus dropping the guard causes **no routing regression*
 real attacks/PII; in production the change **removes real PII-leak and
 prompt-injection protection**.
 
-**Decision — flagged, then approved + applied.** No head is unused, and
-`domain`/`complexity`/`fact_check` drive real routing tiers in the §7.2 baseline
-(dropping them regresses routing). The only material TTFT win (**−60%,
-716→284 ms**) requires dropping **pii + jailbreak — both safety capabilities**.
-This was surfaced for an explicit human call and **the trade was approved for this
-PoC experiment**, so `poc-strix.yaml` now ships with those two heads disabled
-(`prompt_guard.enabled: false` + the pii/jailbreak conditions removed from the
-`security_guard` decision rules).
+**Decision — measured under approval, then reverted on the live box; kept as an
+optional config.** No head is unused, and `domain`/`complexity`/`fact_check` drive
+real routing tiers in the §7.2 baseline (dropping them regresses routing). The
+only material TTFT win (**−60%, 716→284 ms**) requires dropping **pii + jailbreak
+— both safety capabilities**. The trade was approved and applied *as an
+experiment*, re-measured live (below), then — by explicit decision — **reverted so
+the live router keeps full PII + jailbreak safety**. `poc-strix.yaml` ships with
+`prompt_guard.enabled: true` and the pii/jailbreak conditions present in the
+`security_guard` rules; the measured win is retained here as a documented, opt-in
+lever, not a shipped default.
 
-**Applied result [M] (live re-measure, from-source image, CPU-pinned):**
-`signal.evaluation` median **716 → 313 ms (−56%)**, matching this audit's −60%
-prediction within run-to-run noise; per-head Prometheus counters confirm `pii`
-and `jailbreak` no longer execute. Routing accuracy **unchanged at 88.9%
-(232/261)**; the sole decision change is `security_guard` **3 → 0** (the three
-false-positived science questions now route to their real decisions). The
-safety-vs-latency tradeoff is unchanged from the box below — re-enable both heads
-for any deployment facing real adversarial or PII-bearing traffic.
+**Measured result [M] (live re-measure, from-source image, CPU-pinned):**
+with pii + jailbreak disabled, `signal.evaluation` median **716 → 313 ms (−56%)**,
+matching this audit's −60% prediction within run-to-run noise; per-head Prometheus
+counters confirmed `pii`/`jailbreak` stopped executing. Routing accuracy
+**unchanged at 88.9% (232/261)**; the sole decision change was `security_guard`
+**3 → 0** (the three false-positived science questions routed to their real
+decisions). **This trimmed config is NOT live** — after measuring it, we reverted
+to the full-safety config (per-head metrics again show `pii`+`jailbreak` active;
+`security_guard` back to 3). To re-enable the lever, set
+`prompt_guard.enabled: false` and drop the pii/jailbreak conditions from
+`security_guard`. Keep the heads on for any deployment facing real adversarial or
+PII-bearing traffic — which is exactly why the live box keeps them.
 
 > **Trade the ML PII-detection + jailbreak guard for a ~56–60% (~0.4 s) router-TTFT
 > cut?** On this offline PoC those heads only ever *false-positived* (3/261) and
@@ -648,8 +654,9 @@ ModernBert classifier, **not** the CPU-pinned head suite (pii/jailbreak/complexi
 that dominates TTFT (§7.1) — so INT8-embedding would not move the head-bound
 critical path (same conclusion as §7.4's GPU-embedding argument). Given the scope
 and the box's disk limits, INT8 was **not integrated**; the router was left
-untouched. This is the plan's documented-negative fallback for the INT8 lever, and
-head-trimming (§7.3) is the shipped path to the same TTFT cut.
+untouched. This is the plan's documented-negative fallback for the INT8 lever;
+head-trimming (§7.3) reaches the same TTFT cut but was **reverted on the live box
+to preserve safety** and remains an opt-in config rather than a shipped default.
 
 ---
 
