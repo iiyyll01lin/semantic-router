@@ -19,10 +19,14 @@
 #                 dir under the fleet state dir; run-all passes its RUN_DIR here)
 #   HALO_A_BOX / HALO_B_BOX   box labels (default halo-a / halo-b)
 #   RUN_OVERHEAD / RUN_SERVER 1/0 toggles (default 1 / 1)
+#   HALO_A_PERF   1 => measure the LOCAL box (Halo-A) (default 1); 0 => skip it and
+#                 reuse a pre-seeded overhead-/server-<halo-a>.json already in BUNDLE
 #   HALO_B_PERF   1 => also measure Halo-B over SSH (default 0; needs the perf dir
 #                 present on Halo-B under HALO_B_REPO and the stack up there)
 #   HALO_B_SSH / HALO_B_REPO / HALO_B_SSH_KEY / HALO_B_SSH_PORT  (from env/fleet.env)
-#   plus any overhead-bench.sh / server-bench.sh env (TIERS, SERVERS, RUNS, ...)
+#   plus any overhead-bench.sh / server-bench.sh env (TIERS, SERVERS, RUNS, ...);
+#   these perf knobs are FORWARDED to the Halo-B SSH legs so both boxes run the
+#   same (safe) shape instead of the bench defaults (which include 32B + a 70B sweep)
 #
 # Usage:
 #   bash run-perf-fleet.sh
@@ -86,13 +90,28 @@ run_halo_b() {
   local SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15)
   [ -n "${HALO_B_SSH_KEY:-}" ] && SSH_OPTS+=(-i "${HALO_B_SSH_KEY}")
   [ -n "${HALO_B_SSH_PORT:-}" ] && SSH_OPTS+=(-p "${HALO_B_SSH_PORT}")
+  # Forward the SAME safe perf knobs to Halo-B that shape the local run. WITHOUT
+  # this, Halo-B's overhead-/server-bench fall back to their DEFAULTS -- which
+  # include a 32B tier and a 70B OOM sweep -- and would OOM-thrash a memory-tight
+  # box. Only vars that are actually SET are forwarded; each value is wrapped in
+  # double quotes so the remote bash keeps space-bearing values (e.g. multi-tier
+  # TIERS) intact (the remote script itself is single-quoted, so these embedded
+  # double quotes quote the value remotely). Values must stay free of embedded
+  # double quotes / $ / backticks (the perf knobs are simple tag=alias lists).
+  local remote_env="" _k
+  for _k in TIERS OVERSIZED_TAGS SERVERS RUNS MAX_TOKENS PROMPT_TOKENS CONCURRENCY \
+            OOM_MIN_TPS PULL_MODELS LEMONADE_MODEL SERVER_BENCH_ROUTER ROUTER_ALIAS \
+            COMMON_MODEL_HINT VLLM_SR_IMAGE_PULL_POLICY; do
+    [ -n "${!_k+x}" ] && remote_env+="${_k}=\"${!_k}\" "
+  done
   echo "==> [perf-fleet] Halo-B perf over SSH (${HALO_B_SSH}, perf=${perf_dir})"
+  [ -n "${remote_env}" ] && echo "    forwarding knobs to Halo-B: ${remote_env}"
   ssh "${SSH_OPTS[@]}" "${HALO_B_SSH}" "bash -lc '\
     set -e; mkdir -p ${remote_tmp}; \
     if [ ! -d ${perf_dir} ]; then echo MISSING_PERF_DIR; exit 3; fi; \
     cd ${perf_dir}; \
-    ${RUN_OVERHEAD:+ BOX=${HALO_B_BOX} OUT=${remote_tmp}/overhead-${HALO_B_BOX}.json bash overhead-bench.sh || true;} \
-    ${RUN_SERVER:+ BOX=${HALO_B_BOX} OUT=${remote_tmp}/server-${HALO_B_BOX}.json bash server-bench.sh || true;} \
+    ${RUN_OVERHEAD:+ ${remote_env}BOX=${HALO_B_BOX} OUT=${remote_tmp}/overhead-${HALO_B_BOX}.json bash overhead-bench.sh || true;} \
+    ${RUN_SERVER:+ ${remote_env}BOX=${HALO_B_BOX} OUT=${remote_tmp}/server-${HALO_B_BOX}.json bash server-bench.sh || true;} \
     '" 2>&1 | sed 's/^/    [halo-b] /' || echo "    (Halo-B perf run returned nonzero; continuing)"
   # Best-effort copy the per-box JSON back into the bundle.
   for f in "overhead-${HALO_B_BOX}.json" "server-${HALO_B_BOX}.json"; do
@@ -101,7 +120,14 @@ run_halo_b() {
   done
 }
 
-run_local
+# HALO_A_PERF=0 skips the LOCAL box (Halo-A) so an already-collected/committed
+# overhead-/server-<halo-a>.json can be reused as-is (seed it into BUNDLE first);
+# the aggregation below then combines that with the fresh Halo-B leg. Default 1.
+if [ "${HALO_A_PERF:-1}" = "1" ]; then
+  run_local
+else
+  echo "==> [perf-fleet] Halo-A (local) perf skipped (HALO_A_PERF=0; reusing seeded per-box JSON in ${BUNDLE})"
+fi
 run_halo_b
 
 echo "==> [perf-fleet] aggregating -> ${BUNDLE}/perf-metrics.json + perf-summary.md"
