@@ -33,3 +33,16 @@ Fleet-safe max usable model: **qwen3:14b**  ·  mean stack RAM footprint: **8.68
 |---|---|---|---|---|---|---|
 | ollama | measured | 44.8 | 143 | +0.0% | - | Q4_0 (ollama default) |
 
+## Router-TTFT experiments (halo-a, custom from-source image)
+
+These land on top of the fleet numbers above; both boxes share identical router
+overhead, so the halo-a measurement transfers. See `report-data.md` (Custom
+from-source router image) and `docs/perf-report.md` §7.5 for detail.
+
+- **Exact-repeat cache (landed):** identical prompt served in **~1–2 ms** (was
+  ~0.7–0.9 s), skipping classify+route; accuracy unchanged 88.9%.
+- **Head-trim (applied, approved):** `signal.evaluation` **716 → 313 ms (−56%)**
+  by dropping the PII+jailbreak heads; accuracy unchanged 88.9%.
+- **INT8/OpenVINO (C) and GPU-offload (D):** documented blockers, not landed
+  (OpenVINO not integrated; GPU flip SIGSEGVs on gfx1151). Router stays CPU.
+

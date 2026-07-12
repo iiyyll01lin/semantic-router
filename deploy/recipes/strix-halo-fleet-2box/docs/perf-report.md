@@ -39,8 +39,9 @@ below is that sentence, with the numbers.
 | Are **both boxes** used? | **Yes — both measured.** Halo-A 94 GiB visible / 32 GiB VRAM; Halo-B 62 GiB / 64 GiB VRAM (the carveout sets the ceiling) | §4 **[M]** |
 | **Multi-concurrency** behaviour? | Serialized (Ollama default): **flat ~43 tok/s**, TTFT queues. `OLLAMA_NUM_PARALLEL=4`: scales to **~107 tok/s (~2.5×), knee at c=4** | §5 **[M]** |
 | Best **semantic-cache** threshold? | **0.92** (false-hit **0%**, true-hit **83–100%**) — **now enabled on the live path** (was gated off); a hit skips the upstream leg (~0.7–0.9 s hit vs ~1.2 s miss) | §6, §7.1 **[M]** |
-| **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by the head-trim experiment | §7.2 **[M]** |
-| **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim is **not free**: **−60% signal-eval (0.72→0.28 s)** but only by dropping the **pii+jailbreak safety heads** → **flagged for user**; GPU offload **blocked (TD-046)**. **Do not** truncate layers | §7.1–7.4 **[M]** |
+| Can a cache hit skip the **router tax** too? | **Yes, for exact repeats — now landed.** A pre-routing exact-match cache (custom from-source image) short-circuits an identical prompt in **~1–2 ms**, skipping embed+classify+routing entirely (vs ~0.7–0.9 s before) | §7.5 **[M]** |
+| **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by both the cache reorder and the head-trim | §7.2 **[M]** |
+| **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim now **applied (approved)**: **−56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged); GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
 | **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
@@ -397,10 +398,12 @@ span-by-span (Jaeger `vllm-sr`):
 per-decision (`IsCacheEnabledForDecision`), the router must run the full signal
 extraction to *pick* the decision before it can look up that decision's cache — so a
 hit only removes the **upstream** leg (~0.34 s here on a warm local `qwen`; **seconds**
-when the routed tier is cold-loading or a remote cloud model). Net: the cache is the
-right lever when the *upstream* is the expensive part, but the ~0.7 s router tax
-itself is only addressable by shortening signal extraction — i.e. **head-trimming
-(§7 lever "fewer classifiers")**, not the cache.
+when the routed tier is cold-loading or a remote cloud model). Net: the *semantic*
+cache is the right lever when the *upstream* is the expensive part, but the ~0.7 s
+router tax itself is addressable two ways: **(a)** an **exact-match pre-routing cache**
+that skips embed+classify+routing for identical repeats (**landed — §7.5**, exact
+repeat ~1–2 ms), and **(b)** shortening signal extraction via **head-trimming
+(§7.3)**. Layer truncation is still the wrong lever.
 
 ### 7.2 Routing-accuracy baseline — the guardrail for head-trimming **[M]**
 
@@ -490,34 +493,69 @@ So on this benign MMLU corpus dropping the guard causes **no routing regression*
 real attacks/PII; in production the change **removes real PII-leak and
 prompt-injection protection**.
 
-**Decision — kept all heads; flagged for the user.** No head is unused, and
+**Decision — flagged, then approved + applied.** No head is unused, and
 `domain`/`complexity`/`fact_check` drive real routing tiers in the §7.2 baseline
 (dropping them regresses routing). The only material TTFT win (**−60%,
 716→284 ms**) requires dropping **pii + jailbreak — both safety capabilities**.
-Per the change guardrail this is **not** a silent trim: the router is **left with
-all heads enabled** (`poc-strix.yaml` unchanged), and the measured win + tradeoff
-is surfaced here for an explicit human call:
+This was surfaced for an explicit human call and **the trade was approved for this
+PoC experiment**, so `poc-strix.yaml` now ships with those two heads disabled
+(`prompt_guard.enabled: false` + the pii/jailbreak conditions removed from the
+`security_guard` decision rules).
 
-> **Trade the ML PII-detection + jailbreak guard for a 60% (~0.43 s) router-TTFT
+**Applied result [M] (live re-measure, from-source image, CPU-pinned):**
+`signal.evaluation` median **716 → 313 ms (−56%)**, matching this audit's −60%
+prediction within run-to-run noise; per-head Prometheus counters confirm `pii`
+and `jailbreak` no longer execute. Routing accuracy **unchanged at 88.9%
+(232/261)**; the sole decision change is `security_guard` **3 → 0** (the three
+false-positived science questions now route to their real decisions). The
+safety-vs-latency tradeoff is unchanged from the box below — re-enable both heads
+for any deployment facing real adversarial or PII-bearing traffic.
+
+> **Trade the ML PII-detection + jailbreak guard for a ~56–60% (~0.4 s) router-TTFT
 > cut?** On this offline PoC those heads only ever *false-positived* (3/261) and
 > the keyword markers in `security_guard` still catch obvious cases; but any
 > deployment facing real adversarial or PII-bearing traffic should keep them.
 > INT8-quantising the kept heads (separate `openvino-binding` lift) is the only
-> path to cutting the tax **without** dropping a capability, and is out of scope
-> here.
+> path to cutting the tax **without** dropping a capability (see §7.5).
 
 ```bash
-# reproduce the win measurement (revert after): disable heads in the runtime
-# config, GET :16686/api/traces?service=vllm-sr, then restore.
+# reproduce the applied head-trim (poc-strix.yaml already ships it): redeploy and
+# re-measure -- BOX=halo-a python3 perf/route-accuracy.py post-head-trim ;
+# send :8899 requests + GET :16686/api/traces?service=vllm-sr for signal.evaluation.
 ```
 
 ### 7.4 GPU-offload experiment — documented blocker, kept CPU **[M]**
 
 Goal: flip the embedding + classifier heads to the iGPU (`use_cpu: false`) and
-measure the TTFT delta vs. decode impact. **Outcome: not attempted live — it would
-crash the router. Blocked by [TD-046]; classifiers stay on CPU.** This is the
-plan's documented-negative fallback, reached by inspection rather than by
-crashing the live stack (the goal was "keep CPU rather than spin").
+measure the TTFT delta vs. decode impact. **Outcome: attempted live on a
+from-source image with the TD-046 fix implemented — it still crashes on gfx1151.
+Reverted; classifiers stay on CPU.**
+
+**Empirical result [M] (from-source image `VLLM_SR_AMD_FORCE_GPU=1`).** We
+implemented TD-046's exit criteria — a session-creation mutex in
+`onnx-binding/src/ffi/classification.rs` (holds a `parking_lot::Mutex` across each
+`MmBert*Classifier::load`) plus `MaxParallelism = 1` in
+`classifier_lifecycle.go` — rebuilt the ROCm router image, and deployed with GPU
+classifiers. The router **still `SIGSEGV`s on startup**, but the crash is
+**earlier than TD-046's concurrent-classifier-init race**: after the GPU is
+detected (`[gpu_memory] Probed VRAM: total=47.0 GB … sessions=3`) the very first
+GPU session — the shared **mmBERT embedding** — crashes during ROCm
+execution-provider creation:
+
+```
+embedding_models_init_started … use_cpu:false
+INFO: Attempting ROCm execution provider...
+SIGSEGV: segmentation violation … signal arrived during cgo execution
+… candle-binding._Cfunc_init_mmbert_embedding_model … InitMmBertEmbeddingModel(…)
+```
+
+So on this box the blocker is **the ROCm-EP session build for the embedding model
+on gfx1151**, which fails before any classifier head is even created. The TD-046
+serialization fix is correct and necessary for the *later* concurrent-classifier
+race, but it cannot help here — the router never reaches that stage — and
+`MaxParallelism=1` would only slow the CPU reload path, so both changes were
+reverted and the deploy rolled back to the CPU image. This **empirically confirms**
+(with a live crash trace) the inspection-based conclusion below.
 
 **Why the GPU path crashes (concrete, current code):**
 1. The GPU flip is **all-or-nothing**. `--platform amd` with
@@ -534,9 +572,11 @@ crashing the live stack (the goal was "keep CPU rather than spin").
    `init_sequence_classifier`/`init_token_classifier`**, killing the whole router
    (incl. the `:8080` apiserver), on startup **and on every `:8080` config reload**
    (TD-046).
-3. **No runtime serialize-init toggle exists** — the only fix is code
-   (`MaxParallelism = 1`, or a creation mutex in the FFI) **+ a from-source router
-   image rebuild**, which is explicitly out of scope here.
+3. **No runtime serialize-init toggle exists** — the fix is code
+   (`MaxParallelism = 1` + a creation mutex in the FFI) **+ a from-source router
+   image rebuild**. We implemented and built exactly that (see the empirical result
+   above); it correctly serializes classifier-session creation but is moot here
+   because the crash is upstream of it, in the embedding ROCm-EP build on gfx1151.
 
 The current stack confirms the setup: the router container **is** ROCm-capable
 (`/opt/rocm/lib` + `/opt/onnxruntime/capi` on `LD_LIBRARY_PATH`, `/dev/kfd` +
@@ -554,11 +594,62 @@ registered function/op`, seen every reload — it silently falls back), and GPU
 classifiers would then fight the Ollama LLM **decode** for the shared unified
 memory (§9). Low reward, real crash/contention risk.
 
-**Verdict: stays CPU (TD-046 + gfx1151).** To revisit, land TD-046's exit
-criteria (serialize ROCm session creation) on a rebuilt image, then flip
-`use_cpu:false` and re-measure TTFT vs. decode.
+**Verdict: stays CPU (gfx1151 ROCm-EP, then TD-046).** We *did* land TD-046's exit
+criteria (serialize ROCm session creation) on a rebuilt image and flip
+`use_cpu:false` — and the router still crashed, now in the **embedding** ROCm-EP
+build (above), i.e. gfx1151's shaky ROCm is the first wall and TD-046 the second.
+Both point the same way: **keep classifiers on CPU on this box.** Revisit only if
+a future ROCm/gfx1151 stack builds the embedding ONNX session without segfaulting.
 
 [TD-046]: ../../../../docs/agent/tech-debt/td-046-onnx-binding-concurrent-rocm-session-init-segfault.md
+
+### 7.5 Custom from-source router image — cache reorder (landed) + INT8 (blocked) **[M]**
+
+A/C/D above require a **from-source** `vllm-sr-rocm` router image (the live stack
+runs the prebuilt `ghcr.io/.../vllm-sr-rocm:latest`). We built that image from the
+current source (`make docker-build-vllm-sr-router VLLM_SR_PLATFORM=amd` →
+`src/vllm-sr/Dockerfile.rocm`), deployed it via `VLLM_SR_ROUTER_IMAGE`, and
+**verified parity as a hard gate**: `/config/hash` up, routing accuracy **88.9%
+(232/261)** identical, `signal.evaluation` median **701 ms** — matching the §7.3
+all-heads-on baseline. `:latest` stays the instant rollback.
+
+**Cache reorder — LANDED.** §7.1 showed the semantic-cache hit still pays the
+~0.7 s embed+classify because caching is per-decision and only consulted *after*
+routing. We added an **exact-match pre-routing cache** (Go-only:
+`InMemoryCache.FindExact` + an optional `ExactMatcher` interface, called in
+`runRequestPreRoutingStages` *before* `signal.evaluation`). An identical repeat
+prompt is now served **before** embedding/classification/routing:
+
+| request | signal.evaluation | plugin (cache) | upstream | **client wall TTFT** |
+| --- | --- | --- | --- | --- |
+| miss (full pipeline) | ~0.70 s | ~45 ms | ~0.36 s (warm) | ~1.17 s |
+| **exact repeat (new)** | **skipped** | ~1 ms exact lookup | **skipped** | **~1–2 ms** |
+| semantic/paraphrase hit (unchanged) | ~0.70 s | ~45 ms | skipped | ~0.72–0.85 s |
+
+Exact repeats collapse from ~0.72–0.88 s (old per-decision hit) or ~1.17 s (miss)
+to **~1–2 ms** — the ~0.7 s router tax is gone for them. The semantic/paraphrase
+path is deliberately left on the per-decision post-routing lookup (a pre-routing
+semantic match could cross decision boundaries), so **routing accuracy is
+unchanged at 88.9%** and there is no false-hit regression.
+
+**INT8 heads (OpenVINO) — DOCUMENTED BLOCKER (not landed).** INT8 is first-class
+only via the separate `openvino-binding` (`--weight-format int8`), and the router
+*has* an OpenVINO classifier backend — but it is **compiled out** of the shipped
+image: the ROCm build is `-tags=onnx`, so `openvino_backend_cgo.go` (which needs
+`//go:build openvino`) is replaced by the stub. Wiring INT8 in would require, on a
+disk-tight AMD box, **all** of: (1) rebuild the router with `-tags=openvino`;
+(2) a CMake C++ build of `openvino-binding` + the **OpenVINO SDK/runtime** in the
+image (the deployed ORT exposes only `MIGraphX/ROCM/CPU` execution providers — **no
+OpenVINO EP** — and no `openvino`/`optimum-intel` toolchain is present anywhere);
+(3) `optimum-cli export openvino --weight-format int8` for each kept head; (4)
+re-wiring the classifier runtime to route each head through OpenVINO. Moreover the
+OpenVINO backend as implemented accelerates the mmBERT **embedding** + a single
+ModernBert classifier, **not** the CPU-pinned head suite (pii/jailbreak/complexity)
+that dominates TTFT (§7.1) — so INT8-embedding would not move the head-bound
+critical path (same conclusion as §7.4's GPU-embedding argument). Given the scope
+and the box's disk limits, INT8 was **not integrated**; the router was left
+untouched. This is the plan's documented-negative fallback for the INT8 lever, and
+head-trimming (§7.3) is the shipped path to the same TTFT cut.
 
 ---
 

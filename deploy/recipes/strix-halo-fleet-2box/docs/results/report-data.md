@@ -54,5 +54,38 @@ _Ollama default serializes (single slot): aggregate throughput stays flat while 
 
 _Recommendation: the lowest threshold that keeps `false_hit_rate` at 0._
 
+## Custom from-source router image — TTFT experiments (halo-a, CPU-pinned)
+
+Built from current source (`make docker-build-vllm-sr-router VLLM_SR_PLATFORM=amd`),
+deployed via `VLLM_SR_ROUTER_IMAGE`. Phase-0 parity gate passed: `/config/hash` up,
+accuracy 88.9% (232/261), `signal.evaluation` median 701 ms == baseline.
+
+### A — exact-match pre-routing cache (landed)
+
+| request class | signal.evaluation | client wall TTFT | accuracy |
+|---|---|---|---|
+| miss (full pipeline) | ~0.70 s | ~1.17 s | 88.9% |
+| exact repeat (NEW) | skipped | **~1–2 ms** | 88.9% |
+| semantic/paraphrase hit | ~0.70 s | ~0.72–0.85 s | 88.9% |
+
+### B — head-trim (drop PII + jailbreak heads; approved)
+
+| config | signal.evaluation median | Δ | routing accuracy | security_guard routes |
+|---|---|---|---|---|
+| all heads on (baseline) | 716 ms | — | 88.9% | 3 |
+| pii + jailbreak off (applied) | **313 ms** | **−56%** | **88.9%** | **0** |
+
+### C — INT8 / OpenVINO — documented blocker (not landed)
+
+OpenVINO backend is compiled out (`-tags=onnx`); deployed ORT has no OpenVINO EP;
+no OpenVINO SDK / `optimum-intel` present; the OV path targets the embedding, not
+the head-bound critical path. Not integrated.
+
+### D — GPU offload (`use_cpu:false`) — documented blocker (reverted)
+
+TD-046 fix (FFI session-creation mutex + `MaxParallelism=1`) implemented + built;
+GPU flip still `SIGSEGV`s in the **mmBERT embedding** ROCm-EP session build on
+gfx1151, before the classifier-init race. Reverted to CPU.
+
 ---
 Narrative + interpretation: `docs/perf-report.md` — replace its **[P]** rows with the tables above.
