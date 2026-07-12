@@ -63,6 +63,19 @@ type CacheBackend interface {
 	GetStats() CacheStats
 }
 
+// ExactMatcher is an OPTIONAL fast-path capability a cache backend may
+// implement: an exact (byte-for-byte) scoped-query lookup that does NOT
+// generate an embedding. The extproc layer type-asserts for it to short-circuit
+// identical repeat prompts BEFORE signal evaluation (embedding + classifier
+// fan-out). Backends that do not implement it simply fall back to the
+// per-decision semantic path, so this is not part of the required CacheBackend
+// contract.
+type ExactMatcher interface {
+	// FindExact returns the cached response for an exact scoped-query match.
+	// Returns (response, true, nil) on hit; (nil, false, nil) on miss.
+	FindExact(model string, query string) ([]byte, bool, error)
+}
+
 // SimilarityTracker provides thread-safe storage for the last similarity score.
 // Embed this in cache backends to satisfy the LastSimilarity() interface method.
 type SimilarityTracker struct {
