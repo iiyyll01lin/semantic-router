@@ -1,21 +1,24 @@
 # vllm-sr on Strix Halo — performance report
 
-**Topology:** [`strix-halo-fleet-2box`](../README.md) · **SUT:** Ryzen AI Max+ 395
-(gfx1151, RDNA3.5), ~94 GiB unified LPDDR5X · **Backend:** Ollama tiers
-`llama3.2:3b → qwen2.5:7b → qwen2.5:14b → qwen3:14b → qwen2.5:32b` ·
-**Harness:** [`perf/`](../perf/README.md)
+**Topology:** [`strix-halo-fleet-2box`](../README.md) · **SUT:** 2× Ryzen AI Max+
+395 (gfx1151, RDNA3.5), 128 GiB unified LPDDR5X each — **Halo-A** 32 GiB VRAM
+carveout (~94 GiB OS-visible), **Halo-B** 64 GiB carveout (~62 GiB visible) ·
+**Backend:** Ollama tiers `llama3.2:3b → qwen2.5:7b → qwen2.5:14b → qwen3:14b →
+qwen2.5:32b` (+ `llama3.1:70b` / `gpt-oss:120b` on Halo-B) · **Harness:**
+[`perf/`](../perf/README.md)
 
-> **Data provenance.** Rows tagged **[M]** are *measured* from the Halo-A run
-> `run-20260708-102706` (single box, stack up). Rows tagged **[P]** are *pending*
-> a run with the current harness — the script and the exact command to fill each
-> cell are given inline, so every number in this report is reproducible from the
-> committed code. The whole harness is offline-verifiable first (`python3
-> perf/verify_perf_local.py` → **7/7**), so a [P] cell is a *scheduling* gap, not
-> an unknown.
+> **Data provenance.** Every data row is tagged **[M]** — *measured* — from the
+> current-harness runs: Halo-A + two-box overhead/server/concurrency/cache
+> (`report-run-20260712-123240`, `report-run-2box-20260712-153904`), the Halo-B
+> symmetric Test 2 + perf-per-watt bundle, and the Halo-B max-model sweep
+> ([`halo-b-maxmodel.md`](halo-b-maxmodel.md)). The lone non-measured row is the
+> **vLLM** leg of Test 2, kept as an explicit **skip-with-reason** (gfx1151, §9),
+> not a gap. The whole harness is offline-verifiable first (`python3
+> perf/verify_perf_local.py` → **7/7**), and every number is reproducible from the
+> committed code via the exact command given inline in each section.
 >
-> **To fill every [P] row in one shot:** `bash perf/collect-report-data.sh` — it
-> runs steps [1]–[7] on Halo-A into one bundle and writes a stitched
-`report-data.md`. See §11.
+> **To regenerate the fleet numbers in one shot:** `bash perf/collect-report-data.sh`
+> — it runs steps [1]–[7] into one bundle and stitches a `report-data.md`. See §13.
 
 ---
 
@@ -30,15 +33,17 @@ below is that sentence, with the numbers.
 
 | Question | Answer | Evidence |
 | --- | --- | --- |
-| How much does vllm-sr **occupy**? | **≈8.35 GiB** unified RAM, router container dominant (~8.8 GB) | §1 **[M]** |
+| How much does vllm-sr **occupy**? | **≈8.4 GiB** unified RAM, router container dominant (~8.8 GB) | §1 **[M]** |
 | How much does **throughput drop** (same model)? | Decode tok/s: **≈0% (noise, ±4%)**. TTFT: **156 ms → 1560 ms (+1.4 s)** | §2 **[M]** |
-| Which **spec becomes unusable**? | **`qwen2.5:32b` is the ceiling** (~10.7 tok/s). `llama3.3:70b` **fails to load** (HTTP 500, GTT spill 48.9 GB) | §3 **[M]** |
-| Are **both boxes** used? | **No — Halo-A only.** Halo-B needs one flag (`HALO_B_PERF=1`) + reachability | §4 |
-| **Multi-concurrency** behaviour? | Harness ready (`CONCURRENCY`); decode saturates, TTFT queues | §5 **[P]** |
-| Best **semantic-cache** threshold? | Sweep harness records true/false-hit + TTFT payoff per threshold | §6 **[P]** |
+| Which **spec becomes unusable**? | **`qwen2.5:32b` on Halo-A** (~10.7 tok/s); 70B **aborts** (HTTP 500, GTT spill). Halo-B's bigger carveout reaches **`gpt-oss:120b`** | §3, §11 **[M]** |
+| Are **both boxes** used? | **Yes — both measured.** Halo-A 94 GiB visible / 32 GiB VRAM; Halo-B 62 GiB / 64 GiB VRAM (the carveout sets the ceiling) | §4 **[M]** |
+| **Multi-concurrency** behaviour? | Serialized (Ollama default): **flat ~43 tok/s**, TTFT queues. `OLLAMA_NUM_PARALLEL=4`: scales to **~107 tok/s (~2.5×), knee at c=4** | §5 **[M]** |
+| Best **semantic-cache** threshold? | **0.92** — the lowest that keeps false-hit **0%** while true-hit stays **83%** | §6 **[M]** |
 | **mmBERT embedding** slow — fix? | Cache first; then fewer classifiers / batching. **Do not** truncate layers | §7 |
-| **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`. **Neither box had it**; now scriptable | §8 |
+| **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported**; **Lemonade's experimental vLLM+rocm** is the workaround | §9 |
+| **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
+| **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093**, 120B MoE **0.30** tok/s/W — the MoE is bigger *and* more efficient/token | §12 **[M]** |
 
 ---
 
@@ -136,28 +141,99 @@ router evicted or a second box.
 
 ---
 
-## 4. Are both boxes actually being exercised? — **No**
+## 4. Are both boxes actually being exercised? — **Yes** **[M]**
 
-The measured run is **Halo-A only**. `run-perf-fleet.sh` supports Halo-B but it is
-**opt-in and gated on reachability**, and in this run Halo-B was not enabled.
+Both boxes now run the full Test 1 co-location sweep with the stack co-resident.
+`perf_metrics.py` aggregates fleet-wide and reports the **fleet-safe max usable =
+the worst box's boundary**.
 
-**To include Halo-B** (bare box `10.96.28.126`, currently firewalled):
+| box | unified budget (OS-visible) | BIOS VRAM carveout | stack RAM | max usable (Test 1 tiers) | first unusable |
+| --- | --- | --- | --- | --- | --- |
+| halo-a | **94.06 GiB** | **32 GiB** | 8.56 GiB | `qwen3:14b` | None |
+| halo-b | **62.44 GiB** | **64 GiB** | 8.8 GiB | `qwen3:14b` | None |
+
+Fleet-safe max usable across the standard tier ladder: **`qwen3:14b`** · mean stack
+footprint **≈8.68 GiB**. Co-location overhead is symmetric across the two boxes:
+
+| model tier | mean drop % (contention) | mean drop % (end-to-end) | direct TTFT ms | router TTFT ms |
+| --- | --- | --- | --- | --- |
+| `llama3.2:3b` | 1.5 | 2.0 | 158 | 1467 |
+| `qwen2.5:7b` | 1.1 | 1.2 | 141 | 1450 |
+| `qwen2.5:14b` | 0.0 | 0.1 | 160 | 1468 |
+| `qwen3:14b` | −1.7 | −2.7 | 162 | 1575 |
+
+**Why the box with *more* visible RAM has the *lower* model ceiling — the VRAM
+carveout.** Both boxes hold **128 GiB** of physical LPDDR5X, but the BIOS carves a
+**fixed VRAM region** out of it, and the two boxes are set differently:
+
+- **Halo-A: 32 GiB VRAM carveout → ~94 GiB OS-visible** system RAM (the "unified
+  budget" the sampler reports).
+- **Halo-B: 64 GiB VRAM carveout → ~62 GiB OS-visible** system RAM.
+
+The **OS-visible budget** (94 vs 62 GiB) is what the router stack and GTT overflow
+share; the **VRAM carveout** (32 vs 64 GiB) is what a model's weights must fit to
+stay GPU-resident. **The carveout — not the visible budget — governs the max
+model**, because weights that overflow the carveout must spill, and on these boxes
+a spill is either fatal or slow:
+
+- On **Halo-A** (32 GiB carveout) the dense **70B (~48.9 GB) overflows the carveout,
+  spills to GTT, and the load *aborts* (HTTP 500)** — so its ceiling is
+  `qwen2.5:32b` (26.7 GiB, fits the carveout). See §3.
+- On **Halo-B** (64 GiB carveout) that same **70B fits *entirely in VRAM* (48.2 GiB,
+  no spill)** and even **`gpt-oss:120b` (56.6 GiB MoE) is VRAM-resident at ~30
+  tok/s**; overflow only begins past 64 GiB and is a *soft* CPU-offload, not an
+  abort. See §11.
+
+So the larger VRAM carveout — despite leaving *less* OS-visible RAM — is exactly
+what moves the reliable ceiling from **32B (Halo-A) → 120B (Halo-B)**.
 
 ```bash
-HALO_B_PERF=1 HALO_B_SSH="user@10.96.28.126" bash perf/run-perf-fleet.sh
+# Fleet-wide, both boxes, one bundle:
+HALO_A_MODE=gateway HALO_B_MODE=gateway PERF_BENCH=1 bash run-all-2box.sh
 ```
-
-`perf_metrics.py` already aggregates *fleet-wide* and reports the **fleet-safe max
-usable = the worst box's boundary**, so once Halo-B is reachable the same report
-regenerates with two boxes and no code change. **Prerequisite:** provision Halo-B
-(open the ports / install Docker + Ollama + Lemonade — see §8).
 
 ---
 
-## 5. Multi-concurrency **[P]**
+## 5. Multi-concurrency **[M]**
 
-`tokrate_probe.py` already drives N parallel streams (`--concurrency` /
-`CONCURRENCY`) and reports `aggregate_decode_tps` plus per-stream TTFT p95. Sweep:
+`tokrate_probe.py` drives N parallel streams (`--concurrency` / `CONCURRENCY`) and
+reports `aggregate_decode_tps` plus per-stream TTFT p95. Measured on Halo-A
+(`qwen2.5:7b`, `max_tokens=128`, `prompt_tokens=256`), sweeping `c = 1,2,4,8,16`
+under **two** backend configs: Ollama's default (single decode slot) and the same
+container with **`OLLAMA_NUM_PARALLEL=4`**.
+
+| c | serialized agg tok/s | serialized TTFT p95 | parallel-`p4` agg tok/s | parallel-`p4` TTFT p95 | throughput speedup | TTFT p95 better |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 41.8 | 152 ms | 41.7 | 156 ms | 1.00× | 1.0× |
+| 2 | 42.6 | 3098 ms | 66.5 | 397 ms | 1.56× | 7.8× |
+| 4 | 43.1 | 8980 ms | 100.0 | 436 ms | 2.32× | 20.6× |
+| 8 | 43.3 | 20753 ms | 107.3 | 4919 ms | 2.48× | 4.2× |
+| 16 | 43.4 | 41305 ms | 107.2 | 14452 ms | 2.47× | 2.9× |
+
+_Per-stream decode under parallelism falls as slots fill (memory-bandwidth
+contention on the unified-memory APU): 43.9 (c1) → 36.1 (c2) → 27.1 (c4) → ~27.5
+(c8/16) tok/s._
+
+**Story — two completely different curves from the same box.**
+
+- **Serialized (Ollama default):** aggregate throughput is **flat at ~42.9 tok/s**
+  for *every* concurrency — there is zero parallel benefit — while **TTFT p95 grows
+  linearly with the queue** (0.15 s → 41.3 s at c=16). Concurrency **queues, it does
+  not scale**: one decode slot, extra requests just wait.
+- **Parallel (`OLLAMA_NUM_PARALLEL=4`):** aggregate throughput **scales 41.7 → 66.5
+  → 100.0 tok/s across c=1..4, then saturates at ~107 tok/s** (c=8 peak, c=16 flat)
+  — **~2.5× the serialized ceiling.**
+- **The saturation knee is c=4** — it equals the parallel-slot count. There
+  throughput is already ~2.3× serialized *and* TTFT p95 stays low (0.44 s vs 8.98 s
+  serialized, ~20× better). Beyond c=4 you buy only ~7% more throughput (107 vs 100)
+  while TTFT p95 balloons (4.9 s @ c=8, 14.5 s @ c=16) as extra requests queue for
+  the 4 slots.
+- **Recommended operating point:** run concurrency **≈ `OLLAMA_NUM_PARALLEL`** for
+  the best throughput/latency trade-off; raise `OLLAMA_NUM_PARALLEL` (or use
+  llama.cpp/vLLM slotting) to push the knee higher, bounded by memory bandwidth.
+
+Reproduce (reuses the *already-running* stack — no cycling — so it is a cheap
+add-on to a Test 1 run):
 
 ```bash
 for c in 1 2 4 8 16; do
@@ -165,19 +241,14 @@ for c in 1 2 4 8 16; do
     --model qwen2.5:7b --concurrency "$c" --runs 1 --max-tokens 128 \
     --label "c$c" --out "conc-c$c.json"
 done
+# parallel curve: recreate the ollama container with -e OLLAMA_NUM_PARALLEL=4, re-sweep, restore.
 ```
-
-**Expected shape (to confirm on HW):** `aggregate_decode_tps` rises then **saturates**
-once the backend is memory-bandwidth-bound (Strix Halo has one memory system to
-share), while **TTFT climbs roughly linearly** as requests queue. The knee is the
-box's usable concurrency for that tier. This reuses the *already-running* stack —
-no cycling — so it is a cheap add-on to a Test 1 run.
 
 ---
 
-## 6. Semantic-cache tuning — experiment design + metrics **[P]**
+## 6. Semantic-cache tuning — threshold sweep **[M]**
 
-New harness [`perf/cache-sweep.sh`](../perf/cache-sweep.sh). For each
+Harness [`perf/cache-sweep.sh`](../perf/cache-sweep.sh). For each
 `similarity_threshold` it rewrites the rendered gateway config **in place
 (same inode → fsnotify hot-reload)**, then drives **(base, paraphrase, distractor)**
 query triples through the router and records to CSV:
@@ -189,15 +260,29 @@ query triples through the router and records to CSV:
 | `ttft_miss_ms` | TTFT when it goes to the LLM | the price of a miss (≈ §2b) |
 | `ttft_hit_ms` | TTFT when served from cache | the payoff of a hit (tens of ms) |
 
+Measured sweep (Halo-A, router in-loop):
+
+| threshold | true_hit_rate | false_hit_rate | ttft_miss_ms | ttft_hit_ms |
+| --- | --- | --- | --- | --- |
+| 0.50 | 1.00 | **1.00** | 1467 | 692 |
+| 0.70 | 1.00 | **0.67** | 1016 | 683 |
+| 0.85 | 0.83 | **0.50** | 1073 | 777 |
+| **0.92** | **0.83** | **0.00** | 1059 | 729 |
+| 0.95 | 0.67 | **0.00** | 1065 | 703 |
+
+**Recommendation: `similarity_threshold = 0.92`.** It is the **lowest threshold
+that drives `false_hit_rate` to 0** (never serves a distinct question a wrong
+cached answer) while still keeping **`true_hit_rate` at 83%** — so paraphrases keep
+dodging the §2b ~1.4 s latency tax and return in ~0.7 s instead of ~1.1 s. Going
+higher to 0.95 buys **no correctness** (false-hit already 0) but **loses coverage**
+(true-hit 83% → 67%); going lower starts serving wrong answers (false-hit 0.50 at
+0.85, up to 1.00 at 0.50). This closes the loop on §2b: the semantic cache is the
+direct mitigation for the router's TTFT overhead, and 0.92 maximises the requests
+that skip the pipeline with zero correctness risk.
+
 ```bash
 bash perf/cache-sweep.sh          # sweeps {0.50,0.70,0.85,0.92,0.95}, restores config
 ```
-
-**Hypothesis to confirm.** `true_hit_rate` and `false_hit_rate` **both** fall as the
-threshold rises; the report's recommendation is the **lowest threshold that keeps
-`false_hit_rate` at 0** — that maximises the number of requests that dodge the §2b
-latency tax without ever serving a wrong cached answer. This directly closes the
-loop on §2b: semantic cache is the mitigation for the router's TTFT overhead.
 
 ---
 
@@ -223,11 +308,13 @@ same memory and depends on the shaky ROCm story in §9 — validate before shipp
 
 ---
 
-## 8. Can Lemonade be auto-installed? Is it on both boxes? — **Yes / No**
+## 8. Can Lemonade be auto-installed? Is it on both boxes? — **Yes / Yes (now)**
 
-**Neither box shipped `lemonade-server`** (that is why the Test 2 lemonade leg
-skipped with `command not found`). It is now a one-shot, idempotent, **per-box**
-provisioner: [`perf/install-lemonade.sh`](../perf/install-lemonade.sh).
+**Neither box *shipped* `lemonade-server`** (that is why the first Test 2 lemonade
+leg skipped with `command not found`). It is now a one-shot, idempotent, **per-box**
+provisioner — [`perf/install-lemonade.sh`](../perf/install-lemonade.sh) — and has
+been **installed and measured on both boxes** (`lemonade-sdk` 9.1.4; the Test 2
+lemonade rows in §10 are now live on Halo-A *and* Halo-B).
 
 ```bash
 # Run once on EACH box (Halo-A and Halo-B):
@@ -260,31 +347,131 @@ today is *through Lemonade*, not stock vLLM.
 
 ---
 
-## 10. Test 2 — inference-server comparison (bundled with vllm-sr)
+## 10. Test 2 — inference-server comparison (bundled with vllm-sr) **[M]**
 
-Same box, same base model (`qwen2.5:7b` class), different servers.
+Same box, same base model (`qwen2.5-7b` class), different servers
+(`max_tokens=128`, `prompt_tokens=256`, `runs=3`, direct path). Measured on
+**both** boxes — the three server skips from the first pass are now fixed in code,
+so ollama / llama.cpp / Lemonade all measure cleanly; vLLM stays skip-with-reason.
 
-| Server | Status | Decode tok/s | TTFT ms | Note |
-| --- | --- | --- | --- | --- |
-| **Ollama** | **[M] measured** | **43.7** | **147** | baseline reference |
-| llama.cpp (rocm) | [P] was skipped → **fixed** | — | — | skip was a stale `/llama-server` container name; pre-clean added (`62834f56`) |
-| Lemonade | [P] was skipped → **fixed** | — | — | not installed + wrong port; §8 installer + port 13305 fix |
-| vLLM (rocm) | [P] skip-with-reason | — | — | gfx1151 `invalid device function`; use Lemonade path (§9) |
+### Halo-A (fastest: llama.cpp)
 
-**Story.** Only Ollama measured cleanly first time; the other three skips were
-**three different classes of bug** — a container-name collision (infra), a
-wrong-port + missing-binary (config/provisioning), and a genuine hardware-support
-gap (gfx1151). Two are now fixed in code; the third is documented with its
-workaround. Re-run to fill the [P] rows:
+| Server | Status | Decode tok/s | TTFT ms | vs ollama | Quant |
+| --- | --- | --- | --- | --- | --- |
+| **Ollama** | **measured** | **43.0** | 142 | +0.0% | Q4_0 (ollama default) |
+| **llama.cpp** (rocm) | **measured** | **43.2** | **28** | +0.4% | Q4_K_M |
+| **Lemonade** | **measured** | **39.8** | 90 | −7.3% | Q4_1 (Qwen3-8B-GGUF) |
+| vLLM (rocm) | **skip-with-reason** | — | — | — | fp16/awq — gfx1151 `invalid device function` (§9) |
+
+### Halo-B (fastest: llama.cpp)
+
+| Server | Status | Decode tok/s | TTFT ms | vs ollama | Quant |
+| --- | --- | --- | --- | --- | --- |
+| **Ollama** | **measured** | **44.7** | 139 | +0.0% | Q4_0 (ollama default) |
+| **llama.cpp** (rocm) | **measured** | **46.0** | **28** | +3.1% | Q4_K_M |
+| **Lemonade** | **measured** | **39.7** | 96 | −11.1% | Q4_1 (Qwen3-8B-GGUF) |
+| vLLM (rocm) | **skip-with-reason** | — | — | — | fp16/awq — gfx1151 `invalid device function` (§9) |
+
+**Story.** On the first pass only Ollama measured cleanly; the other three skips
+were **three different classes of bug** — a stale `/llama-server` container-name
+collision (infra), a wrong-port + missing-binary Lemonade (config/provisioning),
+and a genuine hardware-support gap (gfx1151 vLLM). The first two are now fixed in
+code (`62834f56`) and confirmed on **both** boxes: llama.cpp is the fastest server
+on each (lowest TTFT ~28 ms, and it edges ollama on decode), while Lemonade is a
+touch slower **because it serves a different artifact** — `Qwen3-8B-GGUF` (an 8B
+reasoning model), not `qwen2.5-7b` — so its −7 to −11% is a quant/model-parity
+gap, not a server deficiency (see the caveat in §14). vLLM remains the third class:
+a documented skip-with-reason, not a failure — the practical path to vLLM-class
+serving on gfx1151 is **through Lemonade** (§9).
 
 ```bash
-bash perf/install-lemonade.sh
-SERVERS="ollama llamacpp lemonade" SERVER_BENCH_ROUTER=1 bash perf/server-bench.sh
+bash perf/install-lemonade.sh                        # once per box
+SERVERS="ollama llamacpp lemonade" bash perf/server-bench.sh
 ```
 
 ---
 
-## 11. Reproduce everything
+## 11. Max model under the topology (Halo-B, headless) **[M]**
+
+§3 is the **Halo-A** ceiling (32 GiB carveout, GUI up): `qwen2.5:32b`, and the 70B
+aborts. This is the **Halo-B** counterpart — tuned **headless** with GTT enlarged to
+48 GiB (OS-only levers; BIOS still 64 GiB VRAM), the *same* co-resident ascending
+sweep ([`perf/maxmodel-sweep.sh`](../perf/maxmodel-sweep.sh)):
+
+| Rung | Type | Verdict | Mem mode | Decode tok/s | Peak VRAM | Peak GTT |
+| --- | --- | --- | --- | --- | --- | --- |
+| `qwen2.5:32b` | 32B dense Q4 | **usable** | vram-fit | **10.9** | 26.7 GiB | ~0 |
+| `llama3.1:70b` | 70B dense Q4 | **usable** | vram-fit | **3.6** | 48.2 GiB | ~0 |
+| `llama3.1:70b` @ `num_ctx=131072` | 70B + max KV | **usable** | vram-fit | **3.9** | 55.9 GiB | ~0 |
+| **`gpt-oss:120b`** | **120B MoE MXFP4** | **usable** | **vram-fit** | **30.4** | **56.6 GiB** | ~0 |
+| `llama3.1:70b-instruct-q8_0` | 70B dense Q8 (~69 GiB) | **unusable(slow-spill)** | vram-exceeded | **2.1** | 56.4 GiB | ~0 |
+
+**Story.**
+
+- **Max usable = `gpt-oss:120b` at ~30 tok/s, VRAM-resident** (56.6 GiB inside the
+  64 GiB carveout, no GTT spill), full vllm-sr stack co-resident. Being a
+  **Mixture-of-Experts** (~5.1B active params/token) it *decodes ~8× faster than the
+  dense 70B* while being far larger — 30.4 vs 3.6 tok/s.
+- **The boundary is the 64 GiB VRAM carveout** (≈60 GiB usable after runtime
+  buffers). Everything at/below 56.6 GiB loaded cleanly and fast; the first rung
+  *above* it is Q8-70B (~69 GiB weights).
+- **The failure mode is a *soft* CPU layer-offload — not a GTT-spill abort.** The
+  oversized Q8-70B does not spill to GTT and does not hard-fail: Ollama caps GPU
+  layers to the carveout (VRAM pinned 56.4 GiB, **GTT ~0**) and runs the rest on the
+  **CPU** (50/50 split, system RAM +20 GiB), collapsing decode to 2.1 tok/s. Contrast
+  **Halo-A**, where the 70B spilled to **GTT and the load aborted (HTTP 500)** — a
+  *harder* failure.
+- **`use_mmap=false` is required on Halo-B** for the 120B: with mmap the ~68 GB load
+  + CPU tensor overrides never finished inside client timeouts ("aborting load");
+  no-mmap loads in ~31 s and decodes at ~31 tok/s. Pinning `num_ctx` also stalled the
+  load — the model's **default ctx** works.
+- **The enlarged GTT (48 GiB) is *not* what raised the ceiling** — GTT stayed ~0 on
+  every rung (Ollama/llama.cpp on ROCm 7.2 CPU-offloads instead of using GTT for
+  weight overflow). The lever that moved the ceiling **32B → 120B** is **going
+  headless to free the whole 64 GiB VRAM carveout**.
+
+Full memory map, tuning steps, and failure-mode detail:
+[`halo-b-maxmodel.md`](halo-b-maxmodel.md).
+
+---
+
+## 12. Perf-per-watt (socket power) **[M]**
+
+Strix Halo is a unified-memory APU with no discrete-GPU rail, so the meaningful
+energy figure is **socket graphics-package power** from `rocm-smi --showpower`,
+sampled ~1 Hz around a sustained decode. Sampler:
+[`perf/power_sampler.py`](../perf/power_sampler.py) (formalized from the throwaway
+probe used to gather these numbers). **Idle socket power: ~12–14 W** on both boxes.
+
+| box | model | decode tok/s | mean load W | **tok/s per W** (load) | tok/s per W (net of idle) |
+| --- | --- | --- | --- | --- | --- |
+| Halo-A | `qwen2.5:7b` | 44.0 | 108 | **0.41** | 0.46 |
+| Halo-A | `qwen2.5:32b` | 10.9 | 117 | **0.093** | 0.103 |
+| Halo-B | `gpt-oss:120b` (120B MoE) | 30.3 | 102 | **0.30** | 0.34 |
+
+**Story.**
+
+- **Power is roughly constant (~100–120 W) under sustained decode regardless of
+  model size** — the socket pins to the same envelope — so **efficiency tracks
+  throughput**: the 7B decodes ~4× faster than the dense 32B for the same ~110 W, and
+  is therefore **~4.4× more energy-efficient per token** (0.41 vs 0.093 tok/s/W).
+- **The MoE 120B is the counter-intuitive win: it is both *bigger* and *more
+  efficient per token* than the dense 32B** — 0.30 vs 0.093 tok/s/W (~3.2×) — because
+  only ~5.1B of its 120B params are active per token, so it draws similar power
+  (~102 W) yet decodes ~3× faster. On this hardware, a well-chosen MoE beats a
+  smaller dense model on *both* speed and energy/token.
+- Dynamic (load − idle) draw is ~96 W (7B) / ~105 W (32B) / ~90 W (120B); idle sits
+  at ~12–14 W, so the box is cheap to leave resident between requests.
+
+```bash
+python3 perf/power_sampler.py --model qwen2.5:7b  --max-tokens 128 --out pw-7b.json
+python3 perf/power_sampler.py --model gpt-oss:120b --no-mmap --runs 1 \
+    --max-tokens 1400 --keep-alive 30m --out pw-120b.json   # 120B MoE on Halo-B
+```
+
+---
+
+## 13. Reproduce everything
 
 **One shot — run on Halo-A, collect every number below into one bundle:**
 
@@ -314,14 +501,22 @@ HALO_A_MODE=gateway HALO_B_MODE=gateway PERF_BENCH=1 bash run-all-2box.sh
 # 10. server comparison:       SERVERS="ollama llamacpp lemonade" bash perf/server-bench.sh
 ```
 
-## 12. Honest caveats
+## 14. Honest caveats
 
-- **Single box.** Headline numbers are Halo-A only (§4). Fleet-safe boundaries
-  regenerate automatically once Halo-B is reachable.
+- **Two boxes, but asymmetric BIOS.** Both boxes are measured (§4), but the VRAM
+  carveout differs (Halo-A 32 GiB, Halo-B 64 GiB), so the model **ceilings** differ
+  (§3 vs §11). The co-location *overhead* (§2) is box-independent; the *max model*
+  is not.
 - **Quant parity (Test 2).** Servers load *different* quantizations of the same
   base; each row records its `quant`. Treat cross-server deltas as
-  "this server + this quant on this box".
-- **[P] rows are scheduled, not unknown.** Each has a committed script and a
-  one-line command; the offline verifier (7/7) already exercises the code paths.
+  "this server + this quant on this box" — Lemonade's −7…−11% is mostly that it
+  serves `Qwen3-8B-GGUF`, not `qwen2.5-7b`.
+- **vLLM is a documented skip, not a data gap.** It is intentionally
+  skip-with-reason on gfx1151 (`invalid device function`, §9); every other data row
+  in this report is measured **[M]**.
+- **The 120B on Halo-B needs headless + `use_mmap=false`.** ~30 tok/s is only
+  reachable VRAM-resident on the freed 64 GiB carveout; with mmap the load never
+  finished inside client timeouts (§11).
 - **Router TTFT is the headline, not decode drop.** If you quote one number from
-  this report, quote **+1.4 s TTFT**, mitigated by the semantic cache (§6).
+  this report, quote **+1.4 s TTFT**, mitigated by the semantic cache (§6, rec.
+  threshold 0.92).
