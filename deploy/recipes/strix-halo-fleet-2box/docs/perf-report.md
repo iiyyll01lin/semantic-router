@@ -38,8 +38,9 @@ below is that sentence, with the numbers.
 | Which **spec becomes unusable**? | **`qwen2.5:32b` on Halo-A** (~10.7 tok/s); 70B **aborts** (HTTP 500, GTT spill). Halo-B's bigger carveout reaches **`gpt-oss:120b`** | §3, §11 **[M]** |
 | Are **both boxes** used? | **Yes — both measured.** Halo-A 94 GiB visible / 32 GiB VRAM; Halo-B 62 GiB / 64 GiB VRAM (the carveout sets the ceiling) | §4 **[M]** |
 | **Multi-concurrency** behaviour? | Serialized (Ollama default): **flat ~43 tok/s**, TTFT queues. `OLLAMA_NUM_PARALLEL=4`: scales to **~107 tok/s (~2.5×), knee at c=4** | §5 **[M]** |
-| Best **semantic-cache** threshold? | **0.92** — the lowest that keeps false-hit **0%** while true-hit stays **83%** | §6 **[M]** |
-| **mmBERT embedding** slow — fix? | Cache first; then fewer classifiers / batching. **Do not** truncate layers | §7 |
+| Best **semantic-cache** threshold? | **0.92** (false-hit **0%**, true-hit **83–100%**) — **now enabled on the live path** (was gated off); a hit skips the upstream leg (~0.7–0.9 s hit vs ~1.2 s miss) | §6, §7.1 **[M]** |
+| **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by the head-trim experiment | §7.2 **[M]** |
+| **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim is **not free**: **−60% signal-eval (0.72→0.28 s)** but only by dropping the **pii+jailbreak safety heads** → **flagged for user**; GPU offload **blocked (TD-046)**. **Do not** truncate layers | §7.1–7.4 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
 | **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
