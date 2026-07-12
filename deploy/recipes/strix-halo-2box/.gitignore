@@ -5,3 +5,5 @@ __pycache__/
 *.dsl
 # Runtime config rendered by client-bring-up.sh (HALO_B_IP substituted in).
 .vllm-sr-rendered/
+# Real dashboard admin credentials; never commit. Template: poc-admin.env.example
+poc-admin.env
