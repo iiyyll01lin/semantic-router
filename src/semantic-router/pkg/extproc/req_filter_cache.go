@@ -74,6 +74,88 @@ func (r *OpenAIRouter) handleCaching(ctx *RequestContext, categoryName string) (
 	return nil, false
 }
 
+// tryExactCacheShortCircuit performs a pre-routing EXACT-match cache lookup.
+// On an identical repeat prompt it returns a cache-hit response immediately,
+// skipping signal evaluation (mmBERT embedding + classifier fan-out) and routing
+// entirely — the ~0.7 s router tax collapses to tens of ms. Returns nil on
+// miss / disabled / unsupported backend so the normal pipeline continues.
+//
+// This runs BEFORE the routing decision is known, which is safe for EXACT
+// matches specifically:
+//   - an identical prompt yields the identical routing decision, hence the
+//     identical cache scope and cache-enablement, so serving the stored answer
+//     is consistent with the per-decision policy that stored it;
+//   - the write path (handleCaching) never stores personalized (RAG/memory)
+//     responses, so an exact hit can only ever replay a non-personalized answer
+//     for the same prompt and user scope.
+//
+// Semantic/paraphrase hits are intentionally left on the per-decision path
+// (handleCaching, after routing) so near-matches cannot cross decision
+// boundaries — preserving routing correctness.
+func (r *OpenAIRouter) tryExactCacheShortCircuit(ctx *RequestContext) *ext_proc.ProcessingResponse {
+	if r.Cache == nil || !r.Cache.IsEnabled() {
+		return nil
+	}
+	matcher, ok := r.Cache.(cache.ExactMatcher)
+	if !ok {
+		return nil
+	}
+	if ctx.LooperRequest {
+		return nil
+	}
+
+	requestModel, requestQuery, err := cache.ExtractQueryFromOpenAIRequest(ctx.OriginalRequestBody)
+	if err != nil || requestQuery == "" {
+		return nil
+	}
+	cacheQuery := cache.ScopeQueryToUser(requestQuery, cacheScopeUserID(ctx))
+
+	spanCtx, span := tracing.StartPluginSpan(ctx.TraceContext, "exact-cache", "")
+	startTime := time.Now()
+	cachedResponse, found, cacheErr := matcher.FindExact(requestModel, cacheQuery)
+	lookupTime := time.Since(startTime).Milliseconds()
+
+	if cacheErr != nil {
+		logging.Errorf("Error in exact cache lookup: %v", cacheErr)
+		tracing.RecordError(span, cacheErr)
+		tracing.EndPluginSpan(span, "error", lookupTime, "lookup_failed")
+		ctx.TraceContext = spanCtx
+		return nil
+	}
+	if !found {
+		tracing.EndPluginSpan(span, "success", lookupTime, "cache_miss")
+		ctx.TraceContext = spanCtx
+		return nil
+	}
+
+	// Exact hit: replay the cached response, skipping embed + classify + routing.
+	ctx.RequestModel = requestModel
+	ctx.RequestQuery = requestQuery
+	ctx.CacheQuery = cacheQuery
+	ctx.VSRCacheHit = true
+	ctx.VSRCacheSimilarity = 1.0
+
+	metrics.RecordCachePluginHit("", "exact-cache")
+	tracing.SetSpanAttributes(span,
+		attribute.String(tracing.AttrCacheKey, requestQuery),
+		attribute.Bool(tracing.AttrCacheHit, true),
+		attribute.Int64(tracing.AttrCacheLookupTimeMs, lookupTime),
+		attribute.Float64("cache.similarity", 1.0))
+	tracing.EndPluginSpan(span, "success", lookupTime, "cache_hit")
+
+	r.startRouterReplay(ctx, requestModel, requestModel, "")
+	logging.LogEvent("exact_cache_hit", map[string]interface{}{
+		"request_id": ctx.RequestID,
+		"model":      requestModel,
+		"query":      requestQuery,
+	})
+	response := http.CreateCacheHitResponse(cachedResponse, ctx.ExpectStreamingResponse, "", ctx.VSRSelectedDecisionName, ctx.VSRMatchedKeywords, ctx.VSRCacheSimilarity)
+	r.updateRouterReplayStatus(ctx, 200, ctx.ExpectStreamingResponse)
+	r.attachRouterReplayResponse(ctx, cachedResponse, true)
+	ctx.TraceContext = spanCtx
+	return response
+}
+
 // handleLooperCacheSkip extracts the query for a looper request (skipping read)
 // and registers a pending cache write if caching is enabled.
 func (r *OpenAIRouter) handleLooperCacheSkip(ctx *RequestContext, categoryName string) (*ext_proc.ProcessingResponse, bool) {

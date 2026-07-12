@@ -102,6 +102,15 @@ func (r *OpenAIRouter) runRequestPreRoutingStages(
 	ctx *RequestContext,
 ) (requestDecisionState, *ext_proc.ProcessingResponse) {
 	populatePinnedSessionFromHeaders(ctx)
+
+	// Exact-match cache fast path: an identical repeat prompt is served here,
+	// BEFORE signal evaluation (embedding + classifier fan-out) and routing, so
+	// exact repeats return in tens of ms instead of paying the ~0.7 s router
+	// tax. Semantic/paraphrase hits remain on the per-decision path below.
+	if resp := r.tryExactCacheShortCircuit(ctx); resp != nil {
+		return requestDecisionState{}, resp
+	}
+
 	history := signalConversationHistoryFromFastExtract(fast)
 	decisionName, _, reasoningDecision, selectedModel, authzErr := r.performDecisionEvaluation(
 		originalModel,
