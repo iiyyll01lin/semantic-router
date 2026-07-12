@@ -284,6 +284,32 @@ that skip the pipeline with zero correctness risk.
 bash perf/cache-sweep.sh          # sweeps {0.50,0.70,0.85,0.92,0.95}, restores config
 ```
 
+**Now enabled on the live path (not just swept). [M]** The sweep above enabled
+caching only *transiently* — `cache-sweep.sh` restores the config at the end — so
+the persistent live path kept running with caching **off** (confirmed in §7.1:
+`find_similar` = 0). Root cause: with routing `decisions:` present, the global
+`stores.semantic_cache.enabled` toggle is **ignored**; the cache only runs on a
+decision that carries a `semantic-cache` plugin (`config/helper.go`
+`IsCacheEnabledForDecision`). Fix (committed to `poc-strix.yaml`): a
+`- type: semantic-cache` / `configuration.enabled: true` plugin on **all 14
+non-`security_guard` decisions**, plus a global
+`stores.semantic_cache.similarity_threshold: 0.92`. Live re-measurement on the
+persistent config (router `:8899`, header `x-vsr-cache-hit`) reproduces the sweep:
+
+| workload @0.92 (live, persistent) | true_hit | false_hit | ttft_miss | ttft_hit |
+| --- | --- | --- | --- | --- |
+| §6 cases (n=6) | **0.83** | **0.00** | ~1180 ms | ~880 ms |
+| novel triples (n=8) | **1.00** | **0.00** | ~1189 ms | ~790 ms |
+
+`find_similar` now runs (Prometheus `llm_cache_operation_duration_seconds{operation="find_similar"}`:
+**93 calls, ~46 ms avg** over the probe), and hits are served from the
+`plugin.execution` span (`cache.hit=true`), **skipping the upstream LLM call**. The
+true-hit rate rides the tightness of the paraphrase (0.83 on the §6 wording that
+includes one 0.887-similarity pair, 1.00 on tighter paraphrases); false-hit stays
+**0%** either way, confirming 0.92 as the correctness-safe operating point on the
+live stack. See §7.1 for the hit-vs-miss span decomposition (a hit saves the
+*upstream* leg, not the embed/classify tax).
+
 ---
 
 ## 7. mmBERT embedding is slow — how to improve it
@@ -319,7 +345,7 @@ stage is essentially the whole tax:
 | **Signal extraction** — mmBERT embed → fan-out of CPU-pinned ONNX classifiers (concurrent) | Jaeger `signal.evaluation` span | **~830 ms median / ~1020 ms mean** (686–2393) | **≈ 100%** |
 | Routing / decision evaluation | Jaeger `decision.evaluation`; Prom `…decision_evaluation_latency` | **~0.4 ms** | ~0% |
 | Model selection (ML selectors) | Prom `…model_selection_duration` | **0** — rule-based decision-engine path taken | 0% |
-| Semantic-cache lookup | Prom `…cache_operation{find_similar}` | **0** — no cache lookups on the live path this run | 0% (a *hit* skips the whole pipeline, §6) |
+| Semantic-cache lookup | Prom `…cache_operation{find_similar}`; Jaeger `plugin.execution` (`cache.hit`) | **0** on the original run (cache gated off); **now live: ~46 ms avg** after enabling the plugin | small — a *hit* skips the **upstream** leg, not embed/classify (box below) |
 | **Total router processing** | Prom `…model_routing_latency` | **~1030 ms mean** | 100% |
 | _Upstream first token — **not** router tax_ | Jaeger `upstream.request`; Prom `…model_ttft` | _~165 ms warm (local qwen); seconds when the routed model cold-loads or is remote_ | — |
 
@@ -345,16 +371,35 @@ decision and model-selection are **sub-millisecond**; the tax is *entirely* the
 signal-extraction stage — the mmBERT embedding feeding a fan-out of CPU-pinned ONNX
 classifiers, with **pii / jailbreak / complexity the slowest heads**. Because the
 heads overlap, the lever is not "make one head faster" but **remove or shorten the
-stage**: a semantic-cache *hit* (§6) skips embed+classify+upstream entirely (no
-`find_similar` ran on the live path here, so the full ~1 s was paid on every
-request), and dropping unused classifier heads pulls the critical path down toward
-the next-slowest head. This is the measured backing for the §7 levers above, and it
+stage**: a semantic-cache *hit* (§6, **now enabled on the live path** — box below)
+skips the **upstream** call but — measured — **still pays embed+classify** (caching
+is scoped *per routing decision*, so the router must embed + classify to pick the
+decision before it can consult that decision's cache), and dropping unused
+classifier heads pulls the critical path down toward the next-slowest head. This is the measured backing for the §7 levers above, and it
 confirms the warning in the table: **layer truncation would only shave the embedding
 leg (~0.48 s) while collapsing accuracy — not worth it.** _(Measured on the current
 live stack, whose routed models — `qwen/qwen3.5-rocm` plus cloud tiers — differ from
 the Ollama tiers timed in §2b; the **decomposition/shape** is the result here, and
 it matches §2b's embed-dominated ~1.4 s tax. Reproduce: send a few `:8899` requests,
 then `GET :16686/api/traces?service=vllm-sr` + diff `:9190/metrics`.)_
+
+**Cache hit vs miss — live span decomposition (0.92, now enabled). [M]** With the
+`semantic-cache` plugin live on the 14 decisions, a HIT and a MISS were traced
+span-by-span (Jaeger `vllm-sr`):
+
+| request | `signal.evaluation` | `plugin.execution` (cache) | `upstream.request` | wall |
+| --- | --- | --- | --- | --- |
+| MISS | ~715–870 ms | ~36–66 ms | ~340–360 ms | ~1090–1290 ms |
+| HIT | ~700–720 ms | ~0.4 ms | **skipped** | **~720–880 ms** |
+
+**The hit does *not* skip the ~0.7 s embed/classify stage.** Because caching is
+per-decision (`IsCacheEnabledForDecision`), the router must run the full signal
+extraction to *pick* the decision before it can look up that decision's cache — so a
+hit only removes the **upstream** leg (~0.34 s here on a warm local `qwen`; **seconds**
+when the routed tier is cold-loading or a remote cloud model). Net: the cache is the
+right lever when the *upstream* is the expensive part, but the ~0.7 s router tax
+itself is only addressable by shortening signal extraction — i.e. **head-trimming
+(§7 lever "fewer classifiers")**, not the cache.
 
 ---
 
