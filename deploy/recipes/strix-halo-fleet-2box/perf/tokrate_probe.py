@@ -81,15 +81,21 @@ def _open_stream(url, payload, timeout):
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 (trusted local URL)
 
 
-def run_ollama(base_url, model, prompt, max_tokens, think, timeout):
+def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0):
     """One streaming /api/generate call. Returns a per-run metrics dict."""
     url = base_url.rstrip("/") + "/api/generate"
+    options = {"num_predict": max_tokens, "temperature": 0}
+    # num_ctx>0 forces the KV-cache size: the lever the max-model sweep uses to push
+    # a model's footprint PAST the VRAM carveout on purpose and observe the GTT
+    # spill (the reliability boundary on unified-memory APUs). 0 = server default.
+    if num_ctx and int(num_ctx) > 0:
+        options["num_ctx"] = int(num_ctx)
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": True,
         "think": bool(think),
-        "options": {"num_predict": max_tokens, "temperature": 0},
+        "options": options,
     }
     t0 = time.perf_counter()
     t_first = None
@@ -199,7 +205,8 @@ def one_run(args, prompt):
     try:
         if args.api == "ollama":
             return run_ollama(
-                args.backend_url, args.model, prompt, args.max_tokens, args.think, args.timeout
+                args.backend_url, args.model, prompt, args.max_tokens, args.think,
+                args.timeout, getattr(args, "num_ctx", 0)
             )
         return run_openai(
             args.backend_url, args.model, prompt, args.max_tokens, args.extra_body, args.timeout
@@ -239,6 +246,9 @@ def main(argv=None):
     p.add_argument("--api", choices=["ollama", "openai", "auto"], default="auto")
     p.add_argument("--model", required=True, help="backend model tag/name")
     p.add_argument("--max-tokens", type=int, default=128, help="decode length target")
+    p.add_argument("--num-ctx", type=int, default=0,
+                   help="ollama: force options.num_ctx (KV-cache size); 0 = server default. "
+                        "Used by maxmodel-sweep.sh to drive a footprint past the VRAM carveout.")
     p.add_argument("--prompt-tokens", type=int, default=256, help="approx prompt token budget")
     p.add_argument("--prompt", default="", help="explicit prompt (overrides --prompt-tokens)")
     p.add_argument("--runs", type=int, default=3, help="sequential batches of --concurrency streams")
@@ -291,6 +301,7 @@ def main(argv=None):
             "prompt_tokens": args.prompt_tokens,
             "runs": args.runs,
             "concurrency": args.concurrency,
+            "num_ctx": args.num_ctx,
         },
         "aggregate": agg,
         "runs_detail": runs,

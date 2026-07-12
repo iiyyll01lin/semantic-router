@@ -125,6 +125,15 @@ of memory."* With the router's 8.35 GiB removed from the budget, **32B is the
 practical ceiling** for interactive use on a single box; 70B needs either the
 router evicted or a second box.
 
+> **Halo-B — the ceiling moves with the topology.** The boundary above is Halo-A
+> (94 GiB unified, GUI up). On **Halo-B**, tuned **headless** with its **GTT enlarged to
+> 48 GiB** (OS-only levers; BIOS still 64 GiB VRAM), the *same* co-resident sweep reaches
+> **`gpt-oss:120b` (120B MoE, MXFP4) at ~30 tok/s, VRAM-resident (no GTT spill)** — and
+> the dense 70B that *fails to load here* loads **cleanly** there (48.2 GiB, vram-fit).
+> The reliable ceiling moves from **32B → ≥120B**. Full memory map + ascending sweep +
+> failure mode: [`halo-b-maxmodel.md`](halo-b-maxmodel.md) (harness:
+> [`perf/maxmodel-sweep.sh`](../perf/maxmodel-sweep.sh)).
+
 ---
 
 ## 4. Are both boxes actually being exercised? — **No**
