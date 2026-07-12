@@ -41,7 +41,7 @@ below is that sentence, with the numbers.
 | Best **semantic-cache** threshold? | **0.92** — the lowest that keeps false-hit **0%** while true-hit stays **83%** | §6 **[M]** |
 | **mmBERT embedding** slow — fix? | Cache first; then fewer classifiers / batching. **Do not** truncate layers | §7 |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
-| **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported**; **Lemonade's experimental vLLM+rocm** is the workaround | §9 |
+| **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
 | **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
 | **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093**, 120B MoE **0.30** tok/s/W — the MoE is bigger *and* more efficient/token | §12 **[M]** |
 
@@ -306,6 +306,56 @@ cache (§6)**, then trim classifier heads and batch. Moving embedding onto the G
 the only pure-speed lever left, but on gfx1151 it fights the decode path for the
 same memory and depends on the shaky ROCm story in §9 — validate before shipping.
 
+### 7.1 TTFT decomposition — where the ~1.4 s actually goes **[M]**
+
+To locate the §2b tax, **8 distinct (cache-missing) prompts** were sent through the
+router (`:8899`) and each request's **Jaeger trace** (service `vllm-sr`, via
+`/api/traces`) was read span-by-span, corroborated by the **Prometheus stage
+histograms** (`:9190`, before/after deltas). The pipeline splits cleanly — one
+stage is essentially the whole tax:
+
+| Stage | Instrument | Per request | Share of router tax |
+| --- | --- | --- | --- |
+| **Signal extraction** — mmBERT embed → fan-out of CPU-pinned ONNX classifiers (concurrent) | Jaeger `signal.evaluation` span | **~830 ms median / ~1020 ms mean** (686–2393) | **≈ 100%** |
+| Routing / decision evaluation | Jaeger `decision.evaluation`; Prom `…decision_evaluation_latency` | **~0.4 ms** | ~0% |
+| Model selection (ML selectors) | Prom `…model_selection_duration` | **0** — rule-based decision-engine path taken | 0% |
+| Semantic-cache lookup | Prom `…cache_operation{find_similar}` | **0** — no cache lookups on the live path this run | 0% (a *hit* skips the whole pipeline, §6) |
+| **Total router processing** | Prom `…model_routing_latency` | **~1030 ms mean** | 100% |
+| _Upstream first token — **not** router tax_ | Jaeger `upstream.request`; Prom `…model_ttft` | _~165 ms warm (local qwen); seconds when the routed model cold-loads or is remote_ | — |
+
+**Inside the dominant stage.** The signal heads run **concurrently** (goroutine
+fan-out), so the `signal.evaluation` wall-clock (~0.8–1.0 s) is the **critical path
+≈ the slowest head — not the sum.** Per-head latency under that concurrent CPU
+contention (Prometheus `llm_signal_extraction_latency_seconds`, mean over the run):
+
+| Signal head | avg ms (concurrent) |
+| --- | --- |
+| **pii** | **~880** |
+| jailbreak | ~735 |
+| complexity | ~735 |
+| domain | ~600 |
+| fact_check | ~600 |
+| **mmBERT embedding** (prerequisite for the heads) | **~480** |
+| language | ~40 |
+| keyword | ~3 |
+| structure | ~0.3 |
+
+**Story — the §2b ~1.4 s is essentially one stage: embed + classify.** Routing,
+decision and model-selection are **sub-millisecond**; the tax is *entirely* the
+signal-extraction stage — the mmBERT embedding feeding a fan-out of CPU-pinned ONNX
+classifiers, with **pii / jailbreak / complexity the slowest heads**. Because the
+heads overlap, the lever is not "make one head faster" but **remove or shorten the
+stage**: a semantic-cache *hit* (§6) skips embed+classify+upstream entirely (no
+`find_similar` ran on the live path here, so the full ~1 s was paid on every
+request), and dropping unused classifier heads pulls the critical path down toward
+the next-slowest head. This is the measured backing for the §7 levers above, and it
+confirms the warning in the table: **layer truncation would only shave the embedding
+leg (~0.48 s) while collapsing accuracy — not worth it.** _(Measured on the current
+live stack, whose routed models — `qwen/qwen3.5-rocm` plus cloud tiers — differ from
+the Ollama tiers timed in §2b; the **decomposition/shape** is the result here, and
+it matches §2b's embed-dominated ~1.4 s tax. Reproduce: send a few `:8899` requests,
+then `GET :16686/api/traces?service=vllm-sr` + diff `:9190/metrics`.)_
+
 ---
 
 ## 8. Can Lemonade be auto-installed? Is it on both boxes? — **Yes / Yes (now)**
@@ -336,14 +386,21 @@ port 13305 `/api/v1`** — which is also the port `server-bench.sh` now points a
 | --- | --- |
 | **Official ROCm / vLLM supported-arch list** | **Not listed — unsupported.** Stock `rocm/vllm-dev` serves fail on Strix Halo with `HIP error: invalid device function` (kernels not built for gfx1151) — exactly the Test 2 vLLM skip. |
 | **AMD "TheRock" nightly** | Lists **gfx1151 as Release-Ready ✅** — the toolchain *can* target it. |
-| **Lemonade SDK (Linux)** | Ships a **llama.cpp(rocm)** backend **and an experimental vLLM+rocm backend that targets gfx1151**. |
+| **Lemonade SDK 9.1.4 (installed, Linux)** | **No vLLM backend.** Verified on the box: `serve` exposes only `--llamacpp {vulkan,rocm,metal,cpu}`; the recipe registry (`server_models.json`) has `llamacpp` / `oga-cpu·igpu·npu·hybrid` / `flm` / `whispercpp` — **no `vllm` recipe** — and no `vllm`/`torch`/`rocm` in the venv. vLLM appears only as a **roadmap "Under Consideration"** item in the package METADATA, not as a shipped backend. |
 
-**Story / workaround.** As of now there is **no official SOTA vLLM for gfx1151** —
-the stock container aborts on an invalid device function. The **practical path is
-Lemonade's experimental vLLM+rocm backend** (§8), with a TheRock-built ROCm
-underneath. That is why `server-bench.sh` treats vLLM as *skip-with-reason* rather
-than a failure, and why the recommended way to get vLLM-class serving on this box
-today is *through Lemonade*, not stock vLLM.
+**Story / workaround.** There is **no official SOTA vLLM for gfx1151** — the stock
+container aborts on an invalid device function — **and, contrary to the earlier
+assumption in this section, the installed Lemonade 9.1.4 provides no vLLM+rocm path
+either.** A time-boxed check of the installed SDK (no from-source build attempted)
+found its serving backends are **llama.cpp(rocm) + OnnxRuntime-GenAI (OGA) +
+FastFlowLM + whisper.cpp**, with **vLLM only listed "Under Consideration" on the
+project roadmap** — there is no `vllm` recipe and no `vllm`/`torch` in the venv. So
+vLLM on this box is a **skip-with-reason on two independent grounds**: stock vLLM's
+gfx1151 kernel gap, *and* the absence of any shipped vLLM backend in the installed
+Lemonade. The practical vLLM-*class* serving path on gfx1151 today is therefore
+**llama.cpp(rocm)** (the fastest server in §10) — *not* stock vLLM and *not*
+Lemonade-vLLM. Revisit if AMD's TheRock ROCm plus a future Lemonade vLLM recipe
+land; until then it is a substantiated skip, not a data gap.
 
 ---
 
@@ -381,8 +438,9 @@ on each (lowest TTFT ~28 ms, and it edges ollama on decode), while Lemonade is a
 touch slower **because it serves a different artifact** — `Qwen3-8B-GGUF` (an 8B
 reasoning model), not `qwen2.5-7b` — so its −7 to −11% is a quant/model-parity
 gap, not a server deficiency (see the caveat in §14). vLLM remains the third class:
-a documented skip-with-reason, not a failure — the practical path to vLLM-class
-serving on gfx1151 is **through Lemonade** (§9).
+a documented skip-with-reason, not a failure — and the practical vLLM-class serving
+path on gfx1151 is **llama.cpp(rocm)**, since the installed Lemonade 9.1.4 ships no
+vLLM backend either (§9, verified on-box).
 
 ```bash
 bash perf/install-lemonade.sh                        # once per box
