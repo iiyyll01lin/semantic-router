@@ -324,7 +324,7 @@ trade-offs:
 | **Fewer classifiers** (drop heads) | **non-linear** (contention): −18% dropping jailbreak, **−60% dropping pii+jailbreak** | **every slow head is used**; the two heaviest are the **safety** heads | **§7.3** — measured, **flagged for user** |
 | **Batch** classification | higher throughput | none | Do it under concurrency |
 | **Layer truncation** 12 → 6 | **3.3×** | **56% retained** | **Do NOT** — accuracy collapse |
-| **GPU embedding** (`use_cpu: false`) | potentially large | exact | **Risky on gfx1151** — competes with decode + stock ROCm gaps (§9) |
+| **GPU embedding/heads** (`use_cpu: false`) | untested — **blocked** | exact | **Blocked by TD-046** (§7.4): concurrent ROCm ONNX init SIGSEGVs the router; kept CPU |
 
 **Story.** The tempting knob (chop transformer layers for 3.3×) destroys routing
 accuracy (56%). The *real* wins are architectural: **don't embed at all when you can
@@ -509,6 +509,55 @@ is surfaced here for an explicit human call:
 # reproduce the win measurement (revert after): disable heads in the runtime
 # config, GET :16686/api/traces?service=vllm-sr, then restore.
 ```
+
+### 7.4 GPU-offload experiment — documented blocker, kept CPU **[M]**
+
+Goal: flip the embedding + classifier heads to the iGPU (`use_cpu: false`) and
+measure the TTFT delta vs. decode impact. **Outcome: not attempted live — it would
+crash the router. Blocked by [TD-046]; classifiers stay on CPU.** This is the
+plan's documented-negative fallback, reached by inspection rather than by
+crashing the live stack (the goal was "keep CPU rather than spin").
+
+**Why the GPU path crashes (concrete, current code):**
+1. The GPU flip is **all-or-nothing**. `--platform amd` with
+   `VLLM_SR_AMD_FORCE_GPU` (or simply unsetting `VLLM_SR_AMD_PRESERVE_CPU`) runs
+   `apply_platform_gpu_defaults` → `_set_use_cpu_false_for_amd`
+   (`cli/commands/runtime_config_mutation.py`), which recursively rewrites **every**
+   classifier's `use_cpu: true → false` (embedding, prompt_guard, domain, pii,
+   fact_check, detector, explainer, feedback, modality). There is no
+   per-head/serialized GPU option.
+2. The Go classifier runtime then creates those ROCm ONNX sessions **concurrently**
+   — `classifier_lifecycle.go` still uses
+   `MaxParallelism: modelruntime.DefaultParallelism(len(tasks))` (= `NumCPU`), and
+   `onnx-binding` session creation is unsynchronised → **`SIGSEGV` inside
+   `init_sequence_classifier`/`init_token_classifier`**, killing the whole router
+   (incl. the `:8080` apiserver), on startup **and on every `:8080` config reload**
+   (TD-046).
+3. **No runtime serialize-init toggle exists** — the only fix is code
+   (`MaxParallelism = 1`, or a creation mutex in the FFI) **+ a from-source router
+   image rebuild**, which is explicitly out of scope here.
+
+The current stack confirms the setup: the router container **is** ROCm-capable
+(`/opt/rocm/lib` + `/opt/onnxruntime/capi` on `LD_LIBRARY_PATH`, `/dev/kfd` +
+`/dev/dri` passed through) and is CPU-pinned **on purpose** —
+`VLLM_SR_AMD_PRESERVE_CPU=1`, all 8 `use_cpu` flags `true` — i.e. this is a
+deliberate crash-avoidance, not a missing-hardware gap.
+
+**Even a manual single-session hack isn't worth it.** Editing just
+`embeddings.semantic.use_cpu: false` (one GPU session, dodging the concurrent-init
+crash) targets the **wrong stage**: the embedding is ~0.36–0.48 s but is **not**
+the critical path — §7.3 shows the wall is head-bound (~0.71 s), so a GPU embedding
+wouldn't move it. And gfx1151 ROCm is shaky: the fp16 flash-attention ONNX ops
+already fail to register on this box (`com.ck:CKFlashAttention(-1) is not a
+registered function/op`, seen every reload — it silently falls back), and GPU
+classifiers would then fight the Ollama LLM **decode** for the shared unified
+memory (§9). Low reward, real crash/contention risk.
+
+**Verdict: stays CPU (TD-046 + gfx1151).** To revisit, land TD-046's exit
+criteria (serialize ROCm session creation) on a rebuilt image, then flip
+`use_cpu:false` and re-measure TTFT vs. decode.
+
+[TD-046]: ../../../../docs/agent/tech-debt/td-046-onnx-binding-concurrent-rocm-session-init-segfault.md
 
 ---
 
