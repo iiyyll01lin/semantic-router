@@ -321,7 +321,7 @@ trade-offs:
 | --- | --- | --- | --- |
 | **Semantic cache** (§6) | ∞ on a hit (skips embed entirely) | exact | **Do this first** — biggest win, zero quality loss |
 | Embedding **dimension** 768 → 256 (Matryoshka) | ~1.0× | ~99% retained | Safe; modest |
-| **Fewer classifiers** (drop unused heads) | linear with heads removed | none if unused | Do it |
+| **Fewer classifiers** (drop heads) | **non-linear** (contention): −18% dropping jailbreak, **−60% dropping pii+jailbreak** | **every slow head is used**; the two heaviest are the **safety** heads | **§7.3** — measured, **flagged for user** |
 | **Batch** classification | higher throughput | none | Do it under concurrency |
 | **Layer truncation** 12 → 6 | **3.3×** | **56% retained** | **Do NOT** — accuracy collapse |
 | **GPU embedding** (`use_cpu: false`) | potentially large | exact | **Risky on gfx1151** — competes with decode + stock ROCm gaps (§9) |
@@ -448,6 +448,66 @@ safety heads, and a data point for the §7-head-trim trade-off below._
 
 ```bash
 BOX=halo-a python3 perf/route-accuracy.py baseline        # writes route-accuracy-halo-a.json
+```
+
+### 7.3 Head-trim audit — measured win vs. capability (flagged for decision) **[M]**
+
+**Audit (which signals each decision actually uses).** Static pass over
+`routing.decisions[].rules` + the runtime `/api/v1/eval` `used_signals`: **every
+slow head is referenced by routing** — there is no genuinely-unused head to drop
+for free. `domain` (28 rule refs, core tier routing), `complexity` (8, reasoning
+tiers), `fact_check` (7, verified tiers), `pii` (1, `security_guard`),
+`jailbreak` (1, `security_guard`). (`user_feedback`/feedback_detector is
+configured but does **not** run on the request TTFT path; hallucination /
+modality / mcp / prompt_compression are off or response-only.)
+
+**Per-head latency under full concurrent contention (Prom `llm_signal_extraction_latency_seconds`):**
+pii **707**, jailbreak **671**, complexity **581**, fact_check **396**, domain
+**393**, embedding **363**, language 27, keyword 1.6, structure 0.1 ms. The two
+heaviest are the two **safety** heads.
+
+**Measured `signal.evaluation` wall-clock (10 `:8899` requests each, Jaeger):**
+
+| config | signal.eval median | Δ vs all-on | capability removed |
+| --- | --- | --- | --- |
+| all heads on (baseline) | **716 ms** | — | — |
+| jailbreak head off | **584 ms** | **−132 ms (−18%)** | jailbreak guard |
+| pii + jailbreak off | **284 ms** | **−432 ms (−60%)** | PII detection **and** jailbreak guard |
+
+The drop is **non-linear** and far bigger than the "wall = slowest static head"
+model predicts (that predicted ~581 ms): the pii/jailbreak ONNX heads are the two
+heaviest, so removing them **relieves CPU contention** and the *remaining* heads
+speed up too (complexity's static 581 ms collapses into a 284 ms whole-stage
+wall). So the real TTFT lever here is **exactly the two safety heads**.
+
+**Routing impact of the pii+jailbreak-off experiment** (re-ran §7.2 over all 261
+cases): **domain accuracy unchanged at 88.9%**, model distribution identical, and
+the *only* decision change is the **3 science questions that were false-positived
+into `security_guard` now route to their real decisions** (`security_guard` 3→0).
+So on this benign MMLU corpus dropping the guard causes **no routing regression**
+(a tiny correctness *gain*) — but that is precisely because the corpus contains no
+real attacks/PII; in production the change **removes real PII-leak and
+prompt-injection protection**.
+
+**Decision — kept all heads; flagged for the user.** No head is unused, and
+`domain`/`complexity`/`fact_check` drive real routing tiers in the §7.2 baseline
+(dropping them regresses routing). The only material TTFT win (**−60%,
+716→284 ms**) requires dropping **pii + jailbreak — both safety capabilities**.
+Per the change guardrail this is **not** a silent trim: the router is **left with
+all heads enabled** (`poc-strix.yaml` unchanged), and the measured win + tradeoff
+is surfaced here for an explicit human call:
+
+> **Trade the ML PII-detection + jailbreak guard for a 60% (~0.43 s) router-TTFT
+> cut?** On this offline PoC those heads only ever *false-positived* (3/261) and
+> the keyword markers in `security_guard` still catch obvious cases; but any
+> deployment facing real adversarial or PII-bearing traffic should keep them.
+> INT8-quantising the kept heads (separate `openvino-binding` lift) is the only
+> path to cutting the tax **without** dropping a capability, and is out of scope
+> here.
+
+```bash
+# reproduce the win measurement (revert after): disable heads in the runtime
+# config, GET :16686/api/traces?service=vllm-sr, then restore.
 ```
 
 ---
