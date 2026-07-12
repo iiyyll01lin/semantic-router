@@ -60,7 +60,11 @@ OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 ROUTER_URL="${ROUTER_URL:-http://localhost:8899/v1}"
 ROUTER_CONFIG_URL="${ROUTER_CONFIG_URL:-http://localhost:8080/config/hash}"
 TIERS="${TIERS:-llama3.2:3b=qwen/qwen3.5-rocm qwen2.5:7b=google/gemini-2.5-flash-lite qwen2.5:14b=google/gemini-3.1-pro qwen3:14b=openai/gpt5.4 qwen2.5:32b=}"
-OVERSIZED_TAGS="${OVERSIZED_TAGS:-llama3.1:70b}"
+# NOTE: bare `-` (not `:-`) so an EXPLICIT empty OVERSIZED_TAGS="" is honored as
+# "run no OOM sweep" -- only an UNSET var falls back to the default. This lets the
+# safe one-click keep heavy models (e.g. 70B) entirely OFF a near-full box instead
+# of silently OOM-thrashing it; those tags are probed on Halo-B by maxmodel-bench.
+OVERSIZED_TAGS="${OVERSIZED_TAGS-llama3.1:70b}"
 MAX_TOKENS="${MAX_TOKENS:-128}"
 PROMPT_TOKENS="${PROMPT_TOKENS:-256}"
 RUNS="${RUNS:-3}"

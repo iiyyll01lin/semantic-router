@@ -17,6 +17,11 @@
 # Env (all optional):
 #   MAXMODEL_TAGS     space list of big Ollama tags   (default "qwen2.5:32b llama3.1:70b")
 #   NEARFULL_PCT      offload threshold, % unified     (default 85)
+#   OFFLOAD_MIN_PARAMS_B  force any tag whose params_b >= this to Halo-B,
+#                     regardless of the projected-% check ("32B and up -> Halo-B").
+#                     Default unset = off (keeps the near-full threshold behavior).
+#   OOM_MIN_TPS       decode tok/s floor; a probe below this reads as OOM/memory
+#                     thrash and its verdict is forced to load-fail (default 3)
 #   QUANT_GIB_PER_B   GiB per 1B params for the quant  (default 0.6 = Q4)
 #   OLLAMA_URL        local backend base               (default http://localhost:11434)
 #   OLLAMA_CONTAINER  local ollama container name      (default ollama)
@@ -40,6 +45,8 @@ ENV_FILE="${FLEET_STATE_DIR}/fleet.env"
 
 MAXMODEL_TAGS="${MAXMODEL_TAGS:-qwen2.5:32b llama3.1:70b}"
 NEARFULL_PCT="${NEARFULL_PCT:-85}"
+OFFLOAD_MIN_PARAMS_B="${OFFLOAD_MIN_PARAMS_B:-}"
+OOM_MIN_TPS="${OOM_MIN_TPS:-3}"
 QUANT_GIB_PER_B="${QUANT_GIB_PER_B:-0.6}"
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 OLLAMA_CONTAINER="${OLLAMA_CONTAINER:-ollama}"
@@ -78,7 +85,7 @@ probe_local() {  # tag safe -> echoes decode_tps or ""
   local tag="$1" safe="$2"
   docker exec "${OLLAMA_CONTAINER}" ollama pull "${tag}" >/dev/null 2>&1 || true
   "${PY_BIN}" "${SCRIPT_DIR}/tokrate_probe.py" --backend-url "${OLLAMA_URL}" --api ollama \
-    --model "${tag}" --runs 1 --max-tokens "${PROBE_TOKENS}" --warmup 0 \
+    --model "${tag}" --runs 2 --max-tokens "${PROBE_TOKENS}" --warmup 1 \
     --out "${WORK}/${safe}.json" >/dev/null 2>&1 || true
   [ -f "${WORK}/${safe}.json" ] && decode_of "${WORK}/${safe}.json"
 }
@@ -109,7 +116,7 @@ probe_halo_b() {  # tag safe -> echoes decode_tps or "" ; return: 1 unreachable,
     set -e; \
     docker exec ${OLLAMA_CONTAINER} ollama pull ${tag} >/dev/null 2>&1 || true; \
     python3 ${rtmp}/tokrate_probe.py --backend-url ${OLLAMA_URL} --api ollama --model ${tag} \
-      --runs 1 --max-tokens ${PROBE_TOKENS} --warmup 0 --out ${rtmp}/${safe}.json >/dev/null 2>&1 || true'" >/dev/null 2>&1 || return 3
+      --runs 2 --max-tokens ${PROBE_TOKENS} --warmup 1 --out ${rtmp}/${safe}.json >/dev/null 2>&1 || true'" >/dev/null 2>&1 || return 3
   scp "${OPTS[@]}" "${HALO_B_SSH}:${rtmp//\\/}/${safe}.json" "${WORK}/${safe}.json" 2>/dev/null || return 3
   [ -f "${WORK}/${safe}.json" ] && decode_of "${WORK}/${safe}.json"
 }
@@ -123,10 +130,21 @@ for tag in ${MAXMODEL_TAGS}; do
   est_gib="$("${PY_BIN}" -c "print('%.1f' % (${pb} * ${QUANT_GIB_PER_B}))")"
   proj_pct="$("${PY_BIN}" -c "t=${TOTAL_GIB} or 1; print('%.1f' % ((${USED_GIB} + ${est_gib}) / t * 100))")"
   over="$("${PY_BIN}" -c "print(1 if ${proj_pct} > ${NEARFULL_PCT} else 0)")"
+  # Explicit offload knob: any tag at/above OFFLOAD_MIN_PARAMS_B is forced to
+  # Halo-B regardless of the projected-% check ("32B and up -> Halo-B"). This is
+  # how we keep the memory-hungry heavy models entirely off Halo-A. Unset = off.
+  force=0
+  if [ -n "${OFFLOAD_MIN_PARAMS_B}" ]; then
+    force="$("${PY_BIN}" -c "print(1 if ${pb} >= ${OFFLOAD_MIN_PARAMS_B} else 0)" 2>/dev/null || echo 0)"
+  fi
 
   chosen="${BOX}"; tps=""; verdict="usable"; reason=""
-  if [ "${over}" = "1" ]; then
-    echo "==> [maxmodel] ${tag}: est ${est_gib}GiB -> projected ${proj_pct}% > ${NEARFULL_PCT}% -> OFFLOAD to ${HALO_B_BOX}"
+  if [ "${over}" = "1" ] || [ "${force}" = "1" ]; then
+    if [ "${force}" = "1" ]; then
+      echo "==> [maxmodel] ${tag}: params ${pb}B >= OFFLOAD_MIN_PARAMS_B=${OFFLOAD_MIN_PARAMS_B} (est ${est_gib}GiB, projected ${proj_pct}%) -> FORCE OFFLOAD to ${HALO_B_BOX}"
+    else
+      echo "==> [maxmodel] ${tag}: est ${est_gib}GiB -> projected ${proj_pct}% > ${NEARFULL_PCT}% -> OFFLOAD to ${HALO_B_BOX}"
+    fi
     chosen="${HALO_B_BOX}"
     if tps="$(probe_halo_b "${tag}" "${safe}")"; then
       [ -n "${tps}" ] && verdict="usable" || { verdict="load-fail"; reason="halo-b load returned no tokens"; }
@@ -138,13 +156,30 @@ for tag in ${MAXMODEL_TAGS}; do
         3) hb_state="reachable but unprovisioned (no repo/ollama)" ;;
         *) hb_state="unreachable" ;;
       esac
-      reason="halo-a near-full (${proj_pct}%) AND halo-b ${hb_state}"
+      if [ "${force}" = "1" ]; then
+        reason="forced offload (params ${pb}B >= ${OFFLOAD_MIN_PARAMS_B}) AND halo-b ${hb_state}"
+      else
+        reason="halo-a near-full (${proj_pct}%) AND halo-b ${hb_state}"
+      fi
       echo "    SKIP ${tag}: ${reason}"
     fi
   else
     echo "==> [maxmodel] ${tag}: est ${est_gib}GiB -> projected ${proj_pct}% <= ${NEARFULL_PCT}% -> probe LOCAL (${BOX})"
     tps="$(probe_local "${tag}" "${safe}")"
     [ -n "${tps}" ] || { verdict="load-fail"; reason="local load-fail or OOM"; }
+  fi
+
+  # OOM_MIN_TPS floor: a model that "loads" but only manages a couple tok/s is
+  # thrashing unified memory (weights spilling in/out), i.e. not usable in
+  # practice. This is the guard that stops a cold-load / near-OOM artifact (the
+  # 2.6 tok/s bug) from being reported as a healthy "usable" result.
+  if [ "${verdict}" = "usable" ] && [ -n "${tps}" ]; then
+    below="$("${PY_BIN}" -c "print(1 if float(${tps}) < ${OOM_MIN_TPS} else 0)" 2>/dev/null || echo 0)"
+    if [ "${below}" = "1" ]; then
+      verdict="load-fail"
+      reason="decode ${tps} tok/s < OOM_MIN_TPS=${OOM_MIN_TPS} floor (memory thrash/near-OOM)"
+      echo "    FLOOR ${tag}: ${reason}"
+    fi
   fi
 
   tps_json="null"; [ -n "${tps}" ] && tps_json="${tps}"
