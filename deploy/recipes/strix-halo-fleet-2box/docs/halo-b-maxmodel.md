@@ -89,14 +89,20 @@ To find where 100% residency *actually* tops out, a dedicated forced sweep
   overflow.** The sweep classifies any <3 tok/s rung that way, but the resource evidence (GTT
   ~0, system RAM unchanged from the all-GPU rungs) shows the 72B **did fit VRAM**; it is simply
   LPDDR5X **bandwidth-bound**. So it gets *slow* before it stops *fitting*.
-- **Net ceilings at 96 GiB:** the **VRAM-residency** ceiling is **≥ ~73 GiB of weights** (23
-  GiB headroom left at 72.6 GiB, GTT ~0) — extrapolating to **~90 GiB-weight** models all-GPU
-  with the override; the ***usable* (≥3 tok/s) dense-Q8** ceiling is **~70 GiB**
+- **Net ceilings at 96 GiB:** the largest **VRAM-resident** footprint has since been measured at
+  **94.59 GiB of weights** — `mixtral:8x22b-instruct-v0.1-q5_K_M` (141B MoE) loads 100%
+  VRAM-resident at 94.59 GiB (GTT 0.05, only ~1.4 GiB below the 96 GiB carveout; see the
+  [quant frontier](#quantization-frontier-96-gib-forced-resident) below), replacing this sweep's
+  72.6 GiB (`qwen2.5:72b-instruct-q8_0`) as the largest *measured* resident footprint — and
+  **superseding the old ~90 GiB extrapolation with a real measurement** (the residency break now
+  sits at/above the carveout itself); the ***usable* (≥3 tok/s) dense-Q8** ceiling is **~70 GiB**
   (`llama3.1:70b-instruct-q8_0`, 3.04 tok/s). A **MoE** (`gpt-oss:120b`, ~5.1B active) stays
   fast (36.7 tok/s) at any of these footprints.
-- **`mixtral:8x22b` (optional in the plan) was not pulled:** `qwen2.5:72b-instruct-q8_0`
-  already pins down both the residency headroom and the dense-Q8 usable edge, and skipping the
-  extra ~80 GB download kept the smartcity-down maintenance window short.
+- **`mixtral:8x22b` was not pulled *for this dense-Q8 forced sweep*:** `qwen2.5:72b-instruct-q8_0`
+  already pinned down the residency headroom and the dense-Q8 usable edge here, and skipping the
+  extra download kept the smartcity-down maintenance window short. (It was pulled and measured
+  separately in the [quant frontier](#quantization-frontier-96-gib-forced-resident) below, whose
+  Q5 rung set the 94.59 GiB resident record cited above.)
 - **Memory map (96 GiB):** VRAM **96.0 GiB** total (~69 GiB free at idle), GTT **48 GiB**,
   system RAM **31 GiB**. GTT stayed ~0 throughout (ROCm/llama.cpp does not use GTT for weight
   overflow — consistent with the 64 GiB findings).
@@ -107,9 +113,10 @@ To find where 100% residency *actually* tops out, a dedicated forced sweep
 
 - **Why keep it:** only 96 GiB can hold the **>60 GiB models fully VRAM-resident** we now want
   as a default — `gpt-oss:120b` (60.5 GiB, and *faster* than at 64 GiB: 36.7 vs 30.4 tok/s),
-  `llama3.1:70b-instruct-q8_0` (70.7 GiB), `qwen2.5:72b-instruct-q8_0` (72.6 GiB) and up toward
-  ~90 GiB-weight models. **64 GiB physically cannot** — its usable ceiling was ~56 GiB and
-  Q8-70B was CPU-offloaded to 2.1 tok/s there.
+  `llama3.1:70b-instruct-q8_0` (70.7 GiB), `qwen2.5:72b-instruct-q8_0` (72.6 GiB),
+  `mixtral:8x22b-instruct-v0.1-q5_K_M` (94.59 GiB, the largest measured — ~1.4 GiB below the
+  carveout) and right up to the 96 GiB carveout edge. **64 GiB physically cannot** — its usable
+  ceiling was ~56 GiB and Q8-70B was CPU-offloaded to 2.1 tok/s there.
 - **Cost:** OS-visible system RAM drops to **30 GiB**. Verified acceptable — the 14-container
   **smartcity** stack runs co-resident and healthy in that budget, and our CPU-pinned vllm-sr
   stack adds only ~8.5 GiB of system RAM (weights live in the VRAM carveout, not system RAM).
@@ -286,7 +293,8 @@ SWEEP_TAGS="llama3.1:70b-instruct-q8_0" bash perf/maxmodel-sweep.sh   # ~69 GiB 
 
 With the sweep fixed to report residency truthfully (`/api/ps` `size_vram/size`), a
 controlled quant sweep on ONE dense family (`llama3.1:70b-instruct`, forced
-`num_gpu=999`/`use_mmap=false`, `num_ctx=4096`) plus a low-quant big MoE, each scored for
+`num_gpu=999`/`use_mmap=false`, `num_ctx=4096`) plus three big-MoE rungs (mixtral 8x22b Q3_K_M +
+Q4_K_M + Q5_K_M), each scored for
 both decode speed (`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 stratified
 MMLU-Pro questions). **All rungs were 100% VRAM-resident** (`vram-fit`, `size_vram/size`=1.0):
 
@@ -297,6 +305,8 @@ MMLU-Pro questions). **All rungs were 100% VRAM-resident** (`vram-fit`, `size_vr
 | `llama3.1:70b-instruct-q6_K` | 55.0 GiB | 3.9 | 50.0% | usable / vram-fit |
 | `llama3.1:70b-instruct-q8_0` | 70.7 GiB | 3.0 | 50.0% | usable / vram-fit |
 | `mixtral:8x22b-instruct-v0.1-q3_K_M` (141B MoE) | 64.6 GiB | **10.8** | 42.9% | usable / vram-fit |
+| `mixtral:8x22b-instruct-v0.1-q4_K_M` (141B MoE) | 81.2 GiB | 9.03 | 42.86% (18/42) | usable / vram-fit |
+| **`mixtral:8x22b-instruct-v0.1-q5_K_M`** (141B MoE) | **94.59 GiB** | **7.80** | **45.2% (19/42)** | usable / vram-fit |
 
 Per-rung data: [`perf/quant-frontier/`](../perf/quant-frontier/) (`sweep-*.json` + `quality-*.json`).
 
@@ -308,15 +318,18 @@ Per-rung data: [`perf/quant-frontier/`](../perf/quant-frontier/) (`sweep-*.json`
   (52.4 / 50.0 / 50.0 / 50.0%) while Q4 decodes ~1.7x faster **and** uses ~30 GiB less VRAM.
   For a dense 70B on this box, prefer **`Q4_K_M`**, not Q8. (42 questions is a small,
   indicative sample — treat +/-~7pp as noise, not a real quality ranking.)
-- **MoE is "big and fast".** `mixtral:8x22b` (141B total, ~39B active) at Q3_K_M sits in
-  **64.6 GiB** and decodes **10.8 tok/s** — ~2x the dense 70B-Q4 and ~3.6x the dense 70B-Q8 —
-  because only the active experts are read per token. Its lower MCQ score (42.9%) reflects the
-  base model/quant, not the architecture; the speed is the point.
+- **MoE is "big and fast".** `mixtral:8x22b` (141B total, ~39B active) sits above the dense line
+  at every rung: Q3_K_M in **64.6 GiB** decodes **10.8 tok/s** (~2x the dense 70B-Q4, ~3.6x the
+  dense 70B-Q8), and **Q5_K_M is the largest real footprint measured — 94.59 GiB, 100% VRAM-resident,
+  7.80 tok/s, ~1.4 GiB below the carveout** — because only the active experts are read per token. Its
+  MCQ score (45.2%, 19/42) reflects the base model/quant, not the architecture; the speed is the point.
 - **Sweep verdict fix validated.** Every rung reported `vram-fit` / `usable` /
   `size_vram/size`=1.0 — including the 3.0 tok/s Q8-70B, which the old logic mislabeled
   `unusable(slow-spill)`.
 
 **Limitation.** The intended 235B MoE rung (`qwen3:235b-a22b-q2_K`) is **not a published Ollama
-tag** (404), so the run fell back to `mixtral:8x22b` (141B). The largest *measured* resident
-footprint here is therefore **70.7 GiB** (Q8-70B); the ~90 GiB residency headroom (from the
-forced sweep above) remains an extrapolation, not yet measured with a real ~85-90 GiB model.
+tag** (404), so the run used `mixtral:8x22b` (141B) instead. The largest *measured* resident
+footprint here is now **94.59 GiB** (`mixtral:8x22b-...-q5_K_M`, 100% VRAM-resident, 7.80 tok/s),
+which replaces the earlier 81.2 GiB (Q4) and 70.7 GiB (Q8-70B) top rungs; at only ~1.4 GiB below
+the 96 GiB carveout it **supersedes the old ~90 GiB extrapolation with a real measurement**, so
+the residency break now sits at/above the carveout itself.

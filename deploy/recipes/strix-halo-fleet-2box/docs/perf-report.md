@@ -38,15 +38,15 @@ below is that sentence, with the numbers.
 | How much does **throughput drop** (same model)? | Decode tok/s: **≈0% (noise, ±4%)**. TTFT: **156 ms → 1560 ms (+1.4 s)** | §2 **[M]** |
 | Which **spec becomes unusable**? | **`qwen2.5:32b` on Halo-A** (~10.7 tok/s); 70B **aborts** (HTTP 500, GTT spill). Halo-B's bigger carveout reaches **`gpt-oss:120b`** | §3, §11 **[M]** |
 | Are **both boxes** used? | **Yes — both measured.** Halo-A 94 GiB visible / 32 GiB VRAM; Halo-B 62 GiB / 64 GiB VRAM (the carveout sets the ceiling) | §4 **[M]** |
-| **Multi-concurrency** behaviour? | Serialized (Ollama default): **flat ~43 tok/s**, TTFT queues. `OLLAMA_NUM_PARALLEL=4`: scales to **~107 tok/s (~2.5×), knee at c=4** | §5 **[M]** |
+| **Multi-concurrency** behaviour? | Serialized (Ollama default): **flat ~43 tok/s**, TTFT queues. `OLLAMA_NUM_PARALLEL=4`: **~107 tok/s (~2.5×), knee c4**; re-tested at **p8 → ~128 tok/s, knee c8** (TTFT p95 ~825 ms @ c8) | §5 **[M]** |
 | Best **semantic-cache** threshold? | **0.92** (false-hit **0%**, true-hit **83–100%**) — **now enabled on the live path** (was gated off); a hit skips the upstream leg (~0.7–0.9 s hit vs ~1.2 s miss) | §6, §7.1 **[M]** |
 | Can a cache hit skip the **router tax** too? | **Yes, for exact repeats — now landed.** A pre-routing exact-match cache (custom from-source image) short-circuits an identical prompt in **~1–2 ms**, skipping embed+classify+routing entirely (vs ~0.7–0.9 s before) | §7.5 **[M]** |
 | **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by both the cache reorder and the head-trim | §7.2 **[M]** |
 | **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
-| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** carveout **Q8-70B (70.7 GiB) becomes VRAM-resident** — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box). Quant sweep: **Q4 ~1.7x faster than Q8 at ~equal quality**; a big MoE stays fast | §11–§11.2 **[M]** |
-| **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093**, 120B MoE **0.30** tok/s/W — the MoE is bigger *and* more efficient/token | §12 **[M]** |
+| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** the largest real model measured is **`mixtral:8x22b-q5_K_M` (141B MoE) VRAM-resident at 94.59 GiB / 7.80 tok/s** (~1.4 GiB shy of the carveout); Q8-70B (70.7 GiB) is resident too — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box). Quant sweep: **Q4 ~1.7x faster than Q8 at ~equal quality**; a big MoE stays fast | §11–§11.2 **[M]** |
+| **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093** tok/s/W. At 96 GiB forced-resident the 120B MoE is **0.382** vs dense-70B-Q4 **0.0381** (~10×), and dense-70B-Q4 pulls **~133 W** (near TDP) — the MoE is bigger *and* far more efficient/token | §12 **[M]** |
 
 ---
 
@@ -234,6 +234,25 @@ contention on the unified-memory APU): 43.9 (c1) → 36.1 (c2) → 27.1 (c4) →
 - **Recommended operating point:** run concurrency **≈ `OLLAMA_NUM_PARALLEL`** for
   the best throughput/latency trade-off; raise `OLLAMA_NUM_PARALLEL` (or use
   llama.cpp/vLLM slotting) to push the knee higher, bounded by memory bandwidth.
+
+**p8 re-test — the plateau rises, knee moves c4 → c8. [M]** Re-running the same 7B sweep with
+**`OLLAMA_NUM_PARALLEL=8`** (Halo-B, `qwen2.5:7b`, forced-resident — same silicon as the Halo-A
+p4 curve above) lifts the aggregate ceiling from ~107 (p4) to **~128 tok/s** and moves the knee
+to **c8**:
+
+| c | p4 agg tok/s (above) | **p8 agg tok/s** | p8 TTFT p95 |
+| --- | --- | --- | --- |
+| 1 | 41.7 | 42.27 | 154 ms |
+| 2 | 66.5 | 69.11 | 374 ms |
+| 4 | 100.0 | 103.05 | 416 ms |
+| 8 | 107.3 | **120.28** | 825 ms |
+| 16 | 107.2 | **127.76** | 8129 ms |
+
+The knee is now **c8** (120.28 tok/s, TTFT p95 825 ms); pushing to c16 buys only ~6% more
+throughput (127.76 tok/s) while TTFT p95 blows out to 8.1 s. Same 7B, same silicon — a **higher
+bandwidth plateau, not a different wall** (decode stays bandwidth-bound). So raise
+`OLLAMA_NUM_PARALLEL` 4 → 8 and run concurrency ≈ 8 for the best throughput/TTFT trade-off. Data:
+[`perf/quant-frontier/sweep-concurrency-p8-qwen2_5_7b.json`](../perf/quant-frontier/sweep-concurrency-p8-qwen2_5_7b.json).
 
 Reproduce (reuses the *already-running* stack — no cycling — so it is a cheap
 add-on to a Test 1 run):
@@ -822,8 +841,9 @@ result is **counter-intuitive and operationally important**:
   **residency is not the 96 GiB limit; decode bandwidth is.** It stayed **VRAM-resident** (72.6
   GiB, GTT ~0, **system RAM flat at ~12 GiB = no CPU offload**) with **~23 GiB carveout headroom**,
   yet decoded **2.94 tok/s** — a hair under the 3 tok/s floor, so the sweep flags it `unusable`
-  (a *speed*-floor artifact, not an overflow). Net: the **residency** ceiling is **≥ ~73 GiB of
-  weights** (headroom to ~90 GiB); the ***usable* dense-Q8** ceiling is **~70 GiB**
+  (a *speed*-floor artifact, not an overflow). Net: from this dense-Q8 sweep the **residency**
+  ceiling was **≥ ~73 GiB of weights** (then extrapolated to ~90 GiB — **since measured at
+  94.59 GiB**, §11.2); the ***usable* dense-Q8** ceiling is **~70 GiB**
   (`llama3.1:70b-instruct-q8_0`). An MoE like `gpt-oss:120b` stays fast (36.8 tok/s) at any of
   these sizes. Data: [`maxmodel-sweep-halo-b-96g-forced.json`](../perf/maxmodel-sweep-halo-b-96g-forced.json).
 - **Decision — keep 96 GiB; make residency the default via `-vram` variants.** We **keep the 96
@@ -840,9 +860,9 @@ result is **counter-intuitive and operationally important**:
 ### 11.2 Quantization frontier — footprint x speed x quality (96 GiB) **[M]**
 
 A controlled quant sweep on one dense family (`llama3.1:70b-instruct`, forced-resident
-`num_gpu=999`/`use_mmap=false`) plus a low-quant big MoE, each scored for decode speed
-(`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 MMLU-Pro Q). All rungs were
-**100% VRAM-resident** (`size_vram/size`=1.0):
+`num_gpu=999`/`use_mmap=false`) plus three big-MoE rungs (mixtral 8x22b Q3_K_M + Q4_K_M + Q5_K_M),
+each scored for decode speed (`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 MMLU-Pro
+Q). All rungs were **100% VRAM-resident** (`size_vram/size`=1.0):
 
 | Model (quant) | Peak VRAM | Decode tok/s | MMLU-Pro (42Q) |
 | --- | --- | --- | --- |
@@ -851,18 +871,50 @@ A controlled quant sweep on one dense family (`llama3.1:70b-instruct`, forced-re
 | `llama3.1:70b-instruct-q6_K` | 55.0 GiB | 3.9 | 50.0% |
 | `llama3.1:70b-instruct-q8_0` | 70.7 GiB | 3.0 | 50.0% |
 | `mixtral:8x22b-instruct-v0.1-q3_K_M` (141B MoE) | 64.6 GiB | **10.8** | 42.9% |
+| `mixtral:8x22b-instruct-v0.1-q4_K_M` (141B MoE) | 81.2 GiB | 9.03 | 42.86% (18/42) |
+| **`mixtral:8x22b-instruct-v0.1-q5_K_M`** (141B MoE) | **94.59 GiB** | **7.80** | **45.2% (19/42)** |
 
 - **Bandwidth-bound: lower quant is monotonically faster** — same 70B, Q8 3.0 -> Q4 5.1 tok/s
   (~1.7x), because fewer weight bytes are read per token.
 - **Q4 is the dense sweet spot** — Q4->Q8 accuracy is flat within the 42Q noise, but Q4 is
   ~1.7x faster and ~30 GiB smaller. Prefer **`Q4_K_M`** over Q8 for a dense 70B here.
-- **MoE is big *and* fast** — mixtral 8x22b (141B, ~39B active) Q3 in 64.6 GiB decodes 10.8
-  tok/s (~2x dense-70B-Q4), reading only the active experts per token.
-- **Limitation:** the 235B MoE (`qwen3:235b-a22b-q2_K`) is not a published Ollama tag (404); the
-  run fell back to mixtral 8x22b, so the largest *measured* resident footprint is 70.7 GiB (the
-  ~90 GiB headroom stays an extrapolation). Per-rung data:
+- **MoE is big *and* fast** — the three mixtral 8x22b rungs (141B, ~39B active) sit above the dense
+  line: Q3 in 64.6 GiB decodes 10.8 tok/s, and **Q5 is the largest real footprint measured —
+  94.59 GiB, 100% VRAM-resident, 7.80 tok/s** (~1.4 GiB below the carveout), reading only the active
+  experts per token.
+- **Limitation:** the 235B MoE (`qwen3:235b-a22b-q2_K`) is not a published Ollama tag (404), so
+  the run used the mixtral 8x22b MoE instead; the largest *measured* resident footprint is now
+  **94.59 GiB** (`mixtral:8x22b-...-q5_K_M`, 100% VRAM-resident, 7.80 tok/s) — only ~1.4 GiB below
+  the 96 GiB carveout, so the **old ~90 GiB weight-ceiling extrapolation is now superseded by a
+  real measurement** and the residency break sits at/above the carveout itself. Per-rung data:
   [`perf/quant-frontier/`](../perf/quant-frontier/) · detail in
   [`halo-b-maxmodel.md` (quant frontier)](halo-b-maxmodel.md#quantization-frontier-96-gib-forced-resident).
+
+### 11.3 Best configuration — validated A/B (BEST vs DEFAULT) **[M]**
+
+The §11.1 residency lever plus concurrency / cache / server / architecture / quant were run
+**head-to-head, end-to-end** on Halo-B (96 GiB carveout, headless, full vllm-sr stack co-resident,
+2026-07-13): **BEST** (`gpt-oss:120b-vram` forced-resident + `OLLAMA_NUM_PARALLEL=8` + semantic cache
+0.92/exact-repeat; llama.cpp for TTFT) vs a **naive DEFAULT** (`gpt-oss:120b` auto layer-estimate,
+`NUM_PARALLEL=1`, no cache, ollama). Data:
+[`perf/quant-frontier/bestcfg-halo-b.json`](../perf/quant-frontier/bestcfg-halo-b.json).
+
+| Lever | BEST | DEFAULT | Delta |
+| --- | --- | --- | --- |
+| **Residency** (`-vram` vs auto) | 36.6 tok/s @ 100% GPU | auto CPU-offload | **~6.4×** (clean ref 36.8 vs 5.7, §11.1) |
+| **Concurrency** (`NUM_PARALLEL` 8 vs 1, 7B) | 121.1 tok/s agg @ c8 (ceiling 128.7 @ c16), TTFT p95 826 ms | 43.9 tok/s flat, TTFT p95 20,444 ms | **~2.76×** @ c8 (~2.93× ceiling), **~25×** TTFT p95 |
+| **Semantic cache** (0.92 + exact-repeat vs none) | exact hit ~1–2 ms; semantic ~0.7–0.9 s | miss ~1.2–1.56 s | **>100×** on repeats (§7.1/§7.5) |
+| **Server** (llama.cpp vs ollama) | TTFT ~28 ms | ~142 ms | **~5×** (§10) |
+| **Architecture** (MoE vs dense) | `gpt-oss:120b` 36.5 tok/s | dense Q8-70B 3.0 tok/s | **~12×** |
+| **Quant** (dense Q4 vs Q8) | 5.1 tok/s, ~30 GiB smaller | 3.0 tok/s | **~1.7×**, quality flat |
+| **Per-watt** (resident MoE vs dense 70B-Q4) | 0.366 tok/s/W (36.5 @ ~100 W) | 0.0381 tok/s/W (5.07 @ 133 W) | **~10×** |
+
+**Honest framing.** The DEFAULT residency baseline decoded **0.177 tok/s** this run because the box's
+disk was **~98% full**, so the CPU-offloaded weights paged from disk and thrashed — a disk-pressure
+artifact. We therefore headline the clean-run **~6.4×** (§11.1, 36.8 vs 5.7), **not** the ~207× this
+run would imply. The concurrency A/B is a **real container toggle** (`OLLAMA_NUM_PARALLEL` 1 → 8 →
+restored); the cache / server / architecture / quant deltas are reused from §7 / §10 / §11.1. Full
+per-lever table with why-each-wins: [`hardware-limits.md` §4](hardware-limits.md).
 
 ---
 
@@ -878,7 +930,9 @@ probe used to gather these numbers). **Idle socket power: ~12–14 W** on both b
 | --- | --- | --- | --- | --- | --- |
 | Halo-A | `qwen2.5:7b` | 44.0 | 108 | **0.41** | 0.46 |
 | Halo-A | `qwen2.5:32b` | 10.9 | 117 | **0.093** | 0.103 |
-| Halo-B | `gpt-oss:120b` (120B MoE) | 30.3 | 102 | **0.30** | 0.34 |
+| Halo-B | `gpt-oss:120b` (120B MoE, 64 GiB) | 30.3 | 102 | **0.30** | 0.34 |
+| Halo-B | `gpt-oss:120b` (120B MoE, 96 GiB forced-resident) | 36.51 | 95.6 | **0.382** | 0.416 |
+| Halo-B | `llama3.1:70b-instruct-q4_K_M` (dense, 96 GiB forced-resident) | 5.07 | 133 | **0.0381** | 0.0404 |
 
 **Story.**
 
@@ -891,6 +945,12 @@ probe used to gather these numbers). **Idle socket power: ~12–14 W** on both b
   only ~5.1B of its 120B params are active per token, so it draws similar power
   (~102 W) yet decodes ~3× faster. On this hardware, a well-chosen MoE beats a
   smaller dense model on *both* speed and energy/token.
+- **96 GiB forced-resident (2026-07-13): the MoE is ~10× more efficient per token than the dense
+  70B-Q4** — 0.382 vs 0.0381 tok/s/W — *and* draws less power (95.6 vs 133 W). **Dense 70B-Q4
+  pulls ~133 W mean (137 W peak) — the highest we measured, right at the TDP envelope**, so there
+  is little room to trade watts for speed; future speedups must come from *fewer bytes/token*
+  (lower quant, MoE), not more power. (The 0.30 row above is the earlier 64 GiB gpt-oss
+  measurement; forcing full residency at 96 GiB lifts it to **0.382**.)
 - Dynamic (load − idle) draw is ~96 W (7B) / ~105 W (32B) / ~90 W (120B); idle sits
   at ~12–14 W, so the box is cheap to leave resident between requests.
 

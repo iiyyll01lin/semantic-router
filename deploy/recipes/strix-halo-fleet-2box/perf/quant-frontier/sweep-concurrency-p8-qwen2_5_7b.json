@@ -1,0 +1,66 @@
+{
+  "box": "halo-b",
+  "curve": [
+    {
+      "aggregate_decode_tps": 42.27328482241132,
+      "c": 1,
+      "decode_tps_mean": 44.57934339503045,
+      "decode_tps_median": 44.57934339503045,
+      "ok_runs": 1,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 154.36462199431844,
+      "ttft_ms_p95": 154.36462199431844
+    },
+    {
+      "aggregate_decode_tps": 69.11495490824477,
+      "c": 2,
+      "decode_tps_mean": 37.39163350708127,
+      "decode_tps_median": 37.39163350708127,
+      "ok_runs": 2,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 264.3061639973894,
+      "ttft_ms_p95": 373.57680699642515
+    },
+    {
+      "aggregate_decode_tps": 103.04983240797185,
+      "c": 4,
+      "decode_tps_mean": 27.847346632222788,
+      "decode_tps_median": 28.137186369456295,
+      "ok_runs": 4,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 352.53954924883146,
+      "ttft_ms_p95": 416.26833799818996
+    },
+    {
+      "aggregate_decode_tps": 120.2759889018344,
+      "c": 8,
+      "decode_tps_mean": 16.17926464583129,
+      "decode_tps_median": 16.202048674240302,
+      "ok_runs": 8,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 564.288046000911,
+      "ttft_ms_p95": 825.3219879989047
+    },
+    {
+      "aggregate_decode_tps": 127.7555433528998,
+      "c": 16,
+      "decode_tps_mean": 16.398359809617485,
+      "decode_tps_median": 16.42625826689727,
+      "ok_runs": 16,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 4179.551932561935,
+      "ttft_ms_p95": 8129.211682004097
+    }
+  ],
+  "model": "qwen2.5:7b",
+  "ollama_num_parallel": 8,
+  "schema": "concurrency-sweep/v1",
+  "shape": {
+    "max_tokens": 128,
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": false
+  }
+}
