@@ -163,6 +163,15 @@ for tag in ${SWEEP_TAGS}; do
     "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" stop \
       --pidfile "${WORK}/${safe}.pid" --in "${WORK}/${safe}.ndjson" \
       --out "${WORK}/${safe}.res.json" >/dev/null 2>&1 || true
+    # Authoritative residency (model still loaded): /api/ps size_vram/size == 1.0
+    # means 100% VRAM-resident. Lets the verdict tell a resident-but-bandwidth-bound
+    # rung apart from a real CPU-offload / GTT spill (see the assembly step below).
+    curl -fsS --max-time 15 "${OLLAMA_URL}/api/ps" 2>/dev/null \
+      | "${PY_BIN}" -c 'import json,sys
+d=json.load(sys.stdin); t=sys.argv[1]
+r=next((m for m in d.get("models", []) if m.get("name")==t), {}) or {}
+print("%d %d" % (r.get("size_vram") or 0, r.get("size") or 0))' "${tag}" \
+      >"${WORK}/${safe}.ps" 2>/dev/null || true
     unload "${tag}"
     sleep 2
   fi
@@ -209,9 +218,20 @@ def pull_ok(s):
         return True
 
 
+def read_ps(s):
+    # (size_vram, size) from /api/ps captured while the model was loaded, else (None, None).
+    try:
+        with open(os.path.join(work, s + ".ps"), "r", encoding="utf-8") as fh:
+            sv, sz = fh.read().split()
+            return int(sv), int(sz)
+    except (OSError, ValueError):
+        return None, None
+
+
 results = []
 vram_total = gtt_total = sys_total = None
 max_usable = None
+max_resident = None
 first_unusable = None
 
 for tag in index.split():
@@ -234,42 +254,67 @@ for tag in index.split():
     peak_sys = (host.get("mem_used_b") or {}).get("max")
     err = probe.get("error") or (probe.get("runs_detail") or [{}])[-1].get("error")
 
+    # Authoritative residency from /api/ps (decoupled from decode speed).
+    ps_vram, ps_size = read_ps(s)
+    gpu_frac = (ps_vram / ps_size) if (ps_vram is not None and ps_size) else None
+    resident = gpu_frac is not None and gpu_frac >= 0.99
+    gtt_spilled = peak_gtt is not None and peak_gtt > gtt_spill_b
+
     if not pull_ok(s):
         verdict, reason = "load-fail", "pull failed (model unavailable / no space)"
     elif not ok_runs:
         verdict = "load-fail"
         reason = "no tokens produced (OOM / would-not-load): %s" % (err or "n/a")
     elif tps is not None and tps < oom_min_tps:
-        verdict = "unusable(slow-spill)"
-        reason = "decode %.2f tok/s < OOM_MIN_TPS=%g (GTT thrash / near-OOM)" % (tps, oom_min_tps)
+        # Slow. Distinguish resident-but-bandwidth-bound from a real offload/spill: a
+        # model fully in VRAM (size_vram==size, GTT ~0) that decodes below the floor is
+        # LPDDR5X bandwidth-bound, NOT spilling -- flag usable-slow, not unusable.
+        if resident and not gtt_spilled:
+            verdict = "usable-slow"
+            reason = ("decode %.2f tok/s < OOM_MIN_TPS=%g but 100%% VRAM-resident "
+                      "(size_vram/size=%.2f, GTT ~0) -- LPDDR5X bandwidth-bound, not a spill"
+                      % (tps, oom_min_tps, gpu_frac))
+        else:
+            verdict = "unusable(slow-spill)"
+            if gtt_spilled:
+                why = "GTT spill (%.1f GiB)" % (peak_gtt / GIB)
+            elif gpu_frac is not None:
+                why = "CPU offload (size_vram/size=%.2f)" % gpu_frac
+            else:
+                why = "GTT thrash / near-OOM"
+            reason = "decode %.2f tok/s < OOM_MIN_TPS=%g (%s)" % (tps, oom_min_tps, why)
     else:
         verdict, reason = "usable", ""
 
-    # Where did the footprint land?
-    #   gtt-spill     weights spilled past the VRAM carveout into GPU-accessible GTT
-    #   vram-fit      ran entirely inside the carveout (fast, all-GPU)
-    #   vram-exceeded did NOT fit the carveout -- the runtime offloaded layers to CPU
-    #                 (system RAM) or the load failed, so it is slow/unusable even
-    #                 though GTT stayed low (Ollama caps GPU layers to free VRAM and
-    #                 CPU-offloads the rest rather than spilling into GTT).
-    if peak_gtt is not None and peak_gtt > gtt_spill_b:
+    # Memory mode from RESIDENCY evidence (independent of the speed floor):
+    #   gtt-spill     peak GTT above the spill threshold (weights past the carveout)
+    #   vram-fit      100% resident in the VRAM carveout (size_vram==size, GTT ~0)
+    #   cpu-offload   part of the model on CPU (size_vram < size) -- the slow failure
+    #   vram-exceeded couldn't place it (no /api/ps signal, but VRAM was touched)
+    if gtt_spilled:
         mem_mode = "gtt-spill"
-    elif verdict == "usable":
+    elif resident:
         mem_mode = "vram-fit"
+    elif gpu_frac is not None:
+        mem_mode = "cpu-offload"
     elif peak_vram is not None:
         mem_mode = "vram-exceeded"
     else:
         mem_mode = "unknown"
 
+    # Ceilings: usable = >= floor; resident = loaded 100% in VRAM (usable or usable-slow).
     if verdict == "usable":
         max_usable = tag
-    elif first_unusable is None:
+    if verdict in ("usable", "usable-slow"):
+        max_resident = tag
+    if (verdict.startswith("unusable") or verdict == "load-fail") and first_unusable is None:
         first_unusable = tag
 
     results.append({
         "tag": tag,
         "verdict": verdict,
         "mem_mode": mem_mode,
+        "gpu_resident_frac": round(gpu_frac, 3) if gpu_frac is not None else None,
         "decode_tps_median": tps,
         "ttft_ms_mean": agg.get("ttft_ms_mean"),
         "ok_runs": ok_runs,
@@ -299,6 +344,7 @@ report = {
     },
     "results": results,
     "max_usable_tag": max_usable,
+    "max_resident_tag": max_resident,
     "first_unusable_tag": first_unusable,
 }
 with open(out_path, "w", encoding="utf-8") as fh:
@@ -315,7 +361,8 @@ for r in results:
         r["tag"], r["verdict"], r["mem_mode"],
         "n/a" if r["decode_tps_median"] is None else "%.1f" % r["decode_tps_median"],
         r["peak_vram_used_gib"], r["peak_gtt_used_gib"], r["peak_sys_used_gib"]))
-print("max usable under topology: %s ; first unusable: %s" % (max_usable, first_unusable))
+print("max usable (>= floor): %s ; max VRAM-resident: %s ; first unusable: %s"
+      % (max_usable, max_resident, first_unusable))
 print("(written to %s)" % out_path)
 PYEOF
 
