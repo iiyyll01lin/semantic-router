@@ -1,5 +1,13 @@
 # Fleet perf summary (report-run-2box-20260712-153904)
 
+> **Vintage note (read first).** This is the **2026-07-12** two-box fleet run, captured when
+> **Halo-B was still at its 64 GiB VRAM carveout** (hence `halo-b 62.44 GiB` visible below).
+> Halo-B was **later raised to 96 GiB** and re-tested. For Halo-B's **current** max-model
+> ceiling + quantization frontier, use [`../perf-report.md`](../perf-report.md) §11.1–§11.2 and
+> [`../halo-b-maxmodel.md`](../halo-b-maxmodel.md) — not the `halo-b` row here. The Test 1 /
+> Test 2 findings below (co-location overhead, server comparison, fleet-safe `qwen3:14b`) are
+> **box-carveout-independent** and remain current.
+
 ## Test 1 — vllm-sr co-location overhead
 
 Fleet-safe max usable model: **qwen3:14b**  ·  mean stack RAM footprint: **8.68 GiB**
