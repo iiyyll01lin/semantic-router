@@ -1,13 +1,33 @@
 # vllm-sr on Strix Halo — feasibility & cost (customer brief)
 
-_Fleet: 2× Ryzen AI Max+ 395 · halo-a (94.1 GiB visible / 32 GiB VRAM carveout) + halo-b (62.4 GiB visible / 64 GiB VRAM carveout) · vllm-sr stack footprint: ~8.6 GiB per box_
+_Fleet: 2× Ryzen AI Max+ 395 · halo-a (94.1 GiB visible / 32 GiB VRAM carveout) + halo-b (~30 GiB visible / 96 GiB VRAM carveout, raised from 64) · vllm-sr stack footprint: ~8.5 GiB per box_
+
+## Executive summary
+
+**For the decision-maker.** An intelligent LLM router (vllm-sr) runs on the 2-box Strix Halo fleet **today**: it costs **~8.5 GiB** of unified memory, **~0%** decode throughput, and a fixed **~1.4 s** first-token latency that a semantic cache (threshold **0.92**) or an exact-repeat cache (**~1–2 ms**) removes. The only hard limit is memory.
+
+**What the fleet serves (measured, full stack co-resident):**
+
+- **Fleet-safe default:** `qwen3:14b` across both boxes.
+- **Halo-A peak:** `qwen2.5:32b` (~10.7 tok/s); a 70B fails to load (HTTP 500).
+- **Halo-B peak (headless, 96 GiB carveout):** **`gpt-oss:120b` (120B MoE) VRAM-resident at ~37 tok/s**; at 96 GiB even a **70B-Q8 (~70 GiB) is VRAM-resident** (needs the `num_gpu`/`use_mmap` override — see caveats/§2).
+
+**Recommended settings:** semantic-cache threshold **0.92** · **`OLLAMA_NUM_PARALLEL=4`** (→ ~107 tok/s aggregate, ~2.5×) · inference server **llama.cpp (ROCm)** · run large models **headless**, and on a large VRAM carveout load them via the **`-vram` variants** (`num_gpu`/`use_mmap=false`) — headless alone is not enough.
+
+**Why it's cheaper:** ~$0 marginal cost per token after **~$2,500/box** (payback ~4.2B output tokens vs cloud) · routing to small tiers is **~4.1×** faster than the 32B · unified memory replaces a **>40 GB GPU card**, and the 120B MoE is more power-efficient per token than a dense 32B (**0.30 vs 0.093 tok/s/W**; 7B is 0.41).
+
+**Caveats:** the two boxes have **asymmetric BIOS carveouts** (32 vs 96 GiB) → different model ceilings but **identical router overhead**; **vLLM is skip-with-reason on gfx1151**; on the 96 GiB carveout Ollama sizes GPU layers to the (now smaller ~30 GiB) system RAM, so big models need the **`num_gpu=999` + `use_mmap=false`** override (the `-vram` variants) to stay VRAM-resident — headless alone is not enough.
+
+> **Companion artifact (same numbers, same recommendations):** the sendable executive [one-pager](customer-onepager.md). Sections **§1–§6 below are the technical body** — full measurements, methods, and reproduction commands.
+
+---
 
 ## 1. Bottom line
 
-- **It runs today:** router + backend share one box; the router costs ~8.6 GiB of memory and near-zero decode throughput.
-- **The real cost is first-token latency:** direct ~158 ms -> through the router ~1436 ms (**+1.3 s**). An **exact-repeat cache** (live) returns identical prompts in **~1–2 ms** — the entire tax gone. A second, **optional** lever — **trimming the two heaviest safety heads** — cuts the classify stage by a measured **~56%**, but it drops PII/jailbreak detection, so the live box **keeps those heads ON** (accuracy unchanged either way).
+- **It runs today:** router + backend share one box; the router costs ~8.5 GiB of memory and near-zero decode throughput.
+- **The real cost is first-token latency:** direct ~156 ms -> through the router ~1560 ms (**+1.4 s**). An **exact-repeat cache** (live) returns identical prompts in **~1–2 ms** — the entire tax gone. A second, **optional** lever — **trimming the two heaviest safety heads** — cuts the classify stage by a measured **~56%**, but it drops PII/jailbreak detection, so the live box **keeps those heads ON** (accuracy unchanged either way).
 - **Feasibility is memory-bound:** the biggest model a box serves = unified memory ÷ quantization (below).
-- **The max model moves with the box topology:** Halo-A tops out at `qwen2.5:32b` (70B fails to load); Halo-B, run headless to free its whole 64 GiB VRAM carveout, reaches **`gpt-oss:120b` (120B MoE) @ ~30 tok/s, fully VRAM-resident**.
+- **The max model moves with the box topology:** Halo-A tops out at `qwen2.5:32b` (70B fails to load); Halo-B, headless with a **96 GiB VRAM carveout**, serves **`gpt-oss:120b` (120B MoE) VRAM-resident at ~37 tok/s** and even a **70B-Q8 (~70 GiB)** VRAM-resident, using the `num_gpu`/`use_mmap` override (§2).
 
 ## 2. Feasibility boundary — largest model each box can serve
 
@@ -24,23 +44,27 @@ Measured single-box peak ceilings (full vllm-sr stack co-resident):
 | halo-b (64 GiB, headless) | **gpt-oss:120b (120B MoE)** | **56.6 GiB** | **30.4** | **max usable** |
 | halo-b (64 GiB, headless) | llama3.1:70b-instruct-q8_0 | ~69 GiB | 2.1 | unusable (soft CPU-offload) |
 
-_The ceiling is governed by the **BIOS VRAM carveout**, not the OS-visible budget. When a model's weights exceed the carveout the two boxes fail differently: on **Halo-A** the overflow spills to GTT and the load **aborts (HTTP 500)** — a hard fail; on **Halo-B** the overflow is a **soft CPU-offload** (Ollama runs the extra layers on the CPU) that still "runs" but collapses decode below the usable floor. The lever that moved Halo-B's ceiling from 32B to 120B is **going headless** to free the whole 64 GiB carveout — OS-only tuning, BIOS unchanged, fully reproducible._
+_The ceiling is governed by the **BIOS VRAM carveout**, not the OS-visible budget. When a model's weights exceed the carveout the two boxes fail differently: on **Halo-A** the overflow spills to GTT and the load **aborts (HTTP 500)** — a hard fail; on **Halo-B** the overflow is a **soft CPU-offload** (Ollama runs the extra layers on the CPU) that still "runs" but collapses decode below the usable floor. Going **headless** first moved Halo-B's ceiling 32B → 120B; raising the carveout further (below) then makes even a 70B-Q8 VRAM-resident._
 
-### Quantization decides the ceiling (76.1 GiB usable after stack + 10% reserve)
+_**96 GiB re-test (current Halo-B config).** The BIOS carveout was later raised **64 → 96 GiB**. With the `num_gpu`/`use_mmap` override, `gpt-oss:120b` is VRAM-resident at **~37 tok/s** (up from 30.4), and the **70B-Q8 (~70 GiB) that was unusable at 64 GiB is now fully VRAM-resident** (~3 tok/s, LPDDR5X-bandwidth-bound); residency extends toward **~90 GiB of weights**. Trade-off: system RAM drops to ~30 GiB and Ollama's default auto-estimate CPU-offloads big models unless overridden. Detail: [`perf-report.md` §11.1](../perf-report.md) and [`halo-b-maxmodel.md`](../halo-b-maxmodel.md)._
 
-| quantization | GiB per 1B params | max params on this box |
+### Quantization decides the ceiling — bound by the VRAM carveout, not OS-visible RAM
+
+The largest model is set by the **BIOS VRAM carveout** a model's weights must fit (overflow spills/offloads and becomes unusable), **not** the OS-visible system RAM. For **Halo-B's 96 GiB carveout** (~90 GiB usable for weights after runtime buffers):
+
+| quantization | GiB per 1B params | max params in a 96 GiB carveout |
 |---|---|---|
-| Q4 | 0.6 | ~126B |
-| Q8 | 1.1 | ~69B |
-| fp16 | 2.2 | ~34B |
+| Q4 | ~0.6 | ~150B |
+| Q8 | ~1.1 | ~82B |
+| fp16 | ~2.2 | ~41B |
 
-_Q4 roughly **doubles** the largest model vs fp16 on the same hardware — the practical lever for fitting a bigger model._
+_Q4 roughly **doubles** the largest model vs fp16 on the same carveout — the practical lever for fitting a bigger model. These are weights-fit ceilings: a dense model near the top is VRAM-resident but LPDDR5X-bandwidth-bound, while an MoE (few active params) stays fast at the same size._
 
-_Caveat — asymmetric BIOS._ The two boxes have different VRAM carveouts (Halo-A 32 GiB, Halo-B 64 GiB), so their **model ceilings differ** even though **router overhead is identical** on both. The `gpt-oss:120b` peak on Halo-B additionally requires **headless + `use_mmap=false`** to load VRAM-resident inside client timeouts.
+_Caveat — asymmetric BIOS._ The two boxes have different VRAM carveouts (**Halo-A 32 GiB, Halo-B 96 GiB**), so their **model ceilings differ** even though **router overhead is identical** on both. Halo-A's 32 GiB carveout caps it at **`qwen2.5:32b`** in practice (a 70B overflows and aborts); big models on Halo-B's 96 GiB carveout need **headless + `num_gpu`/`use_mmap=false`** (the `-vram` variants) to load VRAM-resident._
 
 ## 3. Latency tax and how the cache removes it
 
-The router adds ~1.3 s to first-token latency (classification + embedding + routing). A **semantic-cache hit** skips that pipeline and the model call entirely:
+The router adds ~1.4 s to first-token latency (classification + embedding + routing). A **semantic-cache hit** skips that pipeline and the model call entirely:
 
 | threshold | true_hit_rate | false_hit_rate | ttft_miss_ms | ttft_hit_ms |
 |---|---|---|---|---|
@@ -63,15 +87,17 @@ _Both keep routing accuracy at **88.9%** (unchanged). The **exact-repeat cache i
 
 ## 4. Concurrency boundary
 
-| concurrent streams | aggregate tok/s | scaling vs 1 | TTFT p95 ms |
-|---|---|---|---|
-| 1 | 42 | 1.00x | 152 |
-| 2 | 43 | 1.02x | 3098 |
-| 4 | 43 | 1.03x | 8980 |
-| 8 | 43 | 1.03x | 20753 |
-| 16 | 43 | 1.04x | 41305 |
+Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend configs — Ollama's default (single decode slot) and the same container with **`OLLAMA_NUM_PARALLEL=4`**:
 
-_Default Ollama serves one stream at a time: total throughput stays flat while first-token latency grows with the queue. Effective capacity ~1 concurrent request per box at full speed; scale with OLLAMA_NUM_PARALLEL or llama.cpp/vLLM._
+| concurrent streams | serialized agg tok/s | serialized TTFT p95 ms | `OLLAMA_NUM_PARALLEL=4` agg tok/s | p4 TTFT p95 ms |
+|---|---|---|---|---|
+| 1 | 42 | 152 | 42 | 156 |
+| 2 | 43 | 3098 | 66 | 397 |
+| 4 | 43 | 8980 | 100 | 436 |
+| 8 | 43 | 20753 | 107 | 4919 |
+| 16 | 43 | 41305 | 107 | 14452 |
+
+_Default Ollama serves one stream at a time: aggregate throughput stays flat (~43 tok/s) while first-token latency grows with the queue. With **`OLLAMA_NUM_PARALLEL=4`** throughput scales to **~107 tok/s (~2.5×)**, with the knee at **c=4** (already ~2.3× serialized while TTFT p95 stays low); beyond c=4 you buy little throughput while latency balloons. Scale further with a higher parallel count or llama.cpp/vLLM slotting._
 
 ## 5. Inference-server options (same base model — note the quantization)
 
@@ -80,7 +106,7 @@ _Default Ollama serves one stream at a time: total throughput stays flat while f
 | ollama | **Q4_0 (ollama default)** | 43.0 | 142 | measured |
 | llamacpp | **Q4_K_M** | 43.2 | 28 | measured |
 | lemonade | **Q4_1 (lemonade Qwen3-8B-GGUF)** | 39.8 | 90 | measured |
-| vllm | **fp16 (or awq)** | - | - | skipped |
+| vllm | **fp16 (or awq)** | - | - | skip-with-reason (gfx1151) |
 
 _Quantization differs per server, so decode-rate deltas are **not** apples-to-apples — compare within the same quantization. Quantization also sets the max model (§2)._
 

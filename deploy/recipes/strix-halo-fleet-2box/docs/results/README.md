@@ -8,17 +8,21 @@ survive reboot/cleanup. They are the raw source behind the narrative in
 
 | File | Source run bundle | Box(es) | Run date (local) |
 | --- | --- | --- | --- |
-| [`customer-report.md`](customer-report.md) | `report-run-20260712-123240` | Halo-A (`aup-HP-Z2-Mini-G1a`) | 2026-07-12 12:32 |
+| [`customer-report.md`](customer-report.md) | hand-authored fleet brief (synthesizes `report-run-20260712-123240` + fleet + 96 GiB re-test) | Halo-A + Halo-B | 2026-07-13 (updated) |
+| [`customer-onepager.md`](customer-onepager.md) | hand-authored executive one-pager (companion to `customer-report.md`) | Halo-A + Halo-B | 2026-07-13 |
 | [`report-data.md`](report-data.md) | `report-run-20260712-123240` | Halo-A (`aup-HP-Z2-Mini-G1a`) | 2026-07-12 12:32 |
 | [`perf-summary-2box.md`](perf-summary-2box.md) | `report-run-2box-20260712-153904` | Halo-A + Halo-B (fleet) | 2026-07-12 15:39 |
 
 **Provenance notes.**
 
-- `customer-report.md` / `report-data.md` are the single-box (Halo-A) run
-  `report-run-20260712-123240`: co-location overhead, inference-server comparison,
-  concurrency sweep, and the semantic-cache threshold sweep.
+- `report-data.md` is the single-box (Halo-A) run `report-run-20260712-123240`:
+  co-location overhead, inference-server comparison, concurrency sweep, and the
+  semantic-cache threshold sweep — copied byte-for-byte from the run bundle.
+- `customer-report.md` and `customer-onepager.md` are **hand-authored** customer briefs
+  (not raw bundle copies): they synthesize the fleet numbers from `report-data.md` +
+  `perf-summary-2box.md` + the technical [`../perf-report.md`](../perf-report.md), and were
+  updated for the Halo-B **96 GiB carveout re-test** (2026-07-13). Keep them in sync with
+  `../perf-report.md`.
 - `perf-summary-2box.md` is the two-box fleet run `report-run-2box-20260712-153904`
-  (Halo-A + Halo-B), i.e. the symmetric Test 1 / Test 2 across both boxes.
-- Copied unmodified (byte-for-byte) from the run bundles; only `perf-summary.md`
-  from the two-box bundle was renamed to `perf-summary-2box.md` to avoid a name
-  clash with the single-box summary embedded in `report-data.md`.
+  (Halo-A + Halo-B), copied byte-for-byte; only `perf-summary.md` from the two-box bundle
+  was renamed to `perf-summary-2box.md` to avoid a clash with the summary in `report-data.md`.
