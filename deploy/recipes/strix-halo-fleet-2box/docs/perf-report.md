@@ -2,7 +2,8 @@
 
 **Topology:** [`strix-halo-fleet-2box`](../README.md) · **SUT:** 2× Ryzen AI Max+
 395 (gfx1151, RDNA3.5), 128 GiB unified LPDDR5X each — **Halo-A** 32 GiB VRAM
-carveout (~94 GiB OS-visible), **Halo-B** 64 GiB carveout (~62 GiB visible) ·
+carveout (~94 GiB OS-visible), **Halo-B** 64 GiB carveout (~62 GiB visible; later
+re-tested at 96 GiB — §11.1) ·
 **Backend:** Ollama tiers `llama3.2:3b → qwen2.5:7b → qwen2.5:14b → qwen3:14b →
 qwen2.5:32b` (+ `llama3.1:70b` / `gpt-oss:120b` on Halo-B) · **Harness:**
 [`perf/`](../perf/README.md)
@@ -44,7 +45,7 @@ below is that sentence, with the numbers.
 | **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
-| **Max model** under the topology? | Halo-B (headless, 64 GiB carveout): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident** | §11 **[M]** |
+| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** carveout **Q8-70B (70.7 GiB) becomes VRAM-resident** — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box) | §11, §11.1 **[M]** |
 | **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093**, 120B MoE **0.30** tok/s/W — the MoE is bigger *and* more efficient/token | §12 **[M]** |
 
 ---
@@ -792,6 +793,34 @@ sweep ([`perf/maxmodel-sweep.sh`](../perf/maxmodel-sweep.sh)):
 
 Full memory map, tuning steps, and failure-mode detail:
 [`halo-b-maxmodel.md`](halo-b-maxmodel.md).
+
+### 11.1 Re-test at 96 GiB VRAM carveout (BIOS 64 → 96 GiB) **[M]**
+
+We later raised Halo-B's BIOS UMA carveout **64 → 96 GiB** (OS-visible system RAM
+correspondingly **62 → 30 GiB**) and re-ran the co-resident probe at `num_ctx=4096`. The
+result is **counter-intuitive and operationally important**:
+
+- **By default the bigger carveout *regresses* Ollama.** `ollama ps` caps GPU use at **~27
+  GiB and CPU-offloads the rest for every big model** — despite `amd-smi` reporting **~69 GiB
+  VRAM free** — because Ollama sizes GPU layers to **OS-visible system RAM** (now 30 GiB), not
+  the VRAM carveout. So `gpt-oss:120b` drops **30.4 → 5.7 tok/s** (59% CPU-offloaded) vs 64 GiB.
+- **Overriding the estimate exploits the carveout.** With **`num_gpu=999` + `use_mmap=false`**
+  both models load **100% on GPU**:
+
+| Model | Mode | ollama split | VRAM used | Decode tok/s |
+| --- | --- | --- | --- | --- |
+| `gpt-oss:120b` | forced | **100% GPU** | **60.5 GiB** | **36.8** (> 64 GiB's 30.4) |
+| `llama3.1:70b-instruct-q8_0` (~69 GiB) | forced | **100% GPU** | **70.7 GiB** | **3.0** |
+
+- **Headline: Q8-70B — the first-*unusable* rung at 64 GiB (2.1 tok/s, CPU-offloaded) — is now
+  fully VRAM-resident (70.7 GiB, 100% GPU) at 96 GiB.** Decode is still ~3 tok/s (dense-Q8 is
+  LPDDR5X **bandwidth-bound** even all-GPU), but it clears the usable floor and no longer
+  thrashes the CPU. **~25 GiB headroom** remains → ~90 GiB-weight models should be VRAM-resident
+  with the override.
+- **Guidance:** for hands-off Ollama keep **64 GiB** (auto-offload works, 120B @ ~30 tok/s, 62
+  GiB system RAM free); use **96 GiB only with `num_gpu` + `use_mmap=false`** when you
+  specifically need **>60 GiB models VRAM-resident**. Full memory map + before/after:
+  [`halo-b-maxmodel.md` → 96 GiB re-test](halo-b-maxmodel.md#96-gib-vram-carveout-re-test).
 
 ---
 
