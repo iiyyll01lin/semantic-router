@@ -81,7 +81,8 @@ def _open_stream(url, payload, timeout):
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 (trusted local URL)
 
 
-def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0):
+def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0,
+               num_gpu=-1, use_mmap=None):
     """One streaming /api/generate call. Returns a per-run metrics dict."""
     url = base_url.rstrip("/") + "/api/generate"
     options = {"num_predict": max_tokens, "temperature": 0}
@@ -90,6 +91,16 @@ def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0):
     # spill (the reliability boundary on unified-memory APUs). 0 = server default.
     if num_ctx and int(num_ctx) > 0:
         options["num_ctx"] = int(num_ctx)
+    # num_gpu / use_mmap force FULL VRAM residency, bypassing Ollama's auto layer
+    # estimate (which on a unified-memory APU sizes GPU layers to OS system RAM, so a
+    # big VRAM carveout gets under-used and the model is CPU-offloaded). num_gpu=999
+    # pins every layer on GPU; use_mmap=false loads weights into the carveout instead
+    # of mmap'ing them from disk. Both are sent ONLY when the caller opts in, so the
+    # default probe path is byte-for-byte unchanged (backward compatible).
+    if num_gpu is not None and int(num_gpu) >= 0:
+        options["num_gpu"] = int(num_gpu)
+    if use_mmap is not None:
+        options["use_mmap"] = bool(use_mmap)
     payload = {
         "model": model,
         "prompt": prompt,
@@ -206,7 +217,8 @@ def one_run(args, prompt):
         if args.api == "ollama":
             return run_ollama(
                 args.backend_url, args.model, prompt, args.max_tokens, args.think,
-                args.timeout, getattr(args, "num_ctx", 0)
+                args.timeout, getattr(args, "num_ctx", 0),
+                getattr(args, "num_gpu", -1), getattr(args, "use_mmap", None),
             )
         return run_openai(
             args.backend_url, args.model, prompt, args.max_tokens, args.extra_body, args.timeout
@@ -249,6 +261,17 @@ def main(argv=None):
     p.add_argument("--num-ctx", type=int, default=0,
                    help="ollama: force options.num_ctx (KV-cache size); 0 = server default. "
                         "Used by maxmodel-sweep.sh to drive a footprint past the VRAM carveout.")
+    p.add_argument("--num-gpu", type=int, default=-1,
+                   help="ollama: force options.num_gpu (# layers pinned on GPU); <0 = do not "
+                        "send (server auto-estimate). Set high (e.g. 999) to pin ALL layers on "
+                        "GPU so weights stay resident in the VRAM carveout instead of being "
+                        "CPU-offloaded.")
+    p.add_argument("--use-mmap", dest="use_mmap", action="store_true", default=None,
+                   help="ollama: send options.use_mmap=true (default: send nothing).")
+    p.add_argument("--no-use-mmap", dest="use_mmap", action="store_false", default=None,
+                   help="ollama: send options.use_mmap=false -- load weights straight into the "
+                        "VRAM carveout instead of mmap'ing from disk (pair with --num-gpu 999 to "
+                        "bypass Ollama's system-RAM layer budget). Default sends nothing.")
     p.add_argument("--prompt-tokens", type=int, default=256, help="approx prompt token budget")
     p.add_argument("--prompt", default="", help="explicit prompt (overrides --prompt-tokens)")
     p.add_argument("--runs", type=int, default=3, help="sequential batches of --concurrency streams")
@@ -302,6 +325,8 @@ def main(argv=None):
             "runs": args.runs,
             "concurrency": args.concurrency,
             "num_ctx": args.num_ctx,
+            "num_gpu": args.num_gpu,
+            "use_mmap": args.use_mmap,
         },
         "aggregate": agg,
         "runs_detail": runs,

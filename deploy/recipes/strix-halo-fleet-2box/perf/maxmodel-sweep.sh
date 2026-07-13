@@ -43,6 +43,14 @@
 #   NUM_CTX        force ollama options.num_ctx (KV size) for EVERY rung; 0=default.
 #                  Use a large value (e.g. 65536) to deliberately push a model's
 #                  footprint PAST the VRAM carveout and characterize the GTT spill.
+#   NUM_GPU        force ollama options.num_gpu (# layers pinned on GPU) for EVERY
+#                  rung; empty=off (server auto-estimate). Set 999 to pin ALL layers
+#                  on GPU so a big model stays 100% resident in the VRAM carveout
+#                  instead of being CPU-offloaded (the fix for the 96 GiB-carveout
+#                  "system-RAM layer budget" trap -- see docs/halo-b-maxmodel.md).
+#   USE_MMAP       force ollama options.use_mmap for EVERY rung; empty=off. Set
+#                  'false' (pairs with NUM_GPU=999) to load weights straight into the
+#                  carveout instead of mmap'ing from disk; 'true' to send it true.
 #   PULL_MODELS    1 => `ollama pull` each tag first (default 1)
 #   SAMPLE_INTERVAL  resource sampler seconds       (default 2)
 #   BOX            box label in the output JSON      (default: hostname)
@@ -51,6 +59,10 @@
 # Usage (on the gateway box, stack already up):
 #   bash maxmodel-sweep.sh
 #   SWEEP_TAGS="qwen2.5:32b llama3.1:70b gpt-oss:120b llama3.1:70b-instruct-q8_0" \
+#     bash maxmodel-sweep.sh
+#   # Forced full VRAM residency (bypass the auto layer estimate; 96 GiB carveout):
+#   NUM_GPU=999 USE_MMAP=false NUM_CTX=4096 \
+#     SWEEP_TAGS="llama3.1:70b-instruct-q8_0 qwen2.5:72b-instruct-q8_0" \
 #     bash maxmodel-sweep.sh
 set -uo pipefail
 
@@ -70,10 +82,26 @@ PROMPT_TOKENS="${PROMPT_TOKENS:-256}"
 RUNS="${RUNS:-2}"
 WARMUP="${WARMUP:-1}"
 NUM_CTX="${NUM_CTX:-0}"
+NUM_GPU="${NUM_GPU:-}"
+USE_MMAP="${USE_MMAP:-}"
 PULL_MODELS="${PULL_MODELS:-1}"
 SAMPLE_INTERVAL="${SAMPLE_INTERVAL:-2}"
 BOX="${BOX:-$(hostname 2>/dev/null || echo box)}"
 OUT="${OUT:-${SCRIPT_DIR}/maxmodel-sweep-${BOX}.json}"
+
+# Optional force-residency knobs -> extra tokrate_probe.py flags, applied to EVERY
+# rung. Empty = omit the flag (default probe path, backward compatible).
+PROBE_FORCE_ARGS=()
+if [[ -n "${NUM_GPU}" ]]; then
+  PROBE_FORCE_ARGS+=(--num-gpu "${NUM_GPU}")
+fi
+if [[ -n "${USE_MMAP}" ]]; then
+  case "${USE_MMAP,,}" in
+    false|0|no|off) PROBE_FORCE_ARGS+=(--no-use-mmap) ;;
+    true|1|yes|on)  PROBE_FORCE_ARGS+=(--use-mmap) ;;
+    *) echo "WARNING: USE_MMAP='${USE_MMAP}' unrecognized (use true/false); ignoring" >&2 ;;
+  esac
+fi
 
 WORK="$(mktemp -d "${FLEET_STATE_DIR}/maxmodel-sweep-XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -81,6 +109,9 @@ trap 'rm -rf "${WORK}"' EXIT
 echo "==> [maxmodel-sweep] box=${BOX} work=${WORK}"
 echo "    ollama=${OLLAMA_URL}  oom_min_tps=${OOM_MIN_TPS}  gtt_spill_gib=${GTT_SPILL_GIB}"
 echo "    ascending ladder: ${SWEEP_TAGS}"
+if [[ ${#PROBE_FORCE_ARGS[@]} -gt 0 ]]; then
+  echo "    FORCED residency: num_gpu='${NUM_GPU}' use_mmap='${USE_MMAP}' -> probe args: ${PROBE_FORCE_ARGS[*]}"
+fi
 
 if ! curl -fsS --max-time 5 "${OLLAMA_URL}/api/tags" >/dev/null 2>&1; then
   echo "ERROR: Ollama is not answering on ${OLLAMA_URL} -- bring the backend up first." >&2
@@ -126,6 +157,7 @@ for tag in ${SWEEP_TAGS}; do
       --backend-url "${OLLAMA_URL}" --api ollama --model "${tag}" \
       --max-tokens "${MAX_TOKENS}" --prompt-tokens "${PROMPT_TOKENS}" \
       --num-ctx "${NUM_CTX}" \
+      ${PROBE_FORCE_ARGS[@]+"${PROBE_FORCE_ARGS[@]}"} \
       --runs "${RUNS}" --warmup "${WARMUP}" --label "${tag}" \
       --out "${WORK}/${safe}.probe.json" >/dev/null 2>&1 || true
     "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" stop \
@@ -138,15 +170,23 @@ done
 
 echo "==> [maxmodel-sweep] assembling ${OUT}"
 "${PY_BIN}" - "${WORK}" "${OUT}" "${BOX}" "${OOM_MIN_TPS}" "${GTT_SPILL_GIB}" \
-  "${MAX_TOKENS}" "${PROMPT_TOKENS}" "${RUNS}" "${NUM_CTX}" "${INDEX}" <<'PYEOF'
+  "${MAX_TOKENS}" "${PROMPT_TOKENS}" "${RUNS}" "${NUM_CTX}" "${NUM_GPU}" "${USE_MMAP}" "${INDEX}" <<'PYEOF'
 import json, os, sys
 from datetime import datetime, timezone
 
 (work, out_path, box, oom_min_tps, gtt_spill_gib,
- max_tokens, prompt_tokens, runs, num_ctx, index) = sys.argv[1:11]
+ max_tokens, prompt_tokens, runs, num_ctx, num_gpu, use_mmap, index) = sys.argv[1:13]
 oom_min_tps = float(oom_min_tps)
 gtt_spill_b = float(gtt_spill_gib) * 1024**3
 GIB = 1024**3
+
+# Forced-residency knobs, echoed into the report shape (empty => not forced).
+try:
+    num_gpu_rec = int(num_gpu) if num_gpu.strip() else None
+except ValueError:
+    num_gpu_rec = num_gpu.strip() or None
+use_mmap_rec = use_mmap.strip().lower() if use_mmap.strip() else None
+forced_residency = bool(num_gpu.strip() or use_mmap.strip())
 
 
 def load(name):
@@ -247,8 +287,10 @@ report = {
     "box": box,
     "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "shape": {"max_tokens": int(max_tokens), "prompt_tokens": int(prompt_tokens),
-              "runs": int(runs), "num_ctx": int(num_ctx), "oom_min_tps": oom_min_tps,
-              "gtt_spill_gib": float(gtt_spill_gib)},
+              "runs": int(runs), "num_ctx": int(num_ctx),
+              "num_gpu": num_gpu_rec, "use_mmap": use_mmap_rec,
+              "forced_residency": forced_residency,
+              "oom_min_tps": oom_min_tps, "gtt_spill_gib": float(gtt_spill_gib)},
     "memory_map": {
         "vram_total_b": vram_total, "gtt_total_b": gtt_total, "sys_total_b": sys_total,
         "vram_total_gib": round(vram_total / GIB, 2) if vram_total else None,
