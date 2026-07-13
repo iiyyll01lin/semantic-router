@@ -281,3 +281,42 @@ SWEEP_TAGS="qwen2.5:32b llama3.1:70b gpt-oss:120b" bash perf/maxmodel-sweep.sh
 # Force a footprint past the VRAM carveout to characterize the overflow (CPU offload):
 SWEEP_TAGS="llama3.1:70b-instruct-q8_0" bash perf/maxmodel-sweep.sh   # ~69 GiB weights
 ```
+
+## Quantization frontier (96 GiB, forced-resident)
+
+With the sweep fixed to report residency truthfully (`/api/ps` `size_vram/size`), a
+controlled quant sweep on ONE dense family (`llama3.1:70b-instruct`, forced
+`num_gpu=999`/`use_mmap=false`, `num_ctx=4096`) plus a low-quant big MoE, each scored for
+both decode speed (`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 stratified
+MMLU-Pro questions). **All rungs were 100% VRAM-resident** (`vram-fit`, `size_vram/size`=1.0):
+
+| Model (quant) | Peak VRAM | Decode tok/s | MMLU-Pro (42Q) | Verdict |
+| --- | --- | --- | --- | --- |
+| `llama3.1:70b-instruct-q4_K_M` | 41.0 GiB | **5.1** | **52.4%** | usable / vram-fit |
+| `llama3.1:70b-instruct-q5_K_M` | 47.8 GiB | 4.4 | 50.0% | usable / vram-fit |
+| `llama3.1:70b-instruct-q6_K` | 55.0 GiB | 3.9 | 50.0% | usable / vram-fit |
+| `llama3.1:70b-instruct-q8_0` | 70.7 GiB | 3.0 | 50.0% | usable / vram-fit |
+| `mixtral:8x22b-instruct-v0.1-q3_K_M` (141B MoE) | 64.6 GiB | **10.8** | 42.9% | usable / vram-fit |
+
+Per-rung data: [`perf/quant-frontier/`](../perf/quant-frontier/) (`sweep-*.json` + `quality-*.json`).
+
+- **Decode is LPDDR5X-bandwidth-bound — lower quant is monotonically faster.** Same 70B
+  weights, decode climbs as the footprint shrinks: Q8 **3.0** -> Q6 **3.9** -> Q5 **4.4** ->
+  Q4 **5.1 tok/s** (Q4 is ~**1.7x** Q8), exactly as `tok/s ~= mem-bandwidth / bytes-per-token`
+  predicts.
+- **Q4 is the dense sweet spot.** Across Q4->Q8 the MMLU-Pro accuracy is flat within noise
+  (52.4 / 50.0 / 50.0 / 50.0%) while Q4 decodes ~1.7x faster **and** uses ~30 GiB less VRAM.
+  For a dense 70B on this box, prefer **`Q4_K_M`**, not Q8. (42 questions is a small,
+  indicative sample — treat +/-~7pp as noise, not a real quality ranking.)
+- **MoE is "big and fast".** `mixtral:8x22b` (141B total, ~39B active) at Q3_K_M sits in
+  **64.6 GiB** and decodes **10.8 tok/s** — ~2x the dense 70B-Q4 and ~3.6x the dense 70B-Q8 —
+  because only the active experts are read per token. Its lower MCQ score (42.9%) reflects the
+  base model/quant, not the architecture; the speed is the point.
+- **Sweep verdict fix validated.** Every rung reported `vram-fit` / `usable` /
+  `size_vram/size`=1.0 — including the 3.0 tok/s Q8-70B, which the old logic mislabeled
+  `unusable(slow-spill)`.
+
+**Limitation.** The intended 235B MoE rung (`qwen3:235b-a22b-q2_K`) is **not a published Ollama
+tag** (404), so the run fell back to `mixtral:8x22b` (141B). The largest *measured* resident
+footprint here is therefore **70.7 GiB** (Q8-70B); the ~90 GiB residency headroom (from the
+forced sweep above) remains an extrapolation, not yet measured with a real ~85-90 GiB model.

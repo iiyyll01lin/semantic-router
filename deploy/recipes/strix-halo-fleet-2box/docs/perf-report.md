@@ -45,7 +45,7 @@ below is that sentence, with the numbers.
 | **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
-| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** carveout **Q8-70B (70.7 GiB) becomes VRAM-resident** — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box) | §11, §11.1 **[M]** |
+| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** carveout **Q8-70B (70.7 GiB) becomes VRAM-resident** — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box). Quant sweep: **Q4 ~1.7x faster than Q8 at ~equal quality**; a big MoE stays fast | §11–§11.2 **[M]** |
 | **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093**, 120B MoE **0.30** tok/s/W — the MoE is bigger *and* more efficient/token | §12 **[M]** |
 
 ---
@@ -836,6 +836,33 @@ result is **counter-intuitive and operationally important**:
   the BIOS UMA carveout 96 → 64 GiB (UEFI + reboot — a firmware, not OS, lever). Full memory map,
   decision, usage, and revert steps:
   [`halo-b-maxmodel.md` → 96 GiB re-test](halo-b-maxmodel.md#96-gib-vram-carveout-re-test).
+
+### 11.2 Quantization frontier — footprint x speed x quality (96 GiB) **[M]**
+
+A controlled quant sweep on one dense family (`llama3.1:70b-instruct`, forced-resident
+`num_gpu=999`/`use_mmap=false`) plus a low-quant big MoE, each scored for decode speed
+(`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 MMLU-Pro Q). All rungs were
+**100% VRAM-resident** (`size_vram/size`=1.0):
+
+| Model (quant) | Peak VRAM | Decode tok/s | MMLU-Pro (42Q) |
+| --- | --- | --- | --- |
+| `llama3.1:70b-instruct-q4_K_M` | 41.0 GiB | **5.1** | 52.4% |
+| `llama3.1:70b-instruct-q5_K_M` | 47.8 GiB | 4.4 | 50.0% |
+| `llama3.1:70b-instruct-q6_K` | 55.0 GiB | 3.9 | 50.0% |
+| `llama3.1:70b-instruct-q8_0` | 70.7 GiB | 3.0 | 50.0% |
+| `mixtral:8x22b-instruct-v0.1-q3_K_M` (141B MoE) | 64.6 GiB | **10.8** | 42.9% |
+
+- **Bandwidth-bound: lower quant is monotonically faster** — same 70B, Q8 3.0 -> Q4 5.1 tok/s
+  (~1.7x), because fewer weight bytes are read per token.
+- **Q4 is the dense sweet spot** — Q4->Q8 accuracy is flat within the 42Q noise, but Q4 is
+  ~1.7x faster and ~30 GiB smaller. Prefer **`Q4_K_M`** over Q8 for a dense 70B here.
+- **MoE is big *and* fast** — mixtral 8x22b (141B, ~39B active) Q3 in 64.6 GiB decodes 10.8
+  tok/s (~2x dense-70B-Q4), reading only the active experts per token.
+- **Limitation:** the 235B MoE (`qwen3:235b-a22b-q2_K`) is not a published Ollama tag (404); the
+  run fell back to mixtral 8x22b, so the largest *measured* resident footprint is 70.7 GiB (the
+  ~90 GiB headroom stays an extrapolation). Per-rung data:
+  [`perf/quant-frontier/`](../perf/quant-frontier/) · detail in
+  [`halo-b-maxmodel.md` (quant frontier)](halo-b-maxmodel.md#quantization-frontier-96-gib-forced-resident).
 
 ---
 
