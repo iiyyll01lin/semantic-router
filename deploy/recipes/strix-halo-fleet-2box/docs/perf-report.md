@@ -805,21 +805,36 @@ result is **counter-intuitive and operationally important**:
   VRAM free** — because Ollama sizes GPU layers to **OS-visible system RAM** (now 30 GiB), not
   the VRAM carveout. So `gpt-oss:120b` drops **30.4 → 5.7 tok/s** (59% CPU-offloaded) vs 64 GiB.
 - **Overriding the estimate exploits the carveout.** With **`num_gpu=999` + `use_mmap=false`**
-  both models load **100% on GPU**:
+  each model loads **100% on GPU** (the third rung is the forced-sweep ceiling probe, §below):
 
 | Model | Mode | ollama split | VRAM used | Decode tok/s |
 | --- | --- | --- | --- | --- |
 | `gpt-oss:120b` | forced | **100% GPU** | **60.5 GiB** | **36.8** (> 64 GiB's 30.4) |
-| `llama3.1:70b-instruct-q8_0` (~69 GiB) | forced | **100% GPU** | **70.7 GiB** | **3.0** |
+| `llama3.1:70b-instruct-q8_0` (~70 GiB) | forced | **100% GPU** | **70.7 GiB** | **3.04** |
+| `qwen2.5:72b-instruct-q8_0` (~72 GiB) | forced | **100% GPU** (resident) | **72.6 GiB** | **2.94** (< 3 floor) |
 
 - **Headline: Q8-70B — the first-*unusable* rung at 64 GiB (2.1 tok/s, CPU-offloaded) — is now
   fully VRAM-resident (70.7 GiB, 100% GPU) at 96 GiB.** Decode is still ~3 tok/s (dense-Q8 is
   LPDDR5X **bandwidth-bound** even all-GPU), but it clears the usable floor and no longer
-  thrashes the CPU. **~25 GiB headroom** remains → ~90 GiB-weight models should be VRAM-resident
-  with the override.
-- **Guidance:** for hands-off Ollama keep **64 GiB** (auto-offload works, 120B @ ~30 tok/s, 62
-  GiB system RAM free); use **96 GiB only with `num_gpu` + `use_mmap=false`** when you
-  specifically need **>60 GiB models VRAM-resident**. Full memory map + before/after:
+  thrashes the CPU.
+- **Ceiling (forced sweep to a bigger rung).** Climbing one more dense step —
+  `qwen2.5:72b-instruct-q8_0` (~72 GiB), via the harness now taking `NUM_GPU`/`USE_MMAP` — shows
+  **residency is not the 96 GiB limit; decode bandwidth is.** It stayed **VRAM-resident** (72.6
+  GiB, GTT ~0, **system RAM flat at ~12 GiB = no CPU offload**) with **~23 GiB carveout headroom**,
+  yet decoded **2.94 tok/s** — a hair under the 3 tok/s floor, so the sweep flags it `unusable`
+  (a *speed*-floor artifact, not an overflow). Net: the **residency** ceiling is **≥ ~73 GiB of
+  weights** (headroom to ~90 GiB); the ***usable* dense-Q8** ceiling is **~70 GiB**
+  (`llama3.1:70b-instruct-q8_0`). An MoE like `gpt-oss:120b` stays fast (36.8 tok/s) at any of
+  these sizes. Data: [`maxmodel-sweep-halo-b-96g-forced.json`](../perf/maxmodel-sweep-halo-b-96g-forced.json).
+- **Decision — keep 96 GiB; make residency the default via `-vram` variants.** We **keep the 96
+  GiB carveout**: only it can hold >60 GiB models VRAM-resident (64 GiB cannot), and the 30 GiB
+  system-RAM cost is verified acceptable (smartcity's 14 containers stay healthy co-resident). To
+  dodge the auto-estimate regression, make big models default to full residency with
+  [`perf/make-vram-resident-models.sh`](../perf/make-vram-resident-models.sh) — it bakes
+  `num_gpu 999` + `use_mmap false` into a **non-destructive `<tag>-vram`** variant (persisted on
+  Ollama 0.30.10; `ollama ps` = 100% GPU). **Revert path** (to get hands-off Ollama back): lower
+  the BIOS UMA carveout 96 → 64 GiB (UEFI + reboot — a firmware, not OS, lever). Full memory map,
+  decision, usage, and revert steps:
   [`halo-b-maxmodel.md` → 96 GiB re-test](halo-b-maxmodel.md#96-gib-vram-carveout-re-test).
 
 ---
