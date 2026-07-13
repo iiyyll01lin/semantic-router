@@ -85,6 +85,15 @@ providers:
             currency: USD
           external_model_ids:
             vllm: llama3.2:3b
+        - name: gpt-oss:120b-vram
+          provider_model_id: gpt-oss:120b-vram
+          backend_refs:
+            - name: ollama_local
+              endpoint: ollama:11434
+              protocol: http
+              weight: 1
+          external_model_ids:
+            vllm: gpt-oss:120b-vram
 routing:
     modelCards:
         - name: anthropic/claude-opus-4.6
@@ -156,6 +165,13 @@ routing:
             - cost:free
             - deployment:self_hosted
             - traffic:default
+        - name: gpt-oss:120b-vram
+          context_window_size: 131072
+          description: VRAM-resident gpt-oss 120b (num_gpu/use_mmap baked in via the -vram variant); explicit by-name selection only, not auto-routed.
+          modality: text
+          tags:
+            - tier:local_big
+            - deployment:vram_resident
     signals:
         keywords:
             - name: sensitive_pii_markers

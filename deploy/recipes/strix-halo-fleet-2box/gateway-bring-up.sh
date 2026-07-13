@@ -280,3 +280,14 @@ else
   echo "       Check: vllm-sr status ; docker logs for the router container." >&2
   exit 1
 fi
+
+# Optional: bake VRAM-resident "<tag>-vram" variants (num_gpu 999 + use_mmap false)
+# for the big models ALREADY present on this box, so they default to 100% GPU on a
+# large VRAM carveout (e.g. Halo-B at 96 GiB, where Ollama's auto estimate otherwise
+# CPU-offloads them). Opt-in (default OFF), non-fatal, and it does NOT pull models --
+# make-vram-resident-models.sh skips any tag that is not present.
+if [[ "${MAKE_VRAM_VARIANTS:-0}" == "1" ]]; then
+  echo "==> [gateway] MAKE_VRAM_VARIANTS=1: creating -vram variants for present big models"
+  VERIFY=0 bash "${SCRIPT_DIR}/perf/make-vram-resident-models.sh" \
+    || echo "    WARNING: make-vram-resident-models.sh returned non-zero (continuing)" >&2
+fi
