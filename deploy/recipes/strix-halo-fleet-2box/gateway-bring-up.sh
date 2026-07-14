@@ -203,11 +203,15 @@ echo "==> [gateway] starting Ollama (ROCm) '${OLLAMA_CONTAINER}'"
 if docker ps -a --format '{{.Names}}' | grep -qx "${OLLAMA_CONTAINER}"; then
   docker start "${OLLAMA_CONTAINER}" >/dev/null
 else
+  # OLLAMA_ORIGINS='*' lets ollama accept forwarded browser Origin headers; without it a
+  # browser Origin (browser -> dashboard proxy -> Envoy -> ollama) trips ollama's CORS
+  # allow-list and returns an empty-body 403 on Playground cache-misses. Fine for this
+  # internal PoC; tighten to a specific origin (e.g. the dashboard URL) if desired.
   docker run -d --name "${OLLAMA_CONTAINER}" --network="${NETWORK}" --restart unless-stopped \
     -p "${OLLAMA_PORT}:${OLLAMA_PORT}" -v "${OLLAMA_VOLUME}:/root/.ollama" \
     --device=/dev/kfd --device=/dev/dri --group-add=video \
     --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
-    -e HSA_OVERRIDE_GFX_VERSION=11.5.1 "${OLLAMA_IMAGE}" >/dev/null
+    -e HSA_OVERRIDE_GFX_VERSION=11.5.1 -e OLLAMA_ORIGINS='*' "${OLLAMA_IMAGE}" >/dev/null
 fi
 if ! fleet_wait_http "http://localhost:${OLLAMA_PORT}/api/tags" 30; then
   echo "ERROR: local Ollama did not come up on :${OLLAMA_PORT}" >&2
@@ -269,6 +273,14 @@ echo "    dashboard/grafana admin: ${DASHBOARD_ADMIN_EMAIL} (password hidden; ov
 # VLLM_SR_IMAGE_PULL_POLICY (default 'never' = use only local images) can be set
 # to 'ifnotpresent' so a freshly provisioned box pulls any missing runtime images.
 export VLLM_SR_AMD_PRESERVE_CPU=1
+# Pin THIS box's dashboard to the local origin-fix build, which strips the browser
+# Origin before Envoy/ollama and so avoids the Playground CORS 403. Guarded on the
+# tag being present locally so other boxes (without it) fall back to the default
+# image and are unaffected. With --image-pull-policy ifnotpresent and the tag
+# already local, serve reuses it without a pull.
+if docker image inspect ghcr.io/vllm-project/semantic-router/dashboard:origin-fix >/dev/null 2>&1; then
+  export VLLM_SR_DASHBOARD_IMAGE=ghcr.io/vllm-project/semantic-router/dashboard:origin-fix
+fi
 vllm-sr serve --config "${GATEWAY_CONFIG}" \
   --image-pull-policy "${IMAGE_PULL_POLICY}" --platform amd
 

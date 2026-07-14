@@ -43,9 +43,40 @@ func configureEnvoyProxy(cfg *config.Config) *httputil.ReverseProxy {
 	if err != nil {
 		log.Fatalf("envoy proxy error: %v", err)
 	}
+	stripBrowserOriginForUpstream(envoyProxy)
 	attachRouterReplayResponseRedaction(envoyProxy)
 	log.Printf("Envoy proxy configured: %s → /api/router/v1/chat/completions", cfg.EnvoyURL)
 	return envoyProxy
+}
+
+// stripBrowserOriginForUpstream drops the browser Origin header before the
+// request is forwarded to the model gateway (Envoy → OpenAI-compatible
+// backends such as ollama).
+//
+// The dashboard backend is the CORS boundary for the SPA; everything upstream
+// of it is a server-to-server call. Some model backends enforce a CORS
+// allow-list and reject any request that carries a non-allowlisted Origin with
+// an empty-body 403 (ollama does this by default). Because the base reverse
+// proxy always sets an Origin (the forwarded browser Origin, or the target
+// origin when none is present), every Playground cache-miss reached ollama
+// with an Origin and surfaced as "API error: 403 -". Cache hits are served by
+// the router before reaching the backend, which is why the failure looked
+// intermittent.
+//
+// Response CORS headers for the browser are unaffected: the base director has
+// already captured the client Origin into X-Forwarded-Origin (used by
+// ModifyResponse) before this wrapper runs.
+func stripBrowserOriginForUpstream(reverseProxy *httputil.ReverseProxy) {
+	if reverseProxy == nil {
+		return
+	}
+	baseDirector := reverseProxy.Director
+	reverseProxy.Director = func(r *http.Request) {
+		if baseDirector != nil {
+			baseDirector(r)
+		}
+		r.Header.Del("Origin")
+	}
 }
 
 func registerRouterAPIProxy(
