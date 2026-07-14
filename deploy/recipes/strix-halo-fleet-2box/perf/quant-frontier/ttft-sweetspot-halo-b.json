@@ -1,0 +1,251 @@
+{
+  "box": "halo-b",
+  "cache_overlay_taskb": {
+    "backend_independent_hit_costs": {
+      "note": "A cache HIT never invokes the LLM backend, so hit TTFT is backend-independent and applies to a llama.cpp-backed alias too.",
+      "ollama_path_fallback": {
+        "hit_rate": 0.667,
+        "origin": "prior bestcfg-matrix-halo-b.json ollama-resident-p8 overlay == task-cited fallback",
+        "ttft_hit_exact_ms": 689.2,
+        "ttft_hit_semantic_ms": 658.6,
+        "ttft_miss_ms": 1040.7,
+        "ttft_saved_ms": 351.5
+      },
+      "qwen_path_this_session": {
+        "hit_rate": 1.0,
+        "note": "model:auto->fast_qa->qwen/qwen3.5-rocm->ollama(llama3.2:3b); miss inflated by ollama cold-load; hit costs same order as fallback",
+        "ttft_hit_exact_ms": 816.6,
+        "ttft_hit_semantic_ms": 962.4,
+        "ttft_miss_ms": 25444.2
+      }
+    },
+    "fallback_used": "ollama overlay: miss 1,041 ms -> exact-hit 689 ms (saved 351 ms), semantic-0.92-hit 659 ms (server-independent, task-sanctioned).",
+    "llamacpp_direct_latency_ms": {
+      "gen16_http200_total_ms": 865,
+      "note": "direct llama-server 16-tok chat compute; the miss-side cost a llama.cpp-backed cache would pay (~0.6-0.9s), well under the ollama cold miss",
+      "predict_ms": 298,
+      "prompt_ms": 568
+    },
+    "llamacpp_via_router": {
+      "exact_hit_rate": 0.0,
+      "note": "identical to the prior authoritative bestcfg-matrix-halo-b.json llamacpp overlay (also 0% / null)",
+      "reproduced_prior_bestcfg_matrix_run": true,
+      "semantic_hit_rate": 0.0,
+      "ttft_hit_exact_ms": null,
+      "ttft_hit_semantic_ms": null,
+      "ttft_miss_ms": null
+    },
+    "objective": "llama.cpp-specific semantic-cache repeat-TTFT (miss -> exact-repeat-hit -> semantic-0.92-hit) through the router path",
+    "result": "not_obtainable_via_router_endpoint_repoint",
+    "root_cause": "The router's model->backend binding egresses to a FIXED Envoy cluster keyed by backend_ref name (ollama_local -> ollama:11434, llm-katan -> llm-katan:8000); there is no llama-server cluster. repoint_backend.py rewrites the endpoint STRING in runtime-config.yaml and the router hot-reloads (config_reloaded fires), but traffic still goes to the ollama cluster. With the alias's external model id set to 'ggml-org/gpt-oss-120b-GGUF' (which ollama has not pulled) every miss returns HTTP 404 not_found from ollama, so no completion is produced or cached -> 0% hits / null TTFT. llama.cpp itself IGNORES the OpenAI model field (verified: bogus model -> HTTP 200) and serves gpt-oss-120b correctly when called directly.",
+    "router_health": "no OOM (exit 137); router stayed up (exit=0) through all repoint/overlay/restore cycles; config hash held at a78aebc5fd5f...a244cf; every run restored the original runtime-config (no leftover repoint/cache/threshold injection)."
+  },
+  "generated_utc": "2026-07-14T13:54:22Z",
+  "host": "test001-stxh",
+  "known_reference": {
+    "note": "Prior known points on the winning config (for cross-check).",
+    "parallel_1_single_tps": 52.7,
+    "parallel_1_ttft_ms_c1": 85,
+    "parallel_1_ttft_p95_ms_c8": 17800,
+    "parallel_8_aggregate_tps_c8": 95.2,
+    "parallel_8_ttft_p95_ms_c8": 3000
+  },
+  "model": "gpt-oss-120b MXFP4 GGUF (ggml-org/gpt-oss-120b-GGUF)",
+  "operating_points": [
+    {
+      "aggregate_tps": 50.34725200588099,
+      "concurrency": 1,
+      "decode_tps_mean": 52.1041722320617,
+      "is_operating_point": true,
+      "ok_runs": 8,
+      "parallel": 1,
+      "single_stream_decode_tps": 52.06916628097281,
+      "success_rate": 1.0,
+      "total_runs": 8,
+      "ttft_mean_ms": 85.5543631259934,
+      "ttft_p50_ms": 85.07943300355691,
+      "ttft_p95_ms": 87.2952209901996,
+      "wall_s": 20.33874658899731
+    },
+    {
+      "aggregate_tps": 50.95676069017575,
+      "concurrency": 2,
+      "decode_tps_mean": 29.51662182708804,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 2,
+      "single_stream_decode_tps": 23.99083060789168,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 294.48563999994803,
+      "ttft_p50_ms": 199.3365419912152,
+      "ttft_p95_ms": 1044.7101340105291,
+      "wall_s": 40.19093781200354
+    },
+    {
+      "aggregate_tps": 57.59257290876266,
+      "concurrency": 4,
+      "decode_tps_mean": 16.26251607090648,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 4,
+      "single_stream_decode_tps": 16.24259155295148,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 997.4161549989731,
+      "ttft_p50_ms": 340.20037201116793,
+      "ttft_p95_ms": 3150.652809999883,
+      "wall_s": 35.560140771005535
+    },
+    {
+      "aggregate_tps": 79.05752866711636,
+      "concurrency": 8,
+      "decode_tps_mean": 11.878195222477528,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 8,
+      "single_stream_decode_tps": 11.91824077388251,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 2154.005581061938,
+      "ttft_p50_ms": 3541.379924994544,
+      "ttft_p95_ms": 3742.0962960022734,
+      "wall_s": 25.905186191987013
+    }
+  ],
+  "parallels_tested": [
+    1,
+    2,
+    4,
+    8
+  ],
+  "points": [
+    {
+      "aggregate_tps": 50.34725200588099,
+      "concurrency": 1,
+      "decode_tps_mean": 52.1041722320617,
+      "is_operating_point": true,
+      "ok_runs": 8,
+      "parallel": 1,
+      "single_stream_decode_tps": 52.06916628097281,
+      "success_rate": 1.0,
+      "total_runs": 8,
+      "ttft_mean_ms": 85.5543631259934,
+      "ttft_p50_ms": 85.07943300355691,
+      "ttft_p95_ms": 87.2952209901996,
+      "wall_s": 20.33874658899731
+    },
+    {
+      "aggregate_tps": 49.9414548931685,
+      "concurrency": 1,
+      "decode_tps_mean": 51.88091795045331,
+      "is_operating_point": false,
+      "ok_runs": 8,
+      "parallel": 2,
+      "single_stream_decode_tps": 51.80288905203908,
+      "success_rate": 1.0,
+      "total_runs": 8,
+      "ttft_mean_ms": 95.71762825180485,
+      "ttft_p50_ms": 89.01179100212175,
+      "ttft_p95_ms": 143.6930790077895,
+      "wall_s": 20.504008186995634
+    },
+    {
+      "aggregate_tps": 50.95676069017575,
+      "concurrency": 2,
+      "decode_tps_mean": 29.51662182708804,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 2,
+      "single_stream_decode_tps": 23.99083060789168,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 294.48563999994803,
+      "ttft_p50_ms": 199.3365419912152,
+      "ttft_p95_ms": 1044.7101340105291,
+      "wall_s": 40.19093781200354
+    },
+    {
+      "aggregate_tps": 30.651649299018672,
+      "concurrency": 1,
+      "decode_tps_mean": 31.85642976876969,
+      "is_operating_point": false,
+      "ok_runs": 8,
+      "parallel": 4,
+      "single_stream_decode_tps": 30.22276396960769,
+      "success_rate": 1.0,
+      "total_runs": 8,
+      "ttft_mean_ms": 137.63750449834333,
+      "ttft_p50_ms": 146.25519599940162,
+      "ttft_p95_ms": 148.2185710046906,
+      "wall_s": 33.407663973004674
+    },
+    {
+      "aggregate_tps": 57.59257290876266,
+      "concurrency": 4,
+      "decode_tps_mean": 16.26251607090648,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 4,
+      "single_stream_decode_tps": 16.24259155295148,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 997.4161549989731,
+      "ttft_p50_ms": 340.20037201116793,
+      "ttft_p95_ms": 3150.652809999883,
+      "wall_s": 35.560140771005535
+    },
+    {
+      "aggregate_tps": 32.12122177898772,
+      "concurrency": 1,
+      "decode_tps_mean": 33.28606072941787,
+      "is_operating_point": false,
+      "ok_runs": 8,
+      "parallel": 8,
+      "single_stream_decode_tps": 32.721836430272724,
+      "success_rate": 1.0,
+      "total_runs": 8,
+      "ttft_mean_ms": 131.32132862665458,
+      "ttft_p50_ms": 133.75894899945706,
+      "ttft_p95_ms": 139.50627300073393,
+      "wall_s": 31.8792356979975
+    },
+    {
+      "aggregate_tps": 79.05752866711636,
+      "concurrency": 8,
+      "decode_tps_mean": 11.878195222477528,
+      "is_operating_point": true,
+      "ok_runs": 16,
+      "parallel": 8,
+      "single_stream_decode_tps": 11.91824077388251,
+      "success_rate": 1.0,
+      "total_runs": 16,
+      "ttft_mean_ms": 2154.005581061938,
+      "ttft_p50_ms": 3541.379924994544,
+      "ttft_p95_ms": 3742.0962960022734,
+      "wall_s": 25.905186191987013
+    }
+  ],
+  "schema": "ttft-sweetspot/v1",
+  "served_model_id": "ggml-org/gpt-oss-120b-GGUF",
+  "server": "llama.cpp llama-server ROCm (-ngl 999 resident, --no-mmap, --jinja)",
+  "shape": {
+    "api": "openai",
+    "max_tokens": 128,
+    "probe": "perf/tokrate_probe.py --api openai",
+    "prompt_tokens": 256,
+    "tokrate_deadline_s": 120,
+    "ttft_gate_ms": 2000.0
+  },
+  "sweet_spot": {
+    "gate_break_parallel": 4,
+    "observations": [
+      "Aggregate is nearly flat from --parallel 1 to 2 (50.3 -> 51.0 tok/s, +1.2%): the MXFP4 120B is memory-bandwidth-bound, so concurrent streams split bandwidth (~24.0 tok/s each at c2). Real aggregate gain only appears at --parallel 8 (79.1 tok/s @ c8) but that violates the latency gate (p95 3742.1 ms).",
+      "Single-stream decode @ c1 falls from 52.1 tok/s (--parallel 1) to 32.7 tok/s (--parallel 8): raising --parallel adds llama.cpp slot/batch overhead that penalizes even a lone request, so over-provisioning slots hurts the latency-critical single-user path."
+    ],
+    "parallel": 2,
+    "rationale": "--parallel 2 is the largest slot count whose TTFT p95 @ c2 (1044.7 ms) holds the <= 2000 ms interactive gate (51.0 tok/s aggregate, ~24.0 tok/s per stream). --parallel 4 is where it breaks (TTFT p95 3150.7 ms > gate).",
+    "throughput_ceiling_parallel": 8,
+    "ttft_gate_ms": 2000.0
+  }
+}

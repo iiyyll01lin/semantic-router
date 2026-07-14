@@ -1,0 +1,13 @@
+{
+  "cases": 3,
+  "cell_id": "llamacpp-resident-p8",
+  "exact_hit_rate": 1.0,
+  "schema": "bestcfg-cache-overlay/v1",
+  "semantic_hit_rate": 1.0,
+  "server": "llamacpp",
+  "threshold": "0.92",
+  "ttft_hit_exact_ms": 816.633379664078,
+  "ttft_hit_semantic_ms": 962.433558665604,
+  "ttft_miss_ms": 25444.239786001464,
+  "ttft_saved_ms": 24627.606406337385
+}

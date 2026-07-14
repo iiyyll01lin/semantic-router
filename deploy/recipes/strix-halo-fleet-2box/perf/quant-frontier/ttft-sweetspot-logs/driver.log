@@ -1,0 +1,29 @@
+[2026-07-14T13:17:38Z] SWEEP_START pid=1346844 ngl=999 no-mmap resident cached-GGUF
+[2026-07-14T13:17:38Z] === bring up --parallel 1 ===
+[2026-07-14T13:18:23Z] llama-server healthy p=1 after 46s
+[2026-07-14T13:18:23Z] served model id = ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:18:23Z] probe p=1 concurrency=1 runs=8
+[2026-07-14T13:18:47Z] probe OK p=1 c=1
+[2026-07-14T13:18:47Z] === bring up --parallel 2 ===
+[2026-07-14T13:19:23Z] llama-server healthy p=2 after 36s
+[2026-07-14T13:19:23Z] served model id = ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:19:23Z] probe p=2 concurrency=1 runs=8
+[2026-07-14T13:19:47Z] probe OK p=2 c=1
+[2026-07-14T13:19:47Z] probe p=2 concurrency=2 runs=8
+[2026-07-14T13:20:27Z] probe OK p=2 c=2
+[2026-07-14T13:20:27Z] === bring up --parallel 4 ===
+[2026-07-14T13:21:17Z] llama-server healthy p=4 after 50s
+[2026-07-14T13:21:17Z] served model id = ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:21:17Z] probe p=4 concurrency=1 runs=8
+[2026-07-14T13:21:56Z] probe OK p=4 c=1
+[2026-07-14T13:21:56Z] probe p=4 concurrency=4 runs=4
+[2026-07-14T13:22:31Z] probe OK p=4 c=4
+[2026-07-14T13:22:31Z] === bring up --parallel 8 ===
+[2026-07-14T13:23:19Z] llama-server healthy p=8 after 48s
+[2026-07-14T13:23:19Z] served model id = ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:23:19Z] probe p=8 concurrency=1 runs=8
+[2026-07-14T13:23:56Z] probe OK p=8 c=1
+[2026-07-14T13:23:56Z] probe p=8 concurrency=8 runs=2
+[2026-07-14T13:24:22Z] probe OK p=8 c=8
+[2026-07-14T13:24:22Z] === teardown llama-server ===
+[2026-07-14T13:24:22Z] SWEEP_DONE

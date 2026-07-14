@@ -1,0 +1,19 @@
+[2026-07-14T13:39:22Z] TASKB2_START pid=1368174 alias=qwen/qwen3.5-rocm
+[2026-07-14T13:39:22Z] llama-server healthy
+[2026-07-14T13:39:22Z] llama-server served id: ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:39:22Z] repoint qwen/qwen3.5-rocm -> llama-server:8080 (ggml-org/gpt-oss-120b-GGUF)
+    repointed qwen/qwen3.5-rocm -> llama-server:8080 (ggml-org/gpt-oss-120b-GGUF)
+[2026-07-14T13:39:40Z] router reloaded after repoint
+[2026-07-14T13:39:43Z] routing pre-check (llama reqs before=0):
+[2026-07-14T13:39:47Z] llama reqs after precheck=0 (delta 0)
+[2026-07-14T13:39:47Z] running cache-overlay (server=llamacpp, threshold=0.92)
+[2026-07-14T13:40:35Z] cache-overlay OK
+[2026-07-14T13:40:35Z] llama reqs total after overlay=0 (overlay delta 0)
+[2026-07-14T13:40:35Z] router state: running exit=0
+[2026-07-14T13:40:35Z] TASKB2_DONE
+[2026-07-14T13:40:35Z] final config hash: {"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+[2026-07-14T13:40:35Z] HASH_OK
+[2026-07-14T13:40:35Z] restore: writing original runtime-config back (same inode)
+[2026-07-14T13:40:39Z] restore: config hash now {"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+[2026-07-14T13:40:39Z] restore: clean (no cache injection)
+[2026-07-14T13:40:39Z] restore: no llama-server endpoint remains (repoint undone)

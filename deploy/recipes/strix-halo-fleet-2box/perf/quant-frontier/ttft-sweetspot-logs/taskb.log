@@ -1,0 +1,40 @@
+[2026-07-14T13:32:31Z] TASKB_START pid=1358375
+[2026-07-14T13:32:31Z] waiting for llama-server /health ...
+[2026-07-14T13:32:31Z] llama-server healthy after 2s
+[2026-07-14T13:32:31Z] llama-server served model id: ggml-org/gpt-oss-120b-GGUF
+[2026-07-14T13:32:31Z] repoint google/gemini-2.5-flash-lite -> llama-server:8080 (ggml-org/gpt-oss-120b-GGUF)
+    repointed google/gemini-2.5-flash-lite -> llama-server:8080 (ggml-org/gpt-oss-120b-GGUF)
+[2026-07-14T13:32:50Z] router reloaded after repoint
+[2026-07-14T13:32:53Z] routing pre-check (model=auto, debug headers):
+    hdr: x-vsr-schema-version: 2
+    hdr: x-vsr-response-path: upstream
+    hdr: x-vsr-client-protocol: openai
+    hdr: x-vsr-upstream-protocol: openai
+    hdr: x-vsr-selected-decision: fast_qa
+    hdr: x-vsr-selected-confidence: 0.8555
+    hdr: x-vsr-selected-algorithm: single
+    hdr: x-vsr-selected-model: qwen/qwen3.5-rocm
+    hdr: x-vsr-replay-id: 9578b9e6cdd6c9e8200b336efb152591
+    hdr: x-vsr-selected-reasoning: off
+    hdr: x-vsr-injected-system-prompt: false
+    hdr: x-vsr-matched-embeddings: fast_qa_en
+    hdr: x-vsr-matched-domains: other
+    hdr: x-vsr-matched-language: en
+    hdr: x-vsr-matched-context: short_context
+    hdr: x-vsr-context-token-count: 12
+    hdr: x-vsr-matched-complexity: general_reasoning:medium,agentic_delivery:medium
+    hdr: x-vsr-matched-projections: balance_simple,verification_standard,feedback_correction_standard,feedback_clarification_standard,urgency_standard
+    hdr: server: envoy
+/home/test001/ttft-sweetspot/taskb.sh: line 75: 0
+0: syntax error in expression (error token is "0")
+[2026-07-14T13:33:11Z] running bestcfg_matrix.py cache-overlay (server=llamacpp, threshold=0.92)
+[2026-07-14T13:37:43Z] cache-overlay OK
+[2026-07-14T13:37:43Z] llama-server chat requests total-tail: 0
+0
+[2026-07-14T13:37:43Z] router state: running exit=0
+[2026-07-14T13:37:43Z] TASKB_DONE
+[2026-07-14T13:37:44Z] final config hash: {"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+[2026-07-14T13:37:44Z] HASH_OK (matches expected)
+[2026-07-14T13:37:44Z] restore: writing original runtime-config back (same inode)
+[2026-07-14T13:37:48Z] restore: config hash now {"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+[2026-07-14T13:37:48Z] restore: no semantic-cache injection remains (clean)

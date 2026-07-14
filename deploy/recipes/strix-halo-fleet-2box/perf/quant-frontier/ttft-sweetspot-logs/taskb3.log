@@ -1,0 +1,16 @@
+applied: repoint qwen/qwen3.5-rocm->llama-server:8080 + cache@0.92 (hash {"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+)
+{"case": 0, "sel_model": "?", "miss_ms": 792.7300869923783, "miss_was_hit": false, "exact_ms": 715.5015250027645, "exact_hit": false, "exact_sim": null, "sem_ms": 673.6833920003846, "sem_hit": false, "sem_sim": null}
+{"case": 1, "sel_model": "?", "miss_ms": 717.9721600114135, "miss_was_hit": false, "exact_ms": 696.0243600042304, "exact_hit": false, "exact_sim": null, "sem_ms": 749.9227679945761, "sem_hit": false, "sem_sim": null}
+{"case": 2, "sel_model": "?", "miss_ms": 700.535513999057, "miss_was_hit": false, "exact_ms": 708.0479190044571, "exact_hit": false, "exact_sim": null, "sem_ms": 739.5721479988424, "sem_hit": false, "sem_sim": null}
+WROTE /home/test001/ttft-sweetspot/cache-llamacpp.json
+{
+  "ttft_miss_ms": 737.0792536676163,
+  "ttft_hit_exact_ms": null,
+  "ttft_hit_semantic_ms": null,
+  "ttft_saved_ms": null,
+  "exact_hit_rate": 0.0,
+  "semantic_hit_rate": 0.0
+}
+RESTORED original config; hash={"hash":"a78aebc5fd5fa570fadb9e000abcef3072abf02813762fa968aac73b9fa244cf"}
+ cache_injection_present=False

@@ -993,7 +993,7 @@ run log = [`bestcfg-matrix-halo-b.run.log`](../perf/quant-frontier/bestcfg-matri
 
 | cell (server · residency · NUM_PARALLEL) | status | c1 decode tok/s | c8 agg tok/s | TTFT p95 @ c8 | tok/s per W | peak VRAM |
 | --- | --- | --- | --- | --- | --- | --- |
-| **llamacpp · resident · 8** ★WIN | **loaded** | **52.9** | **95.2** | **2,976 ms** | **0.641** | **59.2 GiB** |
+| **llamacpp · resident · 8** ★WIN | **loaded** | **52.9** | **95.2**⁸ | **2,976 ms** | **0.641** | **59.2 GiB** |
 | ollama · resident · 8 | loaded | 36.6 | 65.7 | n/a¹ | 0.414 | 69.6 GiB |
 | llamacpp · resident · 1 | loaded | 52.7 | 50.7 | 17,773 ms² | 0.486 | 59.1 GiB |
 | ollama · resident · 1 | loaded | 36.5 | 35.5 | n/a¹ | 0.410 | 65.0 GiB |
@@ -1023,13 +1023,29 @@ disk-thrash artifact:** ~⅔ of a ~65 GiB model cannot fit in ~30 GiB system RAM
 no tokens (the naive-default trap, honestly, minus the disk confound).
 ⁶ `ollama-auto-p8`: **warm load failed (OOM)** — the plain-tag auto estimate could not bring the model
 up at `NUM_PARALLEL=8` on ~30 GiB system RAM.
-⁷ the llamacpp cache overlay recorded **no** numbers: the driver tears the `llama-server` container down
-after the llamacpp cells, before the overlay phase, so all three overlay cases missed against a
-now-absent backend. The cache overlay measures the router/embedding first-token tax removed on repeats
-(largely server-independent), so the ollama figures above are representative.
+⁷ the llamacpp cache overlay recorded **no** numbers (0% hit-rate, null TTFT) — and the root cause is
+**not** the earlier teardown-timing theory. The router egresses to **fixed Envoy clusters keyed by
+`backend_ref` name** (`ollama_local` → `ollama:11434`, `llm-katan` → `llm-katan:8000`); there is **no
+`llama-server` cluster**. `repoint_backend.py` rewrites the endpoint *string* in `runtime-config.yaml`
+and the router hot-reloads (`config_reloaded` fires), but traffic still egresses to the **ollama**
+cluster. With the alias's external model id set to `ggml-org/gpt-oss-120b-GGUF` (which ollama never
+pulled) every overlay miss returns **HTTP 404 not_found** from ollama, so nothing is completed or
+cached → 0% hits (reproduced this session; llama.cpp itself ignores the OpenAI model field and serves
+the 120B correctly when called directly). The deferred-teardown harness fix (commit 35e5d39e) is
+reasonable but **insufficient on its own**: a real llama.cpp cache overlay needs a **`llama-server`
+Envoy cluster / `backend_ref`** added to the router. The ollama fallback figures stand in because a
+cache **HIT never calls the LLM**, so hit-side TTFT is backend-independent.
+
+⁸ **`--parallel 8` c8 aggregate is run-to-run / co-residency variable — read it as ≈80–95 tok/s, not
+one hard number.** The dedicated 2026-07-14 best-config matrix (results table above) measured this cell
+at **95.2 tok/s** aggregate / 52.9 tok/s single-stream @ c1; the later co-resident interactive-TTFT
+sweep re-measured the *same* operating point at **79.1 tok/s** @ c8 and a lower **~32.7 tok/s
+single-stream @ c1** (heavier co-residency + llama.cpp slot/batch overhead). Both are real
+measurements; the ≈79–95 tok/s spread is the honest envelope. Raw:
+[`ttft-sweetspot-halo-b.json`](../perf/quant-frontier/ttft-sweetspot-halo-b.json).
 
 > **Winner:** `gpt-oss-120b` (MXFP4) on **llama.cpp + resident (`-ngl 999`) + `--parallel 8`** measured
-> **95.2 tok/s aggregate @ c8** / **0.641 tok/s per W** / TTFT p95 **2,976 ms** (an excellent **85 ms**
+> **95.2 tok/s aggregate @ c8**⁸ / **0.641 tok/s per W** / TTFT p95 **2,976 ms** (an excellent **85 ms**
 > p95 @ c1), **VRAM-resident** (peak **59.2 GiB VRAM**, 0.02 GiB GTT, only 3.9 GiB system RAM — ~10 GiB
 > leaner than ollama's `-vram` variant). This is a **server-axis flip from the July-14 06:45 run**: once
 > the disk/download confound was removed, llama.cpp not only *loads* the MXFP4 120B on gfx1151 but is the
@@ -1043,27 +1059,46 @@ now-absent backend. The cache overlay measures the router/embedding first-token 
 > 0.641 tok/s/W, TTFT p95 2976 ms [NOTE: no cell met the TTFT p95<=2000ms gate; winner is
 > best-throughput]`.)
 
-**Deploy recommendation — two scenarios, one server.** Both use **llama.cpp (ROCm) + `-ngl 999`
-full-resident + semantic cache 0.92**; the *only* knob that changes is `--parallel`:
+**Deploy recommendation — one server, size `--parallel` to your concurrency.** All rows use
+**llama.cpp (ROCm) + `-ngl 999 --no-mmap` full-resident + semantic cache 0.92**; the *only* knob that
+changes is `--parallel`. Each row is measured at its **slot-matched operating point (client
+concurrency = `--parallel`)** — the realistic fully-loaded point for that slot count — from the
+co-resident interactive-TTFT sweep (raw =
+[`ttft-sweetspot-halo-b.json`](../perf/quant-frontier/ttft-sweetspot-halo-b.json), logs =
+[`ttft-sweetspot-logs/`](../perf/quant-frontier/ttft-sweetspot-logs/); power was not re-sampled at the
+c2 / c4 points):
 
-| Scenario | `--parallel` | single-stream (c1) | aggregate (c8) | TTFT | tok/s per W | use for |
+| Scenario | `--parallel` @ concurrency | per-stream decode | aggregate | TTFT p50 / p95 | tok/s per W | use for |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Low-latency — single-user, interactive** | `1` | **52.7 tok/s** | 50.7 (serialized) | **~85 ms @ c1** | 0.486 | chat, IDE completion, single user |
-| **High-throughput — multi-user** ★ (the winner) | `8` | 52.9 tok/s | **95.2 tok/s** | ~85 ms @ c1 · p95 ~3.0 s @ c8 | **0.641** | multi-user, batch, backend service |
-| _sweet-spot (pending)_ | `2` | _measurement pending_ | _measurement pending_ | _measurement pending_ | _measurement pending_ | balanced — a few concurrent users |
-| _sweet-spot (pending)_ | `4` | _measurement pending_ | _measurement pending_ | _measurement pending_ | _measurement pending_ | balanced — moderate concurrency |
+| **Low-latency — 1 user** | `1` @ c1 | **52.1 tok/s** | 50.3 tok/s | **85 / 87 ms** | 0.486 | one latency-critical user: chat, IDE completion |
+| **Interactive knee** ★ (sweet spot) | `2` @ c2 | 24.0 tok/s | 51.0 tok/s | **199 ms / 1.04 s** | — | a few concurrent interactive users (holds the ≤2 s gate) |
+| Balanced — moderate concurrency | `4` @ c4 | 16.2 tok/s | 57.6 tok/s | 340 ms / **3.15 s** | — | moderate concurrency — **breaks the 2 s TTFT gate** |
+| **High-throughput — batch** | `8` @ c8 | 11.9 tok/s | **79.1 tok/s** (matrix run: **95.2**)⁸ | 3.54 s / 3.74 s | 0.641 | pure batch / concurrency capacity (accepts multi-second TTFT) |
 
-- **Low-latency caveat:** `--parallel 1` gives the fastest first token (~85 ms) but **serializes under
-  concurrency** — the one decode slot queues eight c8 prompts and TTFT p95 balloons to **~17.8 s**
-  (footnote ² above). Use it only for a strict single-user path.
-- **Why `--parallel 8` is the default:** it costs a lone user **almost nothing** — the same
-  single-stream decode (52.9 vs 52.7 tok/s) and the same ~85 ms first token @ c1 — it only splits the
-  KV cache 8 ways (→ a shorter max context per request), while adding **~1.88× aggregate** the moment a
-  second user arrives and remaining the **most power-efficient** cell (0.641 tok/s/W). Prefer
-  `--parallel 1` only for a strict single-user path that also needs maximum single-request context.
-- **`--parallel 2` / `4` (sweet-spot rows): measurement pending** — a sibling on-hardware run is
-  measuring these two intermediate points; the rows above are placeholders and will be filled in with
-  the real numbers (not inferred from the 1 / 8 endpoints).
+**Sweet-spot read (co-resident TTFT sweep — the honest caveats matter more than the knee):**
+
+- **`--parallel 2` is the interactive knee.** It is the largest slot count whose TTFT p95 holds the
+  ~2 s interactive gate — **1.04 s @ c2**. `--parallel 4` breaks it (**3.15 s @ c4**) and `--parallel 8`
+  is well past it (**3.74 s @ c8**). For concurrent *interactive* use, two slots is the ceiling.
+- **The MXFP4 120B is memory-bandwidth-bound → concurrency ≠ throughput.** Aggregate is nearly **flat
+  from `--parallel 1 → 2`: 50.3 → 51.0 tok/s (+1.4%)** — a second stream just splits the same memory
+  bandwidth (~24 tok/s each @ c2). A real aggregate gain only appears at **`--parallel 8` (~79 tok/s
+  @ c8 here)**, and that **blows the latency gate** (p95 3.74 s). Read `--parallel 8` as **concurrency
+  capacity, not a throughput multiplier**.
+- **Single-stream decode DEGRADES as slots rise — even for a lone request (c1):** **52 tok/s
+  (`--parallel 1`) → ~30–33 tok/s (`--parallel 4` / `8`)**, from llama.cpp per-slot/batch overhead, so
+  over-provisioning `--parallel` actively **hurts the single-user path**. (This co-resident sweep
+  therefore revises the §11.4 matrix run's `--parallel 8` single-stream of 52.9 tok/s @ c1 down to
+  ~32.7 tok/s @ c1 — footnote ⁸.)
+- **Net guidance — size `--parallel` to expected concurrency, never above it:**
+  - **1 latency-critical user → `--parallel 1`** — 52 tok/s, 85 ms first token.
+  - **A few concurrent interactive users → `--parallel 2`** — headroom under the 2 s gate at ~the same
+    aggregate (~51 tok/s); each stream ~24 tok/s.
+  - **Pure batch throughput → `--parallel 8`** — ~79–95 tok/s aggregate but multi-second TTFT (p95
+    3.7 s); use only where first-token latency does not matter.
+- **`--parallel 1` still serializes under real concurrency:** the §11.4 matrix measured TTFT p95
+  **~17.8 s** when eight clients queue on one slot (`--parallel 1` @ c8, footnote ²) — so it is a
+  strict single-user setting, not a fallback under load.
 
 **What this single run shows (no stitching):**
 
@@ -1091,8 +1126,10 @@ full-resident + semantic cache 0.92**; the *only* knob that changes is `--parall
 - **Cache overlay (router path, ollama winner cell):** a repeated exact query drops from **1,041 ms →
   689 ms** TTFT (**saved ~351 ms, ~34%**); a 0.92 semantic paraphrase hit lands at **659 ms**. This is
   the routing/embedding first-token tax removed on repeats, measured live through the router. (The
-  llamacpp overlay recorded nothing — its backend is torn down before the overlay phase; the tax is
-  server-independent, so the ollama figure stands in.)
+  llamacpp overlay again recorded **nothing** — *not* a teardown-timing artifact but because the router
+  egresses to **fixed Envoy clusters** with no `llama-server` cluster, so repointed overlay requests hit
+  ollama with an unpulled model id → HTTP 404 → 0% cached; see footnote ⁷. Because a cache **hit never
+  calls the LLM**, the ollama figures are the server-independent stand-in.)
 
 **Risks handled in-run (no fabricated numbers):**
 
@@ -1129,6 +1166,19 @@ full-resident + semantic cache 0.92**; the *only* knob that changes is `--parall
   restored, no leftover cache/threshold injection), ollama's `OLLAMA_NUM_PARALLEL` was restored to
   default, and the `llama-server` container removed. The resident cells were unaffected (they live in
   the 96 GiB VRAM carveout, not system RAM).
+- **Cache-overlay measurement gap — root-caused this session (superseding the teardown-timing theory).**
+  The llama.cpp semantic-cache overlay again recorded **0% hits / null TTFT**, but the cause is **not**
+  early backend teardown. The router binds each model to a **fixed Envoy cluster keyed by `backend_ref`**
+  (`ollama_local` → `ollama:11434`, `llm-katan` → `llm-katan:8000`) — there is **no `llama-server`
+  cluster**. [`repoint_backend.py`](../perf/repoint_backend.py) rewrites the endpoint string and the
+  router hot-reloads (`config_reloaded` fires, config hash `a78aeb…` restored), but egress still goes to
+  **ollama**; with the alias's model id set to `ggml-org/gpt-oss-120b-GGUF` (never pulled by ollama)
+  every miss returns **HTTP 404**, so nothing caches (reproduced live; router stayed up, exit 0, no
+  OOM). The deferred-teardown fix (commit 35e5d39e) is **necessary but insufficient**; a faithful
+  llama.cpp overlay requires adding a **`llama-server` Envoy cluster / `backend_ref`**. Because a cache
+  **hit never invokes the LLM**, the ollama overlay numbers (miss 1,041 → exact-hit 689 ms, saved
+  351 ms; semantic-0.92 hit 659 ms) remain the server-independent representative. Raw:
+  [`ttft-sweetspot-halo-b.json`](../perf/quant-frontier/ttft-sweetspot-halo-b.json) (`cache_overlay_taskb`).
 - **Offline-verified, then run on hardware.** All code paths are exercised with mock backends and no
   ROCm/Docker/hardware via `SELFTEST=1 bash perf/bestcfg-matrix.sh` and the mirrored checks 8–11 in
   [`perf/verify_perf_local.py`](../perf/verify_perf_local.py) (probe reduction, cell classification,
