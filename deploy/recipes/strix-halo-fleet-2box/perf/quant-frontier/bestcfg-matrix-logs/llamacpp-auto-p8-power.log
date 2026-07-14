@@ -1,0 +1,39 @@
+== phase 1: idle power (15s) ==
+   idle samples=2 mean=56.6 W
+== phase 2: warmup (load gpt-oss-120b via openai) ==
+   warmup done in 39.8s (tokens=16)
+== phase 3: sustained decode + power sampling ==
+   run 1 failed: TimeoutError: client deadline 180s exceeded
+{
+  "api": "openai",
+  "backend_url": "http://localhost:8081/v1",
+  "decode_tps": null,
+  "decode_tps_median": null,
+  "decode_tps_runs": [],
+  "decode_window_s": 182.09751677513123,
+  "generated_utc": "2026-07-14T11:27:07Z",
+  "idle_samples": 2,
+  "idle_w": 56.551500000000004,
+  "idle_w_mean": 56.551500000000004,
+  "load_samples": 12,
+  "load_w_max": 66.064,
+  "load_w_mean": 62.05508333333333,
+  "load_w_peak": 66.064,
+  "model": "gpt-oss-120b",
+  "runs_detail": [],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 1400,
+    "num_ctx": 0,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": "n/a"
+  },
+  "tok_per_watt_load": null,
+  "tok_per_watt_net_idle": null,
+  "total_decode_s": 0,
+  "total_decode_tokens": 0
+}
+
+== SUMMARY: api=openai idle=56.6W load=62.1W tok/s=-1.00 tok/s-per-W=-1.0000 ==

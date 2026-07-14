@@ -19,6 +19,15 @@ What it checks (each an assertion):
      leaving sibling cards untouched; missing alias -> exit 1.
   7. perf_metrics — fleet aggregation: per-tier mean drop, fleet-safe (worst-box)
      max-usable model, fastest server per box, skipped-server handling, markdown.
+  8. bestcfg_matrix — probe reduction (adds TTFT p50), cell classification
+     (load-fail / unusable-below-floor / loaded).
+  9. bestcfg_matrix — the fixed WINNER RULE: usable floor, c8-aggregate primary,
+     TTFT p95 gate + fallback, tok/W -> TTFT p50 -> single-stream tie-break,
+     per-server winners.
+ 10. bestcfg_matrix — assemble a work dir of per-cell files into the rollup JSON
+     + comparison table + recommended-config line.
+ 11. bestcfg_matrix — cache overlay through a mock router: exact-repeat registers
+     a hit (x-vsr-cache-hit) with a lower TTFT than a miss.
 
 Usage:
   python3 verify_perf_local.py         # prints "N/N checks passed", exit 0/1
@@ -35,6 +44,7 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import bestcfg_matrix  # noqa: E402
 import perf_metrics  # noqa: E402
 import repoint_backend  # noqa: E402
 import resource_sampler  # noqa: E402
@@ -207,6 +217,137 @@ def verify_aggregate(tmp):
           and "Test 1" in md and "Test 2" in md)
 
 
+def _matrix_cell(server, residency, parallel, status="loaded", c1_tps=36.0,
+                 agg_c8=44.0, ttft_p95=800.0, ttft_p50=100.0, tpw=0.30):
+    """Build a bestcfg_matrix cell dict shaped like build_cell() output."""
+    return {
+        "cell_id": bestcfg_matrix.cell_id(server, residency, parallel),
+        "server": server, "residency": residency, "num_parallel": parallel,
+        "model": "gpt-oss:120b-vram" if residency == "resident" else "gpt-oss:120b",
+        "status": status, "reason": None,
+        "c1": {"decode_tps_median": c1_tps, "aggregate_decode_tps": c1_tps,
+               "ttft_ms_p50": ttft_p50, "ttft_ms_p95": ttft_p50, "ok_runs": 3},
+        "c8": {"decode_tps_median": c1_tps, "aggregate_decode_tps": agg_c8,
+               "ttft_ms_p95": ttft_p95, "ttft_ms_mean": ttft_p95, "ok_runs": 8},
+        "power": {"tok_per_watt_load": tpw},
+        "resource": {"peak_vram_used_gib": 61.6},
+    }
+
+
+def verify_matrix_logic():
+    # 8. probe reduction + classification.
+    probe = {"aggregate": {"decode_tps_median": 30.0, "aggregate_decode_tps": 120.0,
+                           "ttft_ms_mean": 150.0, "ttft_ms_p95": 300.0,
+                           "success_rate": 1.0, "ok_runs": 3},
+             "runs_detail": [{"ok": True, "ttft_ms": 100.0}, {"ok": True, "ttft_ms": 200.0},
+                             {"ok": True, "ttft_ms": 150.0}],
+             "shape": {"concurrency": 1}}
+    red = bestcfg_matrix.reduce_probe(probe)
+    st_fail, _ = bestcfg_matrix.classify("load-fail", None, 3.0)
+    st_unus, _ = bestcfg_matrix.classify("ok", {"ok_runs": 2, "decode_tps_median": 1.5}, 3.0)
+    st_ok, _ = bestcfg_matrix.classify("ok", {"ok_runs": 2, "decode_tps_median": 36.0}, 3.0)
+    st_empty, _ = bestcfg_matrix.classify("ok", {"ok_runs": 0, "decode_tps_median": None}, 3.0)
+    check("8. probe reduce (p50=150, agg=120) + classify fail/unusable/loaded/empty",
+          red["ttft_ms_p50"] == 150.0 and red["aggregate_decode_tps"] == 120.0
+          and st_fail == "load-fail" and st_unus == "unusable"
+          and st_ok == "loaded" and st_empty == "load-fail")
+
+    # 9. winner rule. resident-p8 has the highest c8 aggregate AND clears the gate.
+    cells = [
+        _matrix_cell("ollama", "resident", 8, agg_c8=121.0, ttft_p95=826.0, tpw=0.36),
+        _matrix_cell("ollama", "resident", 1, agg_c8=44.0, ttft_p95=20444.0, tpw=0.36),
+        _matrix_cell("ollama", "auto", 8, status="unusable", c1_tps=0.2, agg_c8=4.0),
+        _matrix_cell("ollama", "auto", 1, status="unusable", c1_tps=0.2, agg_c8=3.0),
+        _matrix_cell("llamacpp", "resident", 8, agg_c8=90.0, ttft_p95=900.0, tpw=0.40),
+        _matrix_cell("llamacpp", "resident", 1, agg_c8=40.0, ttft_p95=1500.0, tpw=0.40),
+        _matrix_cell("llamacpp", "auto", 8, status="skipped"),
+        _matrix_cell("llamacpp", "auto", 1, status="skipped"),
+    ]
+    sc = bestcfg_matrix.score(cells, 3.0, 2000.0)
+    # Tie-break: two cells tie on c8-agg -> higher tok/W wins.
+    tie = [
+        _matrix_cell("ollama", "resident", 8, agg_c8=100.0, ttft_p95=800.0, tpw=0.30),
+        _matrix_cell("llamacpp", "resident", 8, agg_c8=100.0, ttft_p95=800.0, tpw=0.50),
+    ]
+    sc_tie = bestcfg_matrix.score(tie, 3.0, 2000.0)
+    # Gate fallback: NO cell clears a very strict gate -> still pick best-agg, flag it.
+    sc_gate = bestcfg_matrix.score(cells, 3.0, 1.0)
+    check("9. winner rule: c8-agg primary + gate, per-server winners, tok/W tie-break, gate fallback",
+          sc["winner_cell_id"] == "ollama-resident-p8" and sc["winner_ttft_gate_met"] is True
+          and sc["per_server_winner"]["llamacpp"]["cell_id"] == "llamacpp-resident-p8"
+          and sc["eligible_count"] == 4
+          and sc_tie["winner_cell_id"] == "llamacpp-resident-p8"
+          and sc_gate["winner_cell_id"] == "ollama-resident-p8"
+          and sc_gate["winner_ttft_gate_met"] is False)
+
+
+def verify_matrix_assemble(tmp):
+    work = os.path.join(tmp, "matrix-work")
+    os.makedirs(work)
+
+    def _probe(agg, decode, ttft95, conc):
+        return {"aggregate": {"decode_tps_median": decode, "aggregate_decode_tps": agg,
+                              "ttft_ms_mean": ttft95, "ttft_ms_p95": ttft95,
+                              "success_rate": 1.0, "ok_runs": conc},
+                "runs_detail": [{"ok": True, "ttft_ms": ttft95}], "shape": {"concurrency": conc}}
+
+    def _write(cid, obj):
+        with open(os.path.join(work, cid), "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+
+    # Winner cell: ollama resident p8 (highest c8 agg + clears the gate).
+    _write("ollama-resident-p8.load.json", {"cell_id": "ollama-resident-p8", "server": "ollama",
+           "residency": "resident", "num_parallel": 8, "model": "gpt-oss:120b-vram",
+           "load_result": "ok", "reason": None, "gpu_resident_frac": 1.0})
+    _write("ollama-resident-p8.c1.json", _probe(36.0, 36.0, 120.0, 1))
+    _write("ollama-resident-p8.c8.json", _probe(121.0, 16.0, 826.0, 8))
+    _write("ollama-resident-p8.res.json", {"peak_vram_used_b": 66 * 1024**3,
+           "gpu": {"vram_used_b": {"max": 66 * 1024**3}}, "host": {"mem_used_b": {"max": 6 * 1024**3}}})
+    _write("ollama-resident-p8.power.json", {"api": "ollama", "model": "gpt-oss:120b-vram",
+           "idle_w": 10.0, "load_w_mean": 100.0, "load_w_peak": 110.0, "decode_tps": 36.5,
+           "tok_per_watt_load": 0.365, "tok_per_watt_net_idle": 0.405})
+    # A skipped llamacpp cell (load probe failed) -- must survive assembly.
+    _write("llamacpp-resident-p8.load.json", {"cell_id": "llamacpp-resident-p8", "server": "llamacpp",
+           "residency": "resident", "num_parallel": 8, "model": "gpt-oss-120b",
+           "load_result": "skipped", "reason": "llama.cpp MXFP4 120B load probe failed"})
+    # Cache overlay for the ollama winner.
+    _write("cache-ollama.json", {"schema": "bestcfg-cache-overlay/v1", "server": "ollama",
+           "cell_id": "ollama-resident-p8", "ttft_miss_ms": 1300.0, "ttft_hit_exact_ms": 2.0,
+           "ttft_hit_semantic_ms": 800.0, "ttft_saved_ms": 1298.0,
+           "exact_hit_rate": 1.0, "semantic_hit_rate": 1.0, "cases": 3})
+
+    out = os.path.join(tmp, "rollup.json")
+    shape = {"max_tokens": 128, "prompt_tokens": 256, "concurrency_lo": 1, "concurrency_hi": 8,
+             "oom_min_tps": 3.0, "ttft_gate_ms": 2000.0, "model_flagship": "gpt-oss:120b"}
+    rollup = bestcfg_matrix.assemble(work, "halo-b", shape, out)
+    on_disk = json.load(open(out, encoding="utf-8"))
+    table = bestcfg_matrix.render_table(rollup)
+    check("10. assemble rollup: winner ollama-resident-p8, skipped cell kept, overlay + conclusion",
+          rollup["scoring"]["winner_cell_id"] == "ollama-resident-p8"
+          and on_disk["schema"] == "bestcfg-matrix/v1"
+          and any(c["status"] == "skipped" for c in rollup["cells"])
+          and rollup["cache_overlay"]["ollama"]["ttft_saved_ms"] == 1298.0
+          and "NUM_PARALLEL=8" in rollup["recommended_config"]
+          and "*WIN" in table)
+
+
+def verify_matrix_cache_overlay(tmp):
+    import http.server
+    srv = http.server.HTTPServer(("127.0.0.1", 0), bestcfg_matrix._mock_handler_class())
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    router = "http://127.0.0.1:%d/v1" % srv.server_address[1]
+    try:
+        ov = bestcfg_matrix.measure_cache_overlay(
+            router, "ollama", "ollama-resident-p8", cfg_path="", container="none",
+            threshold="0.92", reload_timeout=0.0, reload_settle=0.0)
+    finally:
+        srv.shutdown()
+    check("11. cache overlay: exact-repeat hit registered, hit TTFT <= miss TTFT",
+          ov["exact_hit_rate"] == 1.0
+          and ov["ttft_miss_ms"] is not None and ov["ttft_hit_exact_ms"] is not None
+          and ov["ttft_hit_exact_ms"] <= ov["ttft_miss_ms"] + 1e-6)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="perf-verify-")
     srv, base = _start_backend()
@@ -215,6 +356,9 @@ def main():
         verify_sampler(tmp)
         verify_repoint(tmp)
         verify_aggregate(tmp)
+        verify_matrix_logic()
+        verify_matrix_assemble(tmp)
+        verify_matrix_cache_overlay(tmp)
     finally:
         srv.shutdown()
     total = _PASS + len(_FAIL)

@@ -1,0 +1,50 @@
+== phase 1: idle power (15s) ==
+   idle samples=14 mean=17.6 W
+== phase 2: warmup (load gpt-oss:120b-vram via ollama) ==
+   warmup done in 0.9s (tokens=16)
+== phase 3: sustained decode + power sampling ==
+   run 1: tokens=191 decode_tps=36.44 wall=5.6s
+{
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "decode_tps": 36.43788570980524,
+  "decode_tps_median": 36.43788570980524,
+  "decode_tps_runs": [
+    36.43788570980524
+  ],
+  "decode_window_s": 5.563436985015869,
+  "generated_utc": "2026-07-14T10:56:57Z",
+  "idle_samples": 14,
+  "idle_w": 17.552142857142858,
+  "idle_w_mean": 17.552142857142858,
+  "load_samples": 6,
+  "load_w_max": 104.075,
+  "load_w_mean": 88.07533333333333,
+  "load_w_peak": 104.075,
+  "model": "gpt-oss:120b-vram",
+  "runs_detail": [
+    {
+      "decode_s": 5.241797,
+      "decode_tps": 36.43788570980524,
+      "eval_count": 191,
+      "eval_duration_ns": 5241797000,
+      "tokens": 191,
+      "wall_s": 5.563226725003915
+    }
+  ],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 1400,
+    "num_ctx": 0,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": false
+  },
+  "tok_per_watt_load": 0.4137127199042325,
+  "tok_per_watt_net_idle": 0.5166794846314722,
+  "total_decode_s": 5.241797,
+  "total_decode_tokens": 191
+}
+
+== SUMMARY: api=ollama idle=17.6W load=88.1W tok/s=36.44 tok/s-per-W=0.4137 ==

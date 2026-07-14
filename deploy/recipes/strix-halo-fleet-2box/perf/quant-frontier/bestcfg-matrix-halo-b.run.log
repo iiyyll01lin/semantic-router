@@ -1,0 +1,36 @@
+==> [bestcfg-matrix] box=halo-b  model=gpt-oss:120b  servers='ollama llamacpp'  selftest=0
+    out=/home/test001/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/bestcfg-matrix-halo-b.json
+==> [bestcfg-matrix] cell ollama-resident-p1 (tag=gpt-oss:120b-vram)
+    [ollama] setting OLLAMA_NUM_PARALLEL=1 (container recreate)
+==> [bestcfg-matrix] cell ollama-auto-p1 (tag=gpt-oss:120b)
+    (power sampler unavailable/failed for ollama-auto-p1; recorded null -- see logs)
+==> [bestcfg-matrix] cell ollama-resident-p8 (tag=gpt-oss:120b-vram)
+    [ollama] setting OLLAMA_NUM_PARALLEL=8 (container recreate)
+==> [bestcfg-matrix] cell ollama-auto-p8 (tag=gpt-oss:120b)
+==> [bestcfg-matrix] llama.cpp load/health probe: ggml-org/gpt-oss-120b-GGUF (-ngl 999, gfx1151)
+    (first call also downloads the ~60 GiB GGUF into volume 'llamacpp-cache'; waiting up to 900 tries ~30 min)
+    llama.cpp served ggml-org/gpt-oss-120b-GGUF OK (GGUF now cached; cells reuse it)
+==> [bestcfg-matrix] cell llamacpp-resident-p1 (-ngl 999 --parallel 1, parity)
+==> [bestcfg-matrix] cell llamacpp-auto-p1 (-ngl 20 --parallel 1, parity)
+==> [bestcfg-matrix] cell llamacpp-resident-p8 (-ngl 999 --parallel 8, parity)
+==> [bestcfg-matrix] cell llamacpp-auto-p8 (-ngl 20 --parallel 8, parity)
+    (power sampler unavailable/failed for llamacpp-auto-p8; recorded null -- see logs)
+==> [bestcfg-matrix] assembling (pre-overlay) /home/test001/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/bestcfg-matrix-halo-b.json
+==> [bestcfg-matrix] cache overlay: ollama winner ollama-resident-p8 (repoint router)
+==> [bestcfg-matrix] cache overlay: llamacpp winner llamacpp-resident-p8 (repoint router)
+==> [bestcfg-matrix] assembling final rollup /home/test001/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/bestcfg-matrix-halo-b.json
+== best-config matrix (box=halo-b, model=gpt-oss:120b) ==
+cell                   status       c1_tps     c8_agg  ttft95_c8     tok/W  vram_gib note
+llamacpp-resident-p8   loaded         52.9       95.2       2976     0.641      59.2  *WIN
+ollama-resident-p8     loaded         36.6       65.7          -     0.414      69.6 
+llamacpp-resident-p1   loaded         52.7       50.7      17773     0.486      59.1 
+ollama-resident-p1     loaded         36.5       35.5          -     0.410      65.0 
+llamacpp-auto-p1       loaded         30.5       29.7      30396     0.247      32.3 
+llamacpp-auto-p8       loaded         28.3          -          -         -      32.4 
+ollama-auto-p1         load-fail         -          -          -         -      27.1 loaded but produced no decode tokens (probe empty)
+ollama-auto-p8         load-fail         -          -          -         -         - warm load failed (model missing / OOM)
+  cache overlay [llamacpp winner llamacpp-resident-p8]: repeat TTFT miss - ms -> exact-hit - ms (saved - ms), semantic-0.92 hit - ms
+  cache overlay [ollama winner ollama-resident-p8]: repeat TTFT miss 1041 ms -> exact-hit 689 ms (saved 351 ms), semantic-0.92 hit 659 ms
+CONCLUSION: gpt-oss-120b on Halo-B: llamacpp + resident + NUM_PARALLEL=8 -> 95.2 tok/s aggregate @ c8, 0.641 tok/s/W, TTFT p95 2976 ms [NOTE: no cell met the TTFT p95<=2000ms gate; winner is best-throughput]
+
+==> [bestcfg-matrix] done -> /home/test001/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/bestcfg-matrix-halo-b.json

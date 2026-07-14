@@ -36,12 +36,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+
+# Optional per-request wall-clock deadline (seconds), read from the environment so a
+# caller (e.g. bestcfg-matrix.sh's per-cell probes) can bound a pathologically slow
+# CPU-offload decode that trickles tokens forever and therefore never trips the
+# per-read socket timeout. 0/unset = disabled (default => byte-for-byte unchanged
+# behavior for every existing caller). When set, a request exceeding the deadline is
+# reported as a FAILED run (ok=False, TimeoutError), so a cell that can only decode
+# far below the usable floor is recorded skip/load-fail-with-reason instead of
+# hanging the whole matrix on one bad backend.
+_CLIENT_DEADLINE_S = float(os.environ.get("TOKRATE_DEADLINE", "0") or 0)
 
 # A deterministic filler used to grow the prompt toward a target token budget.
 # Kept ASCII + generic so tokenization is stable across model families.
@@ -113,6 +124,10 @@ def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0,
     final = {}
     with _open_stream(url, payload, timeout) as resp:
         for raw in resp:
+            if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line:
                 continue
@@ -163,6 +178,10 @@ def run_openai(base_url, model, prompt, max_tokens, extra_body, timeout):
     usage = {}
     with _open_stream(url, payload, timeout) as resp:
         for raw in resp:
+            if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line or not line.startswith("data:"):
                 continue
@@ -213,15 +232,20 @@ def run_openai(base_url, model, prompt, max_tokens, extra_body, timeout):
 
 
 def one_run(args, prompt):
+    # When a client deadline is set, also cap the per-read socket timeout at it so a
+    # fully-frozen (zero-token) decode is bounded too, not just a slow trickle.
+    eff_timeout = args.timeout
+    if _CLIENT_DEADLINE_S:
+        eff_timeout = min(args.timeout, _CLIENT_DEADLINE_S)
     try:
         if args.api == "ollama":
             return run_ollama(
                 args.backend_url, args.model, prompt, args.max_tokens, args.think,
-                args.timeout, getattr(args, "num_ctx", 0),
+                eff_timeout, getattr(args, "num_ctx", 0),
                 getattr(args, "num_gpu", -1), getattr(args, "use_mmap", None),
             )
         return run_openai(
-            args.backend_url, args.model, prompt, args.max_tokens, args.extra_body, args.timeout
+            args.backend_url, args.model, prompt, args.max_tokens, args.extra_body, eff_timeout
         )
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
         return {"ok": False, "api": args.api, "error": "%s: %s" % (type(exc).__name__, exc)}

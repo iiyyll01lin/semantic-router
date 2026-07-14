@@ -1,0 +1,49 @@
+== phase 1: idle power (15s) ==
+   idle samples=14 mean=16.2 W
+== phase 2: warmup (load gpt-oss-120b via openai) ==
+   warmup done in 0.4s (tokens=16)
+== phase 3: sustained decode + power sampling ==
+   run 1: tokens=1400 decode_tps=48.66 wall=28.9s
+{
+  "api": "openai",
+  "backend_url": "http://localhost:8081/v1",
+  "decode_tps": 48.66209043790209,
+  "decode_tps_median": 48.66209043790209,
+  "decode_tps_runs": [
+    48.66209043790209
+  ],
+  "decode_window_s": 28.853642463684082,
+  "generated_utc": "2026-07-14T11:15:53Z",
+  "idle_samples": 14,
+  "idle_w": 16.18092857142857,
+  "idle_w_mean": 16.18092857142857,
+  "load_samples": 27,
+  "load_w_max": 108.02,
+  "load_w_mean": 100.08611111111111,
+  "load_w_peak": 108.02,
+  "model": "gpt-oss-120b",
+  "runs_detail": [
+    {
+      "completion_tokens": 1400,
+      "decode_s": 28.769828575008432,
+      "decode_tps": 48.66209043790209,
+      "tokens": 1400,
+      "wall_s": 28.853511408000486
+    }
+  ],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 1400,
+    "num_ctx": 0,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": "n/a"
+  },
+  "tok_per_watt_load": 0.48620223023631737,
+  "tok_per_watt_net_idle": 0.5799652532176733,
+  "total_decode_s": 28.769828575008432,
+  "total_decode_tokens": 1400
+}
+
+== SUMMARY: api=openai idle=16.2W load=100.1W tok/s=48.66 tok/s-per-W=0.4862 ==

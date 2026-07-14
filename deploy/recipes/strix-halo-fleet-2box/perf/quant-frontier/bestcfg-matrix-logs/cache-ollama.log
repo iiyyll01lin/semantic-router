@@ -1,0 +1,13 @@
+{
+  "cases": 3,
+  "cell_id": "ollama-resident-p8",
+  "exact_hit_rate": 0.6666666666666666,
+  "schema": "bestcfg-cache-overlay/v1",
+  "semantic_hit_rate": 0.6666666666666666,
+  "server": "ollama",
+  "threshold": "0.92",
+  "ttft_hit_exact_ms": 689.1768560017226,
+  "ttft_hit_semantic_ms": 658.5904929961544,
+  "ttft_miss_ms": 1040.6766116648214,
+  "ttft_saved_ms": 351.49975566309877
+}

@@ -1,0 +1,4 @@
+== phase 1: idle power (15s) ==
+   idle samples=14 mean=26.2 W
+== phase 2: warmup (load gpt-oss:120b via ollama) ==
+   warmup failed: TimeoutError: client deadline 180s exceeded
