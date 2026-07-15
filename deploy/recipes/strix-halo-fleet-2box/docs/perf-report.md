@@ -45,7 +45,7 @@ below is that sentence, with the numbers.
 | **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
 | **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
-| **Max model** under the topology? | Halo-B (headless, 64 GiB): **`gpt-oss:120b` @ ~30 tok/s, VRAM-resident**. At **96 GiB** the largest real model measured is **`mixtral:8x22b-q5_K_M` (141B MoE) VRAM-resident at 94.59 GiB / 7.80 tok/s** (~1.4 GiB shy of the carveout); Q8-70B (70.7 GiB) is resident too — but only with `num_gpu`/`use_mmap` overrides (Ollama's default budget tracks system RAM, so 96 GiB *regresses* out of the box). Quant sweep: **Q4 ~1.7x faster than Q8 at ~equal quality**; a big MoE stays fast | §11–§11.2 **[M]** |
+| **Max model / local default?** | Halo-B capacity is characterized to the edge: at **96 GiB** the largest real model measured is **`mixtral:8x22b-q5_K_M` (141B MoE) VRAM-resident at 94.59 GiB / 7.80 tok/s** (~1.4 GiB shy of the carveout), and `gpt-oss:120b` remains the **120B capacity/reference** rung (**60.5 GiB**, **~36.5 tok/s**, **64.3%**, **0.382 tok/s/W**). The local/default recommendation is now **Gemma 4 26B MoE**: balanced `gemma4:26b-a4b-it-q8_0` (**44.6 tok/s**, **71.4%**), throughput/demo `gemma4:26b` Q4 (**58.4 tok/s**, **69.0%**), compact/fast `gemma4:26b-a4b-it-qat` (**65.0 tok/s**, **64.3%**). `gemma4:31b-it-qat` is best local quality (**78.6%**) but too slow for default. | §11–§11.2 **[M]** |
 | **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093** tok/s/W. At 96 GiB forced-resident the 120B MoE is **0.382** vs dense-70B-Q4 **0.0381** (~10×), and dense-70B-Q4 pulls **~133 W** (near TDP) — the MoE is bigger *and* far more efficient/token | §12 **[M]** |
 
 ---
@@ -860,9 +860,12 @@ result is **counter-intuitive and operationally important**:
 ### 11.2 Quantization frontier — footprint x speed x quality (96 GiB) **[M]**
 
 A controlled quant sweep on one dense family (`llama3.1:70b-instruct`, forced-resident
-`num_gpu=999`/`use_mmap=false`) plus three big-MoE rungs (mixtral 8x22b Q3_K_M + Q4_K_M + Q5_K_M),
-each scored for decode speed (`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42 MMLU-Pro
-Q). All rungs were **100% VRAM-resident** (`size_vram/size`=1.0):
+`num_gpu=999`/`use_mmap=false`) plus three big-MoE rungs (mixtral 8x22b Q3_K_M + Q4_K_M + Q5_K_M)
+and `gpt-oss:120b`, each scored for decode speed (`maxmodel-sweep.sh`) and MCQ accuracy
+(`quant-quality.py`, 42 MMLU-Pro Q). The six **Gemma 4 [M]** rungs (26B A4B MoE + 31B dense,
+each Q4_K_M / Q8_0 / int4-QAT) were added later under the same forced-resident harness
+(`num_ctx=4096`). All rungs were **100%
+VRAM-resident** (`size_vram/size`=1.0):
 
 | Model (quant) | Peak VRAM | Decode tok/s | MMLU-Pro (42Q) |
 | --- | --- | --- | --- |
@@ -873,6 +876,13 @@ Q). All rungs were **100% VRAM-resident** (`size_vram/size`=1.0):
 | `mixtral:8x22b-instruct-v0.1-q3_K_M` (141B MoE) | 64.6 GiB | **10.8** | 42.9% |
 | `mixtral:8x22b-instruct-v0.1-q4_K_M` (141B MoE) | 81.2 GiB | 9.03 | 42.86% (18/42) |
 | **`mixtral:8x22b-instruct-v0.1-q5_K_M`** (141B MoE) | **94.59 GiB** | **7.80** | **45.2% (19/42)** |
+| `gpt-oss:120b` (120B MoE MXFP4) [M] | 60.5 GiB | **~36.5** | 64.3% (27/42) |
+| `gemma4:26b` (25B MoE, Q4_K_M) [M] | 21.6 GiB | **58.4** | 69.0% (29/42) |
+| `gemma4:26b-a4b-it-q8_0` (25B MoE) [M] | 25.3 GiB | 44.6 | 71.4% (30/42) |
+| `gemma4:26b-a4b-it-qat` (25B MoE) [M] | 13.8 GiB | **65.0** | 64.3% (27/42) |
+| `gemma4:31b` (31B dense, Q4_K_M) [M] | 19.4 GiB | 11.3 | 73.8% (31/42) |
+| `gemma4:31b-it-q8_0` (31B dense) [M] | 32.4 GiB | 7.1 | 76.2% (32/42) |
+| `gemma4:31b-it-qat` (31B dense) [M] | 18.5 GiB | **12.3** | **78.6% (33/42)** |
 
 - **Bandwidth-bound: lower quant is monotonically faster** — same 70B, Q8 3.0 -> Q4 5.1 tok/s
   (~1.7x), because fewer weight bytes are read per token.
@@ -882,6 +892,29 @@ Q). All rungs were **100% VRAM-resident** (`size_vram/size`=1.0):
   line: Q3 in 64.6 GiB decodes 10.8 tok/s, and **Q5 is the largest real footprint measured —
   94.59 GiB, 100% VRAM-resident, 7.80 tok/s** (~1.4 GiB below the carveout), reading only the active
   experts per token.
+- **`gpt-oss:120b` quality now measured [M].** The resident 120B MoE stays a fast, efficient
+  **120B capacity/reference** point (**~36.5 tok/s** at 60.5 GiB) and scores **64.3% (27/42)** on
+  the same 42Q MMLU-Pro slice — in the modern MoE band and above the older mixtral rungs, but no
+  longer the best local/default choice versus Gemma 4 26B.
+- **Gemma 4 [M] — the MoE speed edge sharpens at small total size.** The 25B-total MoE `gemma4:26b`
+  (~3.8B active) decodes **58.4 tok/s** at just 21.6 GiB — **the fastest MoE measured here** (beats
+  `gpt-oss:120b` 36.5 and every mixtral rung), and its `-qat` sibling hits **65.0 tok/s** at 13.8
+  GiB — while the same-box dense `gemma4:31b` is bandwidth-bound at 7.1–12.3 tok/s (Q8 7.1 < Q4 11.3,
+  monotonic in footprint), a ~5× gap at a similar footprint. Dense MMLU-Pro is a touch higher
+  (73.8–78.6%) than the MoE (64.3–71.4%); `gemma4:31b-it-qat` is the standout at **78.6% (33/42) in
+  18.5 GiB / 12.3 tok/s**. All six clear the older rungs (mixtral 42.9%, llama3.1:70b 50–52%), but
+  42Q is a small indicative sample (±~7 pp) — read Gemma as *speed-at-footprint + modern
+  MoE-vs-dense*, not an MMLU ranking.
+- **Default conclusion:** Gemma 4 26B MoE is the local/default family. Use
+  `gemma4:26b-a4b-it-q8_0` for balanced default (**44.6 tok/s**, **25.3 GiB**, **71.4%**,
+  **0.418 tok/s/W**), `gemma4:26b` Q4_K_M for throughput/demo default (**58.4 tok/s**,
+  **21.6 GiB**, **69.0%**, **0.481 tok/s/W**), and `gemma4:26b-a4b-it-qat` for compact/fast edge
+  (**65.0 tok/s**, **13.8 GiB**, **64.3%**, **0.400 tok/s/W**). `gemma4:31b-it-qat` is the best
+  local quality rung (**78.6%**, **12.3 tok/s**, **0.090 tok/s/W**) and belongs in quality-only
+  runs, not as the default.
+
+- **Candidate sweep update (Halo-B, 2026-07-15) [M].** A broad P0 + capped P1/P2 sweep did **not** displace Gemma 4. The best speed candidate, `qwen3-coder:30b`, hit **71.0 tok/s** in **18.1 GiB** but only **54.8% (23/42)**. `qwen3-next:80b` was fast enough for default consideration (**49.6 tok/s**, **47.4 GiB**) but scored **61.9% (26/42)**. `qwen3.6:27b` matched the Gemma Q4 quality sample (**69.0%**, 29/42) but was much slower (**13.5 tok/s**) and inefficient (**0.082 tok/s/W**). Lower-priority measured candidates also missed the default bar (`mistral-small:24b` **15.2 tok/s / 54.8%**, `deepseek-r1:32b` **11.0 tok/s / 50.0%**); EXAONE/OpenThinker/Magistral/Phi produced speed/power but no quality JSON under the 30-minute cap, EXAONE is research-only/non-commercial, GLM-4.5-Air and DeepSeek-R1 70B were skipped to keep the sweep bounded, and Falcon-H1 manifests were unavailable. Raw data and skip notes: [`candidate-summary-halo-b.json`](../perf/quant-frontier/candidate-summary-halo-b.json) / [`candidate-summary-halo-b.md`](../perf/quant-frontier/candidate-summary-halo-b.md).
+
 - **Limitation:** the 235B MoE (`qwen3:235b-a22b-q2_K`) is not a published Ollama tag (404), so
   the run used the mixtral 8x22b MoE instead; the largest *measured* resident footprint is now
   **94.59 GiB** (`mixtral:8x22b-...-q5_K_M`, 100% VRAM-resident, 7.80 tok/s) — only ~1.4 GiB below
@@ -890,23 +923,25 @@ Q). All rungs were **100% VRAM-resident** (`size_vram/size`=1.0):
   [`perf/quant-frontier/`](../perf/quant-frontier/) · detail in
   [`halo-b-maxmodel.md` (quant frontier)](halo-b-maxmodel.md#quantization-frontier-96-gib-forced-resident).
 
-### 11.3 Best configuration — validated A/B (BEST vs DEFAULT) **[M]**
+### 11.3 120B capacity/reference configuration — validated A/B **[M]**
 
 The §11.1 residency lever plus concurrency / cache / server / architecture / quant were run
 **head-to-head, end-to-end** on Halo-B (96 GiB carveout, headless, full vllm-sr stack co-resident,
-2026-07-13): **BEST** (`gpt-oss:120b-vram` forced-resident + `OLLAMA_NUM_PARALLEL=8` + semantic cache
-0.92/exact-repeat; llama.cpp for TTFT) vs a **naive DEFAULT** (`gpt-oss:120b` auto layer-estimate,
-`NUM_PARALLEL=1`, no cache, ollama). Data:
+2026-07-13) for the **120B capacity/reference profile**: resident `gpt-oss:120b-vram` +
+`OLLAMA_NUM_PARALLEL=8` + semantic cache 0.92/exact-repeat (llama.cpp for TTFT) vs a **naive
+plain-tag baseline** (`gpt-oss:120b` auto layer-estimate, `NUM_PARALLEL=1`, no cache, ollama).
+This is no longer the local/default model recommendation; §11.2 makes Gemma 4 26B MoE the
+balanced/demo default. Data:
 [`perf/quant-frontier/bestcfg-halo-b.json`](../perf/quant-frontier/bestcfg-halo-b.json).
 
-> **The authoritative "best config vs naive default" is now the single end-to-end matrix run in
+> **The authoritative 120B resident-vs-plain-tag matrix is now the single end-to-end run in
 > §11.4** (Halo-B `test001-stxh`, `gpt-oss:120b`, 2026-07-14 disk-fixed re-test). The per-lever table
 > below is kept for *why-each-lever-wins* detail, but it stitches deltas from several different runs
 > (some reused from §7 / §10 / §11.1). What the single run shows on one profile: the winner —
 > **llama.cpp + resident (`-ngl 999`) + `--parallel 8`** — measured **95.2 tok/s aggregate @ c8**,
-> VRAM-resident (peak 59.2 GiB), while the **naive default** (plain `gpt-oss:120b`, ollama auto
+> VRAM-resident (peak 59.2 GiB), while the **naive plain-tag baseline** (plain `gpt-oss:120b`, ollama auto
 > layer-estimate, `NUM_PARALLEL=1`) **failed to decode at all** (auto placed only **33.9%** of the model
-> on GPU and CPU-offloaded the rest into ~30 GiB system RAM). For the flagship the honest gap is
+> on GPU and CPU-offloaded the rest into ~30 GiB system RAM). For the 120B reference the honest gap is
 > therefore **usable vs unusable**, not a tidy multiple. This re-test also *corrects* the two earlier
 > confounded claims below: **llama.cpp DOES load and serve the MXFP4 120B on gfx1151/ROCm — and is in
 > fact the fastest server for it** (52.9 tok/s single-stream / 95.2 agg @ c8, vs ollama 36.6 / 65.7; the
@@ -926,11 +961,11 @@ superseded by the single-run matrix in §11.4):*
 | **Quant** (dense Q4 vs Q8) | 5.1 tok/s, ~30 GiB smaller | 3.0 tok/s | **~1.7×**, quality flat |
 | **Per-watt** (resident MoE vs dense 70B-Q4) | 0.366 tok/s/W (36.5 @ ~100 W) | 0.0381 tok/s/W (5.07 @ 133 W) | **~10×** |
 
-**Honest framing.** The DEFAULT auto/CPU-offload baseline **still produces zero usable decode tokens**
-on the flagship — and the 2026-07-14 disk-fixed re-test proves this is now a **pure system-RAM bound,
+**Honest framing.** The plain-tag auto/CPU-offload baseline **still produces zero usable decode tokens**
+on the 120B reference — and the 2026-07-14 disk-fixed re-test proves this is now a **pure system-RAM bound,
 not a disk artifact**: the box had **~179 GiB free** (not the earlier 25 GiB / 98%-full trap) yet auto
 still placed only **33.9%** of the model on GPU and CPU-offloaded the rest into ~30 GiB RAM. We
-therefore keep the honest **usable-vs-unusable** framing for the flagship rather than a tidy multiple;
+therefore keep the honest **usable-vs-unusable** framing for the 120B reference rather than a tidy multiple;
 the clean residency multiple (**~6.4×**, §11.1, 36.8 vs 5.7 on a smaller model) remains the headline
 number for the residency lever. The concurrency A/B is a **real container/flag toggle**
 (`OLLAMA_NUM_PARALLEL` / llama.cpp `--parallel` 1 → 8 → restored); the cache / architecture / quant
@@ -940,7 +975,7 @@ profile with the disk confound removed, and additionally **flips the server axis
 the MXFP4 120B and **wins** (95.2 tok/s agg @ c8, 0.641 tok/W) over ollama's `-vram` resident (65.7,
 0.414) — the earlier skip was a disk/download artifact, not a gfx1151 kernel gap.
 
-### 11.4 Best configuration — single-run combination matrix (measured 2026-07-14) **[M]**
+### 11.4 120B capacity/reference matrix (measured 2026-07-14) **[M]**
 
 §11.3 above picks the best *single lever from several different runs* and stitches the deltas
 together (some FRESH, some reused from §7 / §10 / §11.1). This section is the stronger,
@@ -985,7 +1020,8 @@ bash perf/bestcfg-matrix.sh                                            # full ma
 #                         LLAMACPP_ALLOW_FALLBACK=1 bash perf/bestcfg-matrix.sh
 ```
 
-Rollup (per-cell raw + winner + recommended config): `perf/quant-frontier/bestcfg-matrix-halo-b.json`.
+Rollup (per-cell raw + 120B winner + matrix-local recommended config):
+`perf/quant-frontier/bestcfg-matrix-halo-b.json`.
 
 **Results (measured on Halo-B, 2026-07-14 disk-fixed re-test; raw =
 [`perf/quant-frontier/bestcfg-matrix-halo-b.json`](../perf/quant-frontier/bestcfg-matrix-halo-b.json),
@@ -1003,7 +1039,7 @@ run log = [`bestcfg-matrix-halo-b.run.log`](../perf/quant-frontier/bestcfg-matri
 | ollama · auto · 8 | load-fail⁶ | — | — | — | — | — |
 | **cache overlay** (ollama winner `ollama-resident-p8`) | — | repeat TTFT miss **1,041 ms** → exact-hit **689 ms** (saved **351 ms**, ~34%) · semantic-0.92 hit **659 ms** (exact/semantic hit-rate 2/3 each)⁷ |
 
-¹ ollama's `/api/generate` per-request TTFT was not captured for the flagship this run (a known
+¹ ollama's `/api/generate` per-request TTFT was not captured for the 120B reference this run (a known
 streaming quirk of gpt-oss through ollama; llama.cpp's OpenAI/SSE path *does* record it, so the winner
 above has a real TTFT). `NUM_PARALLEL=1` also serializes the 8 c8 clients through one slot, so ollama
 aggregate ≈ single-stream (35.5 ≈ 36.5 tok/s).
@@ -1054,12 +1090,14 @@ measurements; the ≈79–95 tok/s spread is the honest envelope. Raw:
 > met the TTFT p95 ≤ 2 s gate**, so under the fixed rule the winner is the best-throughput cell and the
 > gate miss is recorded honestly: at `--parallel 8` eight concurrent 256-tok prompts queue for prefill
 > on one 120B, so per-request TTFT rises to p50 2.97 s / p95 2.98 s @ c8 even as aggregate decode
-> throughput peaks. The driver emits this one-liner as `recommended_config` in the rollup JSON.
+> throughput peaks. The driver emits this one-liner as `recommended_config` in the 120B matrix rollup
+> JSON; it should not be read as the fleet's local/default model recommendation.
 > (verbatim: `gpt-oss-120b on Halo-B: llamacpp + resident + NUM_PARALLEL=8 -> 95.2 tok/s aggregate @ c8,
 > 0.641 tok/s/W, TTFT p95 2976 ms [NOTE: no cell met the TTFT p95<=2000ms gate; winner is
 > best-throughput]`.)
 
-**Deploy recommendation — one server, size `--parallel` to your concurrency.** All rows use
+**120B capacity/reference deploy recommendation — one server, size `--parallel` to your concurrency.**
+All rows use
 **llama.cpp (ROCm) + `-ngl 999 --no-mmap` full-resident + semantic cache 0.92**; the *only* knob that
 changes is `--parallel`. Each row is measured at its **slot-matched operating point (client
 concurrency = `--parallel`)** — the realistic fully-loaded point for that slot count — from the
@@ -1102,15 +1140,15 @@ c2 / c4 points):
 
 **What this single run shows (no stitching):**
 
-- **Server axis — llama.cpp wins the flagship (a reversal of the earlier run).** With the disk/download
+- **Server axis — llama.cpp wins the 120B reference (a reversal of the earlier run).** With the disk/download
   confound removed, **llama.cpp loads and serves the MXFP4 120B on gfx1151** and is the fastest *and*
   most efficient cell: **95.2 vs 65.7 tok/s** aggregate @ c8 (≈1.45×), **52.9 vs 36.6 tok/s**
   single-stream (≈1.45×), **0.641 vs 0.414 tok/s/W** (≈1.55×), and a **leaner 59.2 vs 69.6 GiB**
   VRAM footprint than ollama's `-vram` variant. This **extends the §10 "llama.cpp is the fastest
   server" finding to the 120B itself** — the previous "cannot load on gfx1151" was a disk/download
   artifact (see Risks), not a kernel gap.
-- **Best config vs naive default is _usable vs unusable_, not a tidy multiple.** The winner serves the
-  120B at 95.2 tok/s aggregate, VRAM-resident; the naive default (plain `gpt-oss:120b`, ollama auto
+- **120B resident config vs naive plain tag is _usable vs unusable_, not a tidy multiple.** The winner
+  serves the 120B at 95.2 tok/s aggregate, VRAM-resident; the naive baseline (plain `gpt-oss:120b`, ollama auto
   estimate, `NUM_PARALLEL=1`) **produced zero decode tokens** — auto sizing placed only 33.9% on GPU
   and CPU-offloaded the rest, which cannot fit ~30 GiB system RAM. The fix (resident placement:
   `-ngl 999` for llama.cpp, or `num_gpu 999`+`use_mmap false` for ollama) is a configuration change,
@@ -1122,7 +1160,7 @@ c2 / c4 points):
 - **Per-watt:** the winner (`llamacpp · resident · 8`) is simultaneously the **most efficient** cell at
   **0.641 tok/s/W** (81.8 W mean load) — concurrency here *raises* efficiency because llama.cpp keeps
   the socket busy. ollama's resident cells sit at 0.410–0.414 tok/s/W. All resident cells dwarf any
-  CPU-offloaded default (which returned no usable tokens).
+  CPU-offloaded plain-tag baseline (which returned no usable tokens).
 - **Cache overlay (router path, ollama winner cell):** a repeated exact query drops from **1,041 ms →
   689 ms** TTFT (**saved ~351 ms, ~34%**); a 0.92 semantic paraphrase hit lands at **659 ms**. This is
   the routing/embedding first-token tax removed on repeats, measured live through the router. (The
@@ -1144,7 +1182,7 @@ c2 / c4 points):
   mid-download on the ~98%-full disk (each `docker run` re-pulled the 60 GiB into a container with no
   cache volume, which could never finish). This is categorically different from **vLLM**, which still
   aborts with a genuine `invalid device function` kernel gap on gfx1151 (§9) — so llama.cpp(rocm) is the
-  working flagship path, stock vLLM is not. (Note: OpenAI/Ollama's MXFP4 packing
+  working 120B reference path, stock vLLM is not. (Note: OpenAI/Ollama's MXFP4 packing
   [differs from llama.cpp's](https://github.com/ggml-org/llama.cpp/issues/15597), so the `ggml-org` GGUF
   — not the ollama blob — is the correct source; it loads cleanly here.)
 - **Harness robustness (added this run).** The disk fix ironically turned the CPU-offload `auto` cells
@@ -1203,6 +1241,8 @@ probe used to gather these numbers). **Idle socket power: ~12–14 W** on both b
 | Halo-B | `gpt-oss:120b` (120B MoE, 64 GiB) | 30.3 | 102 | **0.30** | 0.34 |
 | Halo-B | `gpt-oss:120b` (120B MoE, 96 GiB forced-resident) | 36.51 | 95.6 | **0.382** | 0.416 |
 | Halo-B | `llama3.1:70b-instruct-q4_K_M` (dense, 96 GiB forced-resident) | 5.07 | 133 | **0.0381** | 0.0404 |
+| Halo-B | `gemma4:26b` (25B MoE Q4_K_M, 96 GiB forced-resident) [M] | 53.4 | 111 | **0.481** | 0.592 |
+| Halo-B | `gemma4:31b` (31B dense Q4_K_M, 96 GiB forced-resident) [M] | 10.1 | 140 | **0.072** | 0.084 |
 
 **Story.**
 
@@ -1217,10 +1257,16 @@ probe used to gather these numbers). **Idle socket power: ~12–14 W** on both b
   smaller dense model on *both* speed and energy/token.
 - **96 GiB forced-resident (2026-07-13): the MoE is ~10× more efficient per token than the dense
   70B-Q4** — 0.382 vs 0.0381 tok/s/W — *and* draws less power (95.6 vs 133 W). **Dense 70B-Q4
-  pulls ~133 W mean (137 W peak) — the highest we measured, right at the TDP envelope**, so there
-  is little room to trade watts for speed; future speedups must come from *fewer bytes/token*
+  pulls ~133 W mean (137 W peak) — among the highest we measured, right at the TDP envelope**, so
+  there is little room to trade watts for speed; future speedups must come from *fewer bytes/token*
   (lower quant, MoE), not more power. (The 0.30 row above is the earlier 64 GiB gpt-oss
   measurement; forcing full residency at 96 GiB lifts it to **0.382**.)
+- **Gemma 4 [M] — the MoE is far more efficient per token at small size.** The 25B MoE `gemma4:26b`
+  runs **0.481 tok/s/W** (53.4 tok/s @ 111 W) vs the dense `gemma4:31b` **0.072 tok/s/W** (10.1
+  tok/s @ 140 W) — **~6.7× more energy-efficient per token** at a similar footprint, echoing the
+  gpt-oss-vs-dense-70B result. Across all six Gemma rungs the MoE sits at **0.40–0.48 tok/s/W** and
+  the dense at **0.056–0.090** (a ~5–8× gap); the dense `gemma4:31b` draws **~140 W mean**, at the
+  top of the TDP envelope.
 - Dynamic (load − idle) draw is ~96 W (7B) / ~105 W (32B) / ~90 W (120B); idle sits
   at ~12–14 W, so the box is cheap to leave resident between requests.
 

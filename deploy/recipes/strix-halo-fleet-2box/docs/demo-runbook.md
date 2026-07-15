@@ -37,7 +37,7 @@ ssh -N -L 8700:localhost:8700 test001@10.96.31.132
 | 5 · ~2m | `/tracing` | "Routing overhead is ~0% of the request." | Embedded Jaeger `service=vllm-sr`: classify → decide → upstream spans per request. | Re-send one Playground request (always-on sampling); else quote ~0% decode / +1.4s TTFT. |
 | 6 · ~3m **(business)** | `/fleet-sim/runs` | "We prove the fleet's TCO *before* we buy it." | optimize / simulate run → **36.1% fewer GPUs (23 vs 36; $445K vs $697K/yr)**. | Show the last completed run in `/fleet-sim`; else quote 36.1% (§2). |
 | 7 · ~5–8m **(CLI)** | `demo-fleet.sh` | "One central edit → both boxes converge to a byte-exact signed hash, with audit + rollback." | Edit one rule → halo-a & halo-b hot-reload and converge → central audit log → one-edit rollback; HW-verified hash `a78aebc5fd5f`. | Offline: `python deploy/recipes/strix-halo-fleet-2box/verify_local.py` (8/8) shows the same converge / drift / rollback / audit logic. |
-| 8 · ~3m | one-pager + canvas | "A ~$2,500 mini-PC serves a 120-billion-parameter model." | 120B MoE @ ~37 tok/s; capacity 94.59 / 96 GiB; best-vs-default ~12× / ~2.8× / ~10×. | Read from `results/customer-onepager.md` + canvas `strix-halo-hardware-limits`. |
+| 8 · ~3m | one-pager + canvas | "The best local default is Gemma 4 26B MoE; the same box still proves a 120B capacity story." | Gemma 26B Q4 @ 58.4 tok/s / 69.0% or Q8 @ 44.6 tok/s / 71.4%; candidate sweep confirmed no Qwen/DeepSeek/Mistral/Phi replacement; 120B reference @ ~36.5 tok/s; capacity 94.59 / 96 GiB. | Read from `results/customer-onepager.md` + canvas `strix-halo-hardware-limits`. |
 
 > Fleet step (7) needs a live 2-box fleet — run `deploy/recipes/strix-halo-fleet-2box/deploy-fleet-2box.sh`
 > first. No fleet? Use the offline `verify_local.py` fallback and quote the hash.
@@ -46,8 +46,8 @@ ssh -N -L 8700:localhost:8700 test001@10.96.31.132
 
 - **Routing accuracy:** 61/62 probes = **98.4%** (decision coverage 13/14).
 - **Router tax:** **~0%** decode-throughput impact + a fixed **~1.4 s** TTFT; a cache hit removes it (exact-repeat **~1–2 ms**).
-- **Peak model (Halo-B, 96 GiB, headless):** `gpt-oss:120b` (120B MoE) @ **~37 tok/s**; capacity characterized to **94.59 / 96 GiB**.
-- **Best vs naive default (same box):** **~12×** decode (MoE vs dense), **~2.8×** concurrent throughput, **~10×** energy/token.
+- **Default/demo model (Halo-B):** Gemma 4 26B MoE — balanced `gemma4:26b-a4b-it-q8_0` at **44.6 tok/s / 71.4%**, or throughput `gemma4:26b` Q4 at **58.4 tok/s / 69.0%**. The 2026-07-15 candidate sweep confirms this: `qwen3-coder:30b` is faster but 54.8%, `qwen3-next:80b` is 61.9%, and `qwen3.6:27b` is 69.0% but only 13.5 tok/s.
+- **Capacity/reference model (Halo-B, 96 GiB, headless):** `gpt-oss:120b` (120B MoE) @ **~36.5 tok/s**, **60.5 GiB**, **64.3%**; largest resident footprint remains **94.59 / 96 GiB** via `mixtral:8x22b-q5_K_M`.
 - **Fleet TCO (simulated from real trace):** **36.1%** fewer GPUs — **23 vs 36**, **$445K vs $697K/yr**.
 - **Fleet governance:** both boxes converge to one signed config hash **`a78aebc5fd5f`**.
 

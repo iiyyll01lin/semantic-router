@@ -2,7 +2,7 @@
 
 _2× Ryzen AI Max+ 395 fleet (halo-a + halo-b) · core figures measured 2026-07-12; Halo-B 96 GiB carveout re-test 2026-07-13; best-config matrix (disk-fixed) re-test 2026-07-14; interactive TTFT sweet-spot sweep 2026-07-14 · companion to the [full technical report](customer-report.md)_
 
-**Bottom line: an intelligent LLM router runs on commodity Strix Halo mini-PCs today — it costs almost no throughput and a fixed, cache-removable first-token delay, and the only hard limit is memory.**
+**Bottom line: an intelligent LLM router runs on commodity Strix Halo mini-PCs today — Gemma 4 26B MoE is now the best local/default family, while `gpt-oss:120b` remains the 120B capacity/reference story.**
 
 ## The three things to know
 
@@ -16,21 +16,35 @@ _2× Ryzen AI Max+ 395 fleet (halo-a + halo-b) · core figures measured 2026-07-
 |---|---|---|---|
 | Fleet-safe standard ladder (safe default) | `qwen3:14b` | — | conservative ceiling every box meets |
 | Halo-A peak (32 GiB VRAM, GUI up) | `qwen2.5:32b` | ~10.7 tok/s | 70B **fails to load** (HTTP 500) |
-| Halo-B peak (96 GiB VRAM, headless) | **`gpt-oss:120b` (120B MoE)** | **~53 tok/s** (llama.cpp) | VRAM-resident; 70B-Q8 (~70 GiB) also resident; largest measured 141B MoE at **~94.6 GiB** (essentially the full carveout) |
+| Halo-B balanced local/default | **`gemma4:26b-a4b-it-q8_0`** | **44.6 tok/s** | **71.4% (30/42)** MMLU-Pro, **25.3 GiB**, **0.418 tok/s/W** |
+| Halo-B throughput/demo default | **`gemma4:26b` Q4_K_M** | **58.4 tok/s** | **69.0% (29/42)**, **21.6 GiB**, **0.481 tok/s/W**; best-feeling demo path |
+| Halo-B compact/fast edge | `gemma4:26b-a4b-it-qat` | **65.0 tok/s** | **13.8 GiB**, **64.3% (27/42)**; fastest and compact, but lower quality |
+| Halo-B capacity/reference | **`gpt-oss:120b` (120B MoE)** | **~36.5 tok/s** | **60.5 GiB**, **64.3% (27/42)**, **0.382 tok/s/W**; important big-MoE baseline, not the default |
 
-A **120-billion-parameter** model at **~53 tok/s** single-stream (llama.cpp, ROCm) on a single ~$2,500 mini-PC — the MoE activates only ~5B params/token, and Halo-B is run headless with a **96 GiB VRAM carveout** (loaded fully resident: llama.cpp `-ngl 999`, or ollama's `num_gpu`/`use_mmap` override).
+A single ~$2,500 mini-PC now has two complementary stories: the **Gemma 4 26B MoE default** is faster, higher quality, smaller, and more efficient than the 120B reference for everyday local serving; the **120B capacity story** proves the same box can still hold a very large MoE fully resident when run headless with a **96 GiB VRAM carveout** and explicit full-resident placement.
 
-**Best config vs naive default (single end-to-end matrix run, Halo-B, `gpt-oss:120b`, 2026-07-14 disk-fixed re-test):** the winning combination — **VRAM-resident (`-ngl 999`) + `--parallel 8` on llama.cpp (ROCm)** — serves the 120B at **95.2 tok/s aggregate across 8 concurrent streams**† (52.9 tok/s single-stream), **VRAM-resident (~59 GiB)**, at **0.641 tok/s/W** — simultaneously the **fastest and most power-efficient** of the eight configurations tested. The **naive default** (plain `gpt-oss:120b`, ollama auto layer-estimate, `NUM_PARALLEL=1`, no override) **failed to decode at all** on this box — auto sizing CPU-offloaded ~⅔ of the model into the ~30 GiB system RAM — so the honest gap is **usable vs unusable**: the difference is configuration, not hardware. (Within the resident config, raising `--parallel` mainly buys **concurrency capacity, not raw throughput**: the MXFP4 120B is memory-bandwidth-bound, so aggregate is nearly flat from `--parallel 1 → 2` (~50 → ~51 tok/s) and only climbs at `--parallel 8` (~79–95 tok/s across 8 streams, run-dependent) — at the cost of multi-second first-token latency. A semantic-cache hit removes the routing first-token tax on repeats, **~1.04 s → ~0.69 s**.)
+**Default recommendation:** use `gemma4:26b-a4b-it-q8_0` when the demo needs the best balance of quality and responsiveness; switch to `gemma4:26b` Q4_K_M when the audience should feel maximum throughput; use `gemma4:26b-a4b-it-qat` only when compactness or raw speed matters more than quality. `gemma4:31b-it-qat` is the best local quality rung (**78.6%**, 12.3 tok/s), but it is too slow to be the default unless the demo is quality-only.
+
+**Candidate sweep confirmation (2026-07-15):** P0 Qwen candidates did not change this recommendation. `qwen3-coder:30b` is faster (**71.0 tok/s**) but low quality (**54.8%**), `qwen3-next:80b` is **49.6 tok/s / 61.9%**, and `qwen3.6:27b` reaches **69.0%** but only **13.5 tok/s** / **0.082 tok/s/W**. Lower-priority DeepSeek/Mistral/Phi/Falcon checks also did not produce a better default.
 
 ## Cost / ROI — three levers
 
 - **vs cloud API:** ~$0 marginal cost per token after the one-off **~$2,500/box**. At $0.60 / 1M output tokens the box pays for itself after **~4.2 billion output tokens**.
 - **vs no routing:** easy queries route to a small tier that runs **~4.1× faster** than the 32B — cheaper per request on the same hardware.
-- **vs a discrete GPU:** one integrated box's **unified memory replaces a >40 GB GPU card**; the 120B MoE is even **more power-efficient per token than a dense 32B — 0.38 (ollama) to 0.64 (llama.cpp) vs 0.093 tok/s/W** (7B is 0.41) — a far larger model with no bigger power bill.
+- **vs a discrete GPU:** one integrated box's **unified memory replaces a >40 GB GPU card**; Gemma 4 26B MoE reaches **0.40–0.48 tok/s/W**, and the 120B MoE capacity reference is still **0.382 tok/s/W** — far above dense 32B (**0.093 tok/s/W**) with no bigger power bill.
 
 ## Recommended settings
 
-**Primary path — llama.cpp (ROCm), model loaded fully VRAM-resident (`-ngl 999`), semantic cache at 0.92.** This is the fastest and most power-efficient stack we measured — and it now serves the flagship 120B too (2026-07-14 disk-fixed re-test; the earlier "won't load" was a disk artifact, see caveats). **Size `--parallel` to your expected concurrency — bigger is not a free default** (the 120B is memory-bandwidth-bound, so extra slots add concurrency capacity, not throughput per user):
+**Primary local/demo path — Gemma 4 26B MoE + semantic cache at 0.92.** Pick the tag by demo goal:
+
+| Scenario | Setting | Decode / quality | Best for |
+|---|---|---|---|
+| **Balanced default** ★ | `gemma4:26b-a4b-it-q8_0` | **44.6 tok/s**, **71.4%**, 25.3 GiB | default customer demo and local serving |
+| **Throughput/demo default** | `gemma4:26b` Q4_K_M | **58.4 tok/s**, **69.0%**, 21.6 GiB | best-feeling interactive throughput |
+| **Compact/fast edge** | `gemma4:26b-a4b-it-qat` | **65.0 tok/s**, **64.3%**, 13.8 GiB | footprint-constrained edge use |
+| **Quality-only local** | `gemma4:31b-it-qat` | **12.3 tok/s**, **78.6%**, 18.5 GiB | quality-first demos where speed is secondary |
+
+**120B capacity/reference path — llama.cpp (ROCm), model loaded fully VRAM-resident (`-ngl 999`), semantic cache at 0.92.** Use this when the point is "the box can host a 120B MoE", not as the default demo model. Size `--parallel` to expected concurrency — bigger is not a free default:
 
 | Scenario | Setting | Serves `gpt-oss:120b` at | First token (TTFT) | Best for |
 |---|---|---|---|---|
@@ -42,14 +56,15 @@ A **120-billion-parameter** model at **~53 tok/s** single-stream (llama.cpp, ROC
 † The 8-stream aggregate is run-to-run / co-residency variable: the dedicated best-config matrix measured **95.2 tok/s**, a later co-resident sweep **79.1 tok/s** at the same point — read it as **~80–95 tok/s**, not one hard number. That sweep also found single-stream decode *drops* as slots rise (~52 tok/s at `--parallel 1` → ~30–33 at `--parallel 4`/`8`, even for a lone user), so over-provisioning slots slows the single-user path.
 
 - **Semantic-cache threshold 0.92** — maximum cache coverage with zero false hits.
+- **Do not call `gpt-oss:120b` the best/default config anymore.** It is the capacity/reference and big-MoE baseline; Gemma 4 26B MoE is the local/default family.
 - **Match `--parallel` to your concurrency — do not over-provision.** The co-resident sweep shows the 120B is memory-bandwidth-bound, so extra slots buy **capacity to serve more users, not more speed per user**, and over-provisioning actually **slows the single-user path**: lone-request decode falls from **~52 tok/s (`--parallel 1`) to ~30–33 tok/s (`--parallel 4`/`8`)**. Use **`--parallel 1`** for one latency-critical user, **`--parallel 2`** for a few concurrent interactive users (first token still ~1 s at p95, at ~the same ~51 tok/s aggregate), and **`--parallel 8`** only for batch/throughput where multi-second first tokens are acceptable (also the most power-efficient, 0.641 tok/s/W). Note `--parallel 1` serializes under load — first-token p95 balloons to **~17.8 s** if eight users hit its single slot.
 - **Large models:** run the box **headless** and force full residency (`-ngl 999`); on the 96 GiB carveout, headless alone is not enough.
-- **Alternative / fallback — ollama.** If you standardize on ollama instead, set **`OLLAMA_NUM_PARALLEL=8`** and load large models with the **`num_gpu=999` + `use_mmap=false`** override (the `-vram` variants). On the flagship 120B this measured **65.7 tok/s aggregate / 36.6 tok/s single-stream / 0.414 tok/s/W** — usable, but slower and less efficient than llama.cpp (95.2† / 52.9 / 0.641). _(The old "~128 tok/s" figure was a 7B-on-ollama concurrency number, not the flagship — the 120B figures above are the ones to quote.)_
+- **Alternative / fallback — ollama for the 120B reference.** If you standardize on ollama instead, set **`OLLAMA_NUM_PARALLEL=8`** and load large models with the **`num_gpu=999` + `use_mmap=false`** override (the `-vram` variants). On the 120B reference this measured **65.7 tok/s aggregate / 36.6 tok/s single-stream / 0.414 tok/s/W** — usable, but slower and less efficient than llama.cpp (95.2† / 52.9 / 0.641). _(The old "~128 tok/s" figure was a 7B-on-ollama concurrency number, not the 120B reference — the 120B figures above are the ones to quote.)_
 
 ## Honest caveats
 
 - **Asymmetric BIOS carveout** (Halo-A 32 GiB vs Halo-B 96 GiB) gives the two boxes **different model ceilings** — but **router overhead is identical** on both.
-- **vLLM is skip-with-reason on gfx1151** (a genuine kernel gap, `invalid device function`); the practical path is **llama.cpp (ROCm)**, which serves everything measured **including the MXFP4 `gpt-oss:120b`**. The disk-fixed 2026-07-14 re-test confirmed llama.cpp loads and is the *fastest* server for the flagship — an earlier "won't load on gfx1151" result was a **disk/download artifact (since corrected), not a hardware limitation**.
+- **vLLM is skip-with-reason on gfx1151** (a genuine kernel gap, `invalid device function`); the practical path is **llama.cpp (ROCm)**, which serves everything measured **including the MXFP4 `gpt-oss:120b`**. The disk-fixed 2026-07-14 re-test confirmed llama.cpp loads and is the *fastest* server for the 120B reference — an earlier "won't load on gfx1151" result was a **disk/download artifact (since corrected), not a hardware limitation**.
 - **`--parallel 8` maximizes aggregate throughput, not latency:** at 8 concurrent streams the 120B's first-token time rises to **~3.7 s (p95)** (vs ~85 ms for a lone user) as prompts queue for prefill, and per-stream decode drops to ~12 tok/s. Prefer **`--parallel 1`** for a single latency-critical user, **`--parallel 2`** for a few concurrent interactive users (the sweet spot — first token still ~1 s at p95), and **`--parallel 8`** only for batch / many-user throughput (where it is also the most power-efficient).
 - On Halo-B's **96 GiB carveout**, servers size GPU layers to the (now ~30 GiB) system RAM by default, so big models need explicit full-resident placement — llama.cpp **`-ngl 999`** or ollama **`num_gpu=999` + `use_mmap=false`** (the `-vram` variants) — to stay VRAM-resident; headless alone is not enough.
 

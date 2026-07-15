@@ -10,13 +10,29 @@
 
 - **Fleet-safe default:** `qwen3:14b` across both boxes.
 - **Halo-A peak:** `qwen2.5:32b` (~10.7 tok/s); a 70B fails to load (HTTP 500).
-- **Halo-B peak (headless, 96 GiB carveout):** `gpt-oss:120b` **(120B MoE) VRAM-resident at ~37 tok/s**; at 96 GiB even a **70B-Q8 (~70 GiB) is VRAM-resident**, and the largest model measured resident is a **141B MoE (`mixtral:8x22b`-Q5) at ~94.6 GiB** / 7.80 tok/s — **essentially the full 96 GiB carveout** (~1.4 GiB shy) (needs the `num_gpu`/`use_mmap` override — see caveats/§2).
+- **Halo-B local/default:** Gemma 4 26B MoE is now the recommended default family:
+  balanced `gemma4:26b-a4b-it-q8_0` (**44.6 tok/s**, **25.3 GiB**, **71.4%**), throughput/demo
+  `gemma4:26b` Q4_K_M (**58.4 tok/s**, **21.6 GiB**, **69.0%**), and compact/fast
+  `gemma4:26b-a4b-it-qat` (**65.0 tok/s**, **13.8 GiB**, **64.3%**).
+- **Halo-B capacity/reference (headless, 96 GiB carveout):** `gpt-oss:120b` **(120B MoE) VRAM-resident
+  at ~36.5 tok/s**, **60.5 GiB**, **64.3%**, **0.382 tok/s/W**; at 96 GiB even a **70B-Q8 (~70 GiB) is
+  VRAM-resident**, and the largest model measured resident is a **141B MoE (`mixtral:8x22b`-Q5) at
+  ~94.6 GiB** / 7.80 tok/s — **essentially the full 96 GiB carveout** (~1.4 GiB shy) (needs the
+  `num_gpu`/`use_mmap` override — see caveats/§2).
 
-**Recommended settings:** semantic-cache threshold **0.92** · `OLLAMA_NUM_PARALLEL=8` (→ ~128 tok/s aggregate, knee c8) · inference server **llama.cpp (ROCm)** · run large models **headless**, and on a large VRAM carveout load them via the `-vram` **variants** (`num_gpu`/`use_mmap=false`) — headless alone is not enough.
+**Recommended settings:** semantic-cache threshold **0.92** · default/demo model **Gemma 4 26B MoE**
+(`gemma4:26b-a4b-it-q8_0` balanced, `gemma4:26b` Q4_K_M for throughput/demo) · inference server
+**llama.cpp (ROCm)** where available · keep large capacity/reference models **headless** and loaded via
+full-residency controls (`-ngl 999`, or ollama `num_gpu`/`use_mmap=false` / `-vram` variants) — headless
+alone is not enough.
 
-**Best config vs naive default (measured end-to-end):** correctly configured (VRAM-resident `-vram` + `OLLAMA_NUM_PARALLEL=8` + cache + llama.cpp), the same box runs the **big model VRAM-resident (36.5 tok/s) instead of CPU-offloaded**, at **~2.8× concurrent throughput** (~121 vs ~44 tok/s aggregate) and **~10× energy efficiency per token** — the gain is configuration, not hardware.
+**Default conclusion:** `gpt-oss:120b` is no longer the best/default config. It remains the 120B
+capacity/reference and big-MoE baseline, but Gemma 4 26B MoE is faster, smaller, higher-quality for the
+balanced default, and more efficient for everyday local serving.
 
-**Why it's cheaper:** ~~$0 marginal cost per token after **~~$2,500/box** (payback ~~4.2B output tokens vs cloud) · routing to small tiers is **~~4.1×** faster than the 32B · unified memory replaces a **>40 GB GPU card**, and the 120B MoE is more power-efficient per token than a dense 32B (**0.382 vs 0.093 tok/s/W**; 7B is 0.41).
+**Candidate sweep confirmation (2026-07-15):** the broad Halo-B P0 + capped P1/P2 sweep did not find a replacement. `qwen3-coder:30b` is the speed standout (**71.0 tok/s**) but only **54.8%** on the 42Q quality slice; `qwen3-next:80b` is **49.6 tok/s / 61.9%**; `qwen3.6:27b` matches Gemma Q4 quality (**69.0%**) but is much slower (**13.5 tok/s**) and inefficient (**0.082 tok/s/W**). See `perf/quant-frontier/candidate-summary-halo-b.md` for measured rows and skips.
+
+**Why it's cheaper:** ~~$0 marginal cost per token after **~~$2,500/box** (payback ~~4.2B output tokens vs cloud) · routing to small tiers is **~~4.1×** faster than the 32B · unified memory replaces a **>40 GB GPU card**, Gemma 4 26B MoE reaches **0.40–0.48 tok/s/W**, and the 120B MoE capacity reference is still more power-efficient per token than a dense 32B (**0.382 vs 0.093 tok/s/W**; 7B is 0.41).
 
 **Caveats:** the two boxes have **asymmetric BIOS carveouts** (32 vs 96 GiB) → different model ceilings but **identical router overhead**; **vLLM is skip-with-reason on gfx1151**; on the 96 GiB carveout Ollama sizes GPU layers to the (now smaller ~30 GiB) system RAM, so big models need the `num_gpu=999` **+** `use_mmap=false` override (the `-vram` variants) to stay VRAM-resident — headless alone is not enough.
 
@@ -31,7 +47,10 @@
 - **It runs today:** router + backend share one box; the router costs ~8.5 GiB of memory and near-zero decode throughput.
 - **The real cost is first-token latency:** direct ~~156 ms -> through the router ~1560 ms (**+1.4 s**). An **exact-repeat cache** (live) returns identical prompts in **~~1–2 ms** — the entire tax gone. A second, **optional** lever — **trimming the two heaviest safety heads** — cuts the classify stage by a measured **~56%**, but it drops PII/jailbreak detection, so the live box **keeps those heads ON** (accuracy unchanged either way).
 - **Feasibility is memory-bound:** the biggest model a box serves = unified memory ÷ quantization (below).
-- **The max model moves with the box topology:** Halo-A tops out at `qwen2.5:32b` (70B fails to load); Halo-B, headless with a **96 GiB VRAM carveout**, serves `gpt-oss:120b` **(120B MoE) VRAM-resident at ~37 tok/s**, a **70B-Q8 (~70 GiB)** VRAM-resident, and a **141B MoE resident at ~94.6 GiB** (largest measured, 7.80 tok/s — essentially the full carveout), using the `num_gpu`/`use_mmap` override (§2).
+- **The default model and max model are now separate:** Halo-B's best local/default family is Gemma 4
+  26B MoE; the max/capacity story is still `gpt-oss:120b` **(120B MoE) VRAM-resident at ~36.5 tok/s**,
+  plus a **70B-Q8 (~70 GiB)** resident rung and a **141B MoE resident at ~94.6 GiB** (largest measured,
+  7.80 tok/s — essentially the full carveout), using the `num_gpu`/`use_mmap` override (§2).
 
 
 
@@ -54,7 +73,7 @@ Measured single-box peak ceilings (full vllm-sr stack co-resident):
 
 *The ceiling is governed by the **BIOS VRAM carveout**, not the OS-visible budget. When a model's weights exceed the carveout the two boxes fail differently: on **Halo-A** the overflow spills to GTT and the load **aborts (HTTP 500)** — a hard fail; on **Halo-B** the overflow is a **soft CPU-offload** (Ollama runs the extra layers on the CPU) that still "runs" but collapses decode below the usable floor. Going **headless** first moved Halo-B's ceiling 32B → 120B; raising the carveout further (below) then makes even a 70B-Q8 VRAM-resident.*
 
-***96 GiB re-test (current Halo-B config).** The BIOS carveout was later raised **64 → 96 GiB**. With the* `num_gpu`*/*`use_mmap` *override,* `gpt-oss:120b` *is VRAM-resident at **~37 tok/s** (up from 30.4), and the **70B-Q8 (~70 GiB) that was unusable at 64 GiB is now fully VRAM-resident** (~~3 tok/s, LPDDR5X-bandwidth-bound); the largest real model measured resident is a **141B MoE (mixtral-8x22b-Q5) at 94.59 GiB / 7.80 tok/s** — essentially the full 96 GiB carveout (~1.4 GiB shy), so residency is now measured to the carveout edge rather than extrapolated. Trade-off: system RAM drops to ~30 GiB and Ollama's default auto-estimate CPU-offloads big models unless overridden. Detail:* `perf-report.md` *[§11.1](../perf-report.md) and* `[halo-b-maxmodel.md](../halo-b-maxmodel.md)`*.*
+***96 GiB re-test (current Halo-B config).** The BIOS carveout was later raised **64 → 96 GiB**. With the* `num_gpu`*/*`use_mmap` *override,* `gpt-oss:120b` *is VRAM-resident at **~36.5 tok/s** (up from 30.4), and the **70B-Q8 (~70 GiB) that was unusable at 64 GiB is now fully VRAM-resident** (~~3 tok/s, LPDDR5X-bandwidth-bound); the largest real model measured resident is a **141B MoE (mixtral-8x22b-Q5) at 94.59 GiB / 7.80 tok/s** — essentially the full 96 GiB carveout (~1.4 GiB shy), so residency is now measured to the carveout edge rather than extrapolated. This is the capacity/reference story; the local/default story is Gemma 4 26B MoE. Trade-off: system RAM drops to ~30 GiB and Ollama's default auto-estimate CPU-offloads big models unless overridden. Detail:* `perf-report.md` *[§11.1](../perf-report.md) and* `[halo-b-maxmodel.md](../halo-b-maxmodel.md)`*.*
 
 ### Quantization decides the ceiling — bound by the VRAM carveout, not OS-visible RAM
 
@@ -71,6 +90,16 @@ The largest model is set by the **BIOS VRAM carveout** a model's weights must fi
 *Q4 roughly **doubles** the largest model vs fp16 on the same carveout — the practical lever for fitting a bigger model. These are weights-fit ceilings: a dense model near the top is VRAM-resident but LPDDR5X-bandwidth-bound, while an MoE (few active params) stays fast at the same size.*
 
 *Caveat — asymmetric BIOS.* The two boxes have different VRAM carveouts (**Halo-A 32 GiB, Halo-B 96 GiB**), so their **model ceilings differ** even though **router overhead is identical** on both. Halo-A's 32 GiB carveout caps it at `qwen2.5:32b` in practice (a 70B overflows and aborts); big models on Halo-B's 96 GiB carveout need **headless +** `num_gpu`**/**`use_mmap=false` (the `-vram` variants) to load VRAM-resident._
+
+### Current local/default model guidance
+
+| Use case | Model | Decode | Footprint | MMLU-Pro (42Q) | Why |
+| -------- | ----- | ------ | --------- | -------------- | --- |
+| **Balanced default** | `gemma4:26b-a4b-it-q8_0` | **44.6 tok/s** | 25.3 GiB | **71.4% (30/42)** | best quality/speed/VRAM balance |
+| **Throughput/demo default** | `gemma4:26b` Q4_K_M | **58.4 tok/s** | 21.6 GiB | **69.0% (29/42)** | best interactive feel |
+| **Compact/fast edge** | `gemma4:26b-a4b-it-qat` | **65.0 tok/s** | 13.8 GiB | **64.3% (27/42)** | fastest and smallest, lower quality |
+| **Quality-only local** | `gemma4:31b-it-qat` | 12.3 tok/s | 18.5 GiB | **78.6% (33/42)** | best local quality, too slow for default |
+| **120B capacity/reference** | `gpt-oss:120b` | ~36.5 tok/s | 60.5 GiB | 64.3% (27/42) | big-MoE baseline, not the default |
 
 ## 3. Latency tax and how the cache removes it
 
@@ -113,7 +142,7 @@ Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend
 | 16                 | 43                   | 41305                  | 107                               | 14452          |
 
 
-*Default Ollama serves one stream at a time: aggregate throughput stays flat (~~43 tok/s) while first-token latency grows with the queue. With*~~ `OLLAMA_NUM_PARALLEL=4` ~~*throughput scales to **~~107 tok/s (~2.5×)**, with the knee at **c=4** (already ~2.3× serialized while TTFT p95 stays low); beyond c=4 you buy little throughput while latency balloons. A **p8 re-test raises the plateau to ~128 tok/s with the knee at c8** (TTFT p95 ~825 ms at c8), so `OLLAMA_NUM_PARALLEL=8` is the recommended operating point; scale further with a higher parallel count or llama.cpp/vLLM slotting.*
+*Default Ollama serves one stream at a time: aggregate throughput stays flat (~~43 tok/s) while first-token latency grows with the queue. With*~~ `OLLAMA_NUM_PARALLEL=4` ~~*throughput scales to **~~107 tok/s (~2.5×)**, with the knee at **c=4** (already ~2.3× serialized while TTFT p95 stays low); beyond c=4 you buy little throughput while latency balloons. A **p8 re-test raises the 7B plateau to ~128 tok/s with the knee at c8** (TTFT p95 ~825 ms at c8), so `OLLAMA_NUM_PARALLEL=8` is the recommended 7B-class concurrency operating point; for larger models, size slots to the workload rather than treating p8 as a universal default.*
 
 ## 5. Inference-server options (same base model — note the quantization)
 
@@ -134,6 +163,6 @@ Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend
 
 **(b) vs no routing.** vllm-sr sends easy queries to a small model instead of always the big one; the small tier runs ~4.1x faster than the 32B, so routed traffic is proportionally cheaper per request.
 
-**(c) vs a discrete GPU.** Strix Halo's unified memory holds a 32B that would need a >40 GB discrete card, and Halo-B's 64 GiB carveout serves a 120B MoE that would need a multi-card box; one integrated box replaces a GPU-server tier (lower capex + power). The MoE lever compounds this: `gpt-oss:120b` (~~5.1B active params/token) is **both bigger *and* more power-efficient per token than a dense 32B — 0.382 vs 0.093 tok/s/W (~4.1×)** — so the box serves a far larger model without a bigger power bill.
+**(c) vs a discrete GPU.** Strix Halo's unified memory holds a 32B that would need a >40 GB discrete card, and Halo-B's 96 GiB carveout can host a 120B MoE capacity reference that would otherwise need a multi-card box; one integrated box replaces a GPU-server tier (lower capex + power). The MoE lever compounds this: Gemma 4 26B MoE is the better local/default point (**0.40–0.48 tok/s/W**), while `gpt-oss:120b` (~~5.1B active params/token) still beats dense 32B on energy/token (**0.382 vs 0.093 tok/s/W**) as the 120B reference.
 
 *Marginal per-token cost is ~$0 locally; the levers that make it genuinely cheaper: (1) route down to small models, (2) cache hits remove repeat work, (3) fit via Q4 instead of paying for a bigger card.*
