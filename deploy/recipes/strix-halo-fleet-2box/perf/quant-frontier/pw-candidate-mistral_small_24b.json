@@ -1,0 +1,44 @@
+{
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "decode_tps": 14.975469771029552,
+  "decode_tps_median": 14.975469771029552,
+  "decode_tps_runs": [
+    14.975469771029552
+  ],
+  "decode_window_s": 51.51754546165466,
+  "generated_utc": "2026-07-15T21:14:06Z",
+  "idle_samples": 14,
+  "idle_w": 19.264928571428573,
+  "idle_w_mean": 19.264928571428573,
+  "load_samples": 49,
+  "load_w_max": 147.089,
+  "load_w_mean": 140.5224693877551,
+  "load_w_peak": 147.089,
+  "model": "mistral-small:24b",
+  "runs_detail": [
+    {
+      "decode_s": 51.283867,
+      "decode_tps": 14.975469771029552,
+      "eval_count": 768,
+      "eval_duration_ns": 51283867000,
+      "tokens": 768,
+      "wall_s": 51.517347230997984
+    }
+  ],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 768,
+    "num_ctx": 0,
+    "prompt_text": "Write a detailed 1000-word practical explanation of how transformer language models work, covering attention, feed-forward layers, tokenization, inference latency, memory bandwidth, and deployment tradeoffs on local hardware.",
+    "prompt_tokens": 256,
+    "runs": 1,
+    "think": false,
+    "use_mmap": false
+  },
+  "tok_per_watt_load": 0.10656993031987302,
+  "tok_per_watt_net_idle": 0.12350134820657027,
+  "total_decode_s": 51.283867,
+  "total_decode_tokens": 768
+}
