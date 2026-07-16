@@ -30,6 +30,11 @@ alone is not enough.
 capacity/reference and big-MoE baseline, but Gemma 4 26B MoE is faster, smaller, higher-quality for the
 balanced default, and more efficient for everyday local serving.
 
+**Operational carveout conclusion:** use **64 GiB VRAM** for Gemma 4 26B default serving (the Gemma
+rungs peak at only 13.8–25.3 GiB and benefit from ~62 GiB OS-visible system RAM). Keep **96 GiB
+VRAM** as a capacity/frontier-test mode for `gpt-oss:120b`, 70B-Q8, and mixtral-q5, where full
+residency past the 64 GiB ceiling is the point.
+
 **Candidate sweep confirmation (2026-07-15):** the broad Halo-B P0 + capped P1/P2 sweep did not find a replacement. `qwen3-coder:30b` is the speed standout (**71.0 tok/s**) but only **54.8%** on the 42Q quality slice; `qwen3-next:80b` is **49.6 tok/s / 61.9%**; `qwen3.6:27b` matches Gemma Q4 quality (**69.0%**) but is much slower (**13.5 tok/s**) and inefficient (**0.082 tok/s/W**). See `perf/quant-frontier/candidate-summary-halo-b.md` for measured rows and skips.
 
 **Why it's cheaper:** ~~$0 marginal cost per token after **~~$2,500/box** (payback ~~4.2B output tokens vs cloud) · routing to small tiers is **~~4.1×** faster than the 32B · unified memory replaces a **>40 GB GPU card**, Gemma 4 26B MoE reaches **0.40–0.48 tok/s/W**, and the 120B MoE capacity reference is still more power-efficient per token than a dense 32B (**0.382 vs 0.093 tok/s/W**; 7B is 0.41).
@@ -74,6 +79,11 @@ Measured single-box peak ceilings (full vllm-sr stack co-resident):
 *The ceiling is governed by the **BIOS VRAM carveout**, not the OS-visible budget. When a model's weights exceed the carveout the two boxes fail differently: on **Halo-A** the overflow spills to GTT and the load **aborts (HTTP 500)** — a hard fail; on **Halo-B** the overflow is a **soft CPU-offload** (Ollama runs the extra layers on the CPU) that still "runs" but collapses decode below the usable floor. Going **headless** first moved Halo-B's ceiling 32B → 120B; raising the carveout further (below) then makes even a 70B-Q8 VRAM-resident.*
 
 ***96 GiB re-test (current Halo-B config).** The BIOS carveout was later raised **64 → 96 GiB**. With the* `num_gpu`*/*`use_mmap` *override,* `gpt-oss:120b` *is VRAM-resident at **~36.5 tok/s** (up from 30.4), and the **70B-Q8 (~70 GiB) that was unusable at 64 GiB is now fully VRAM-resident** (~~3 tok/s, LPDDR5X-bandwidth-bound); the largest real model measured resident is a **141B MoE (mixtral-8x22b-Q5) at 94.59 GiB / 7.80 tok/s** — essentially the full 96 GiB carveout (~1.4 GiB shy), so residency is now measured to the carveout edge rather than extrapolated. This is the capacity/reference story; the local/default story is Gemma 4 26B MoE. Trade-off: system RAM drops to ~30 GiB and Ollama's default auto-estimate CPU-offloads big models unless overridden. Detail:* `perf-report.md` *[§11.1](../perf-report.md) and* `[halo-b-maxmodel.md](../halo-b-maxmodel.md)`*.*
+
+***Operational note.** For Gemma 4 26B default serving, **64 GiB** is the recommended Halo-B
+carveout: Gemma fits comfortably, Ollama behaves more naturally, and the OS/container side gets
+~62 GiB visible system RAM. Switch to **96 GiB** only when demonstrating or measuring the
+capacity/reference rungs above.*
 
 ### Quantization decides the ceiling — bound by the VRAM carveout, not OS-visible RAM
 

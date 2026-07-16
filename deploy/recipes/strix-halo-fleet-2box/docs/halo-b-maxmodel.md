@@ -128,24 +128,25 @@ overflow — consistent with the 64 GiB findings).
 
 
 
-### Decision: keep the 96 GiB carveout
+### Decision: 96 GiB capacity mode; 64 GiB Gemma-default mode
 
-**We keep Halo-B at the 96 GiB VRAM carveout.** Rationale and trade-off:
+**Use Halo-B's 96 GiB VRAM carveout for capacity/reference and frontier tests, but prefer 64 GiB
+for day-to-day Gemma 4 26B default serving.** Rationale and trade-off:
 
-- **Why keep it:** only 96 GiB can hold the **>60 GiB models fully VRAM-resident** we now want
-available for capacity/reference work — `gpt-oss:120b` (60.5 GiB, and *faster* than at 64 GiB:
-36.7 vs 30.4 tok/s), `llama3.1:70b-instruct-q8_0` (70.7 GiB), `qwen2.5:72b-instruct-q8_0`
-(72.6 GiB), `mixtral:8x22b-instruct-v0.1-q5_K_M` (94.59 GiB, the largest measured — ~1.4 GiB
-below the carveout) and right up to the 96 GiB carveout edge. **64 GiB physically cannot** — its
-usable ceiling was ~56 GiB and Q8-70B was CPU-offloaded to 2.1 tok/s there. The local/default
-Gemma 4 26B MoE rungs fit well below this ceiling; the 96 GiB carveout is retained for the
-capacity story.
-- **Cost:** OS-visible system RAM drops to **30 GiB**. Verified acceptable — the 14-container
-**smartcity** stack runs co-resident and healthy in that budget, and our CPU-pinned vllm-sr
-stack adds only ~8.5 GiB of system RAM (weights live in the VRAM carveout, not system RAM).
-- **Caveat:** at 96 GiB you **must** override Ollama's auto layer estimate (it sizes to the 30
-GiB system RAM, not the carveout). If *hands-off* Ollama matters more than >60 GiB residency,
-revert to 64 GiB (below).
+- **Why keep 96 GiB available:** only 96 GiB can hold the **>60 GiB models fully VRAM-resident**
+  for capacity/reference work — `gpt-oss:120b` (60.5 GiB, and *faster* than at 64 GiB: 36.7 vs
+  30.4 tok/s), `llama3.1:70b-instruct-q8_0` (70.7 GiB), `qwen2.5:72b-instruct-q8_0` (72.6 GiB),
+  `mixtral:8x22b-instruct-v0.1-q5_K_M` (94.59 GiB, the largest measured — ~1.4 GiB below the
+  carveout) and right up to the 96 GiB carveout edge. **64 GiB physically cannot** — its usable
+  ceiling was ~56 GiB and Q8-70B was CPU-offloaded to 2.1 tok/s there.
+- **Why 64 GiB is the operational default for Gemma:** the local/default Gemma 4 26B MoE rungs
+  peak at only **13.8–25.3 GiB**, so they do not need the 96 GiB carveout. A 64 GiB carveout gives
+  much more OS-visible system RAM (~62 GiB instead of ~30 GiB), leaves the router/dashboard/smartcity
+  containers more headroom, and restores hands-off Ollama behavior for the Gemma default path.
+- **Cost of 96 GiB:** OS-visible system RAM drops to **30 GiB**. Verified acceptable for the
+  co-resident stack, but not the best operational choice unless the demo is explicitly about the
+  120B/capacity story. At 96 GiB you **must** override Ollama's auto layer estimate (it sizes to
+  the 30 GiB system RAM, not the carveout).
 
 
 
@@ -170,11 +171,11 @@ re-validate the GGUF and fail for MXFP4/Q8, and `-f -`/stdin is not accepted.)
 
 
 
-### Revert to the 64 GiB carveout (documented, not executed)
+### Switch to the 64 GiB Gemma-default carveout (documented, not executed)
 
-To restore *hands-off* Ollama (auto layer estimate works again, ~62 GiB system RAM), lower the
-BIOS UMA carveout back to 64 GiB. This is a **firmware** change — the carveout is **not** an OS
-lever, so there is no `sysfs`/kernel path:
+To run Halo-B as the Gemma 4 26B default-serving box (hands-off Ollama, ~62 GiB system RAM),
+lower the BIOS UMA carveout back to 64 GiB. This is a **firmware** change — the carveout is
+**not** an OS lever, so there is no `sysfs`/kernel path:
 
 1. Reboot into **UEFI/BIOS setup**.
 2. Set the **UMA Frame Buffer Size / VRAM carveout** back to **64 GiB** (inverse of the earlier

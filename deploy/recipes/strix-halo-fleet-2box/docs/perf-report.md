@@ -846,15 +846,19 @@ result is **counter-intuitive and operationally important**:
   94.59 GiB**, §11.2); the ***usable* dense-Q8** ceiling is **~70 GiB**
   (`llama3.1:70b-instruct-q8_0`). An MoE like `gpt-oss:120b` stays fast (36.8 tok/s) at any of
   these sizes. Data: [`maxmodel-sweep-halo-b-96g-forced.json`](../perf/maxmodel-sweep-halo-b-96g-forced.json).
-- **Decision — keep 96 GiB; make residency the default via `-vram` variants.** We **keep the 96
-  GiB carveout**: only it can hold >60 GiB models VRAM-resident (64 GiB cannot), and the 30 GiB
-  system-RAM cost is verified acceptable (smartcity's 14 containers stay healthy co-resident). To
-  dodge the auto-estimate regression, make big models default to full residency with
+- **Operational decision — 64 GiB for Gemma default, 96 GiB for capacity/frontier tests.** The
+  96 GiB carveout remains the right **capacity/reference mode**: only it can hold >60 GiB models
+  VRAM-resident (`gpt-oss:120b`, Q8-70B, mixtral-q5 at 94.59 GiB), and the 30 GiB system-RAM cost
+  was verified acceptable for the co-resident stack. But it is no longer the best day-to-day
+  serving choice now that the local/default family is Gemma 4 26B MoE (13.8–25.3 GiB): for Gemma
+  default serving, prefer reverting Halo-B to a **64 GiB carveout** to regain ~62 GiB OS-visible
+  system RAM and avoid Ollama's 96 GiB auto-budget trap. When running capacity/reference models on
+  96 GiB, make big models default to full residency with
   [`perf/make-vram-resident-models.sh`](../perf/make-vram-resident-models.sh) — it bakes
   `num_gpu 999` + `use_mmap false` into a **non-destructive `<tag>-vram`** variant (persisted on
-  Ollama 0.30.10; `ollama ps` = 100% GPU). **Revert path** (to get hands-off Ollama back): lower
-  the BIOS UMA carveout 96 → 64 GiB (UEFI + reboot — a firmware, not OS, lever). Full memory map,
-  decision, usage, and revert steps:
+  Ollama 0.30.10; `ollama ps` = 100% GPU). **Revert path** (to get Gemma-default / hands-off
+  Ollama back): lower the BIOS UMA carveout 96 → 64 GiB (UEFI + reboot — a firmware, not OS,
+  lever). Full memory map, usage, and revert steps:
   [`halo-b-maxmodel.md` → 96 GiB re-test](halo-b-maxmodel.md#96-gib-vram-carveout-re-test).
 
 ### 11.2 Quantization frontier — footprint x speed x quality (96 GiB) **[M]**

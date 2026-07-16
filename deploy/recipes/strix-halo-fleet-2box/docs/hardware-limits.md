@@ -118,9 +118,11 @@ at the TDP envelope.**
   120B capacity story (**60.5 GiB**, **~36.5 tok/s**, **64.3%**, **0.382 tok/s/W**) and as the
   reference model for the residency/serving matrix, but the Gemma 26B MoE rungs are better defaults
   on speed, quality, VRAM, and energy.
-- **BIOS 96 GiB VRAM carveout.** Keep it for capacity work: it is what lets >60 GiB reference models
-  and the **94.59 GiB** `mixtral:8x22b-q5_K_M` resident-footprint record fit. The Gemma 26B defaults
-  do not need that much VRAM, but the capacity story does.
+- **Operational carveout: 64 GiB for Gemma default, 96 GiB for capacity work.** The Gemma 26B
+  defaults peak at only **13.8–25.3 GiB**, so day-to-day local serving should prefer a **64 GiB**
+  BIOS carveout to regain ~62 GiB OS-visible system RAM and keep Ollama's default budgeting sane.
+  Keep **96 GiB** for capacity/frontier work: it is what lets >60 GiB reference models and the
+  **94.59 GiB** `mixtral:8x22b-q5_K_M` resident-footprint record fit.
 - **Headless + forced residency for big references.** Headless frees the carveout; `-vram` variants
   (`num_gpu=999` + `use_mmap=false`) avoid Ollama's 96 GiB auto-budget trap, where `gpt-oss:120b`
   regresses **36.8 → 5.7 tok/s** by CPU-offloading against the 30 GiB system-RAM budget.

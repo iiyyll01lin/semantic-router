@@ -44,6 +44,11 @@ A single ~$2,500 mini-PC now has two complementary stories: the **Gemma 4 26B Mo
 | **Compact/fast edge** | `gemma4:26b-a4b-it-qat` | **65.0 tok/s**, **64.3%**, 13.8 GiB | footprint-constrained edge use |
 | **Quality-only local** | `gemma4:31b-it-qat` | **12.3 tok/s**, **78.6%**, 18.5 GiB | quality-first demos where speed is secondary |
 
+**Operational VRAM carveout:** for this Gemma-default path, prefer **64 GiB VRAM / ~62 GiB
+system RAM**. The Gemma 26B rungs peak at only **13.8–25.3 GiB**, so 96 GiB is unnecessary for
+normal serving and leaves too little OS-visible RAM. Use **96 GiB** only for the capacity/reference
+story below (`gpt-oss:120b`, 70B-Q8, mixtral-q5), where models exceed the 64 GiB resident ceiling.
+
 **120B capacity/reference path — llama.cpp (ROCm), model loaded fully VRAM-resident (`-ngl 999`), semantic cache at 0.92.** Use this when the point is "the box can host a 120B MoE", not as the default demo model. Size `--parallel` to expected concurrency — bigger is not a free default:
 
 | Scenario | Setting | Serves `gpt-oss:120b` at | First token (TTFT) | Best for |
