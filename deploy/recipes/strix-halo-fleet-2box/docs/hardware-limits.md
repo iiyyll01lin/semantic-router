@@ -136,6 +136,56 @@ at the TDP envelope.**
 
 - **Candidate sweep update (Halo-B, 2026-07-15) [M].** A broad P0 + capped P1/P2 sweep did **not** displace Gemma 4. The best speed candidate, `qwen3-coder:30b`, hit **71.0 tok/s** in **18.1 GiB** but only **54.8% (23/42)**. `qwen3-next:80b` was fast enough for default consideration (**49.6 tok/s**, **47.4 GiB**) but scored **61.9% (26/42)**. `qwen3.6:27b` matched the Gemma Q4 quality sample (**69.0%**, 29/42) but was much slower (**13.5 tok/s**) and inefficient (**0.082 tok/s/W**). Lower-priority measured candidates also missed the default bar (`mistral-small:24b` **15.2 tok/s / 54.8%**, `deepseek-r1:32b` **11.0 tok/s / 50.0%**); EXAONE/OpenThinker/Magistral/Phi produced speed/power but no quality JSON under the 30-minute cap, EXAONE is research-only/non-commercial, GLM-4.5-Air and DeepSeek-R1 70B were skipped to keep the sweep bounded, and Falcon-H1 manifests were unavailable. Raw data and skip notes: [`candidate-summary-halo-b.json`](../perf/quant-frontier/candidate-summary-halo-b.json) / [`candidate-summary-halo-b.md`](../perf/quant-frontier/candidate-summary-halo-b.md).
 
+## 3.1 Operating profiles — which model per workload [M]
+
+The single-"best-model" question is the wrong one for a customer: the right model depends on the
+**workload**. The matrix below turns the measured frontier (§3/§5) into a recommendation per
+operating profile. Every headline number is measured on Halo-B and matches the frontier JSON in
+[`perf/quant-frontier/`](../perf/quant-frontier/); the profile-specific follow-up measurements
+(agentic tool-call, per-model multiagent concurrency, EXAONE/Phi-4 quality completion) are
+collected in [`profiles-summary-halo-b.md`](../perf/quant-frontier/profiles-summary-halo-b.md).
+
+| Profile | Recommended model | Route | Measured headline | Carveout |
+| --- | --- | --- | --- | ---: |
+| **Single-turn** request/response | `gemma4:26b-a4b-it-q8_0` (balanced); `gemma4:26b` Q4 for fastest demo feel | auto (default) | Q8 **44.6 tok/s**, **71.4% (30/42)**, 25.3 GiB, 0.418 tok/s/W, TTFT ~0.37 s · Q4 **58.4 tok/s**, 69.0%, 21.6 GiB | 64 GiB |
+| **Agentic / tool-calling** | `gemma4:26b-a4b-it-q8_0` default (mixed reason+tool); `qwen3-coder:30b` for tool-call-heavy volume | auto (default) + by-name | On the frozen 15-task tool-call probe **all three score 100% (15/15) valid+correct**, so speed decides: Qwen3-Coder **1.28 s/step @ 72.2 tok/s** vs Q8 **2.63 s/step @ 41.4 tok/s**; Q8 keeps the higher generic quality (71.4% vs 54.8%) for mixed reasoning | 64 GiB |
+| **Multiagent / concurrent** | `gemma4:26b` Q4 (throughput) or Q8 (quality), `OLLAMA_NUM_PARALLEL=8` | by-name + server flag | 7B concurrency plateau **~120–128 tok/s**, knee **c8**, TTFT p95 ~825 ms @ c8; per-model Q4/Q8/Qwen c1/c2/c4/c8 in summary | 64 GiB |
+| **Quality-only** local | `gemma4:31b-it-qat` | by-name | **78.6% (33/42)** — best local quality — at 18.5 GiB, but **12.3 tok/s** / 0.090 tok/s/W (too slow to default) | 64 GiB |
+| **Capacity / reference demo** | `gpt-oss:120b` (`-vram` variant), explicit by-name, never auto-routed | by-name only | **~36.5 tok/s**, **64.3% (27/42)**, 60.5 GiB, 0.382 tok/s/W — the "this box holds a 120B MoE" story | **96 GiB** |
+
+**Scorecards (what each profile is judged on, and the measured evidence):**
+
+- **Single-turn** — TTFT, decode tok/s, 42Q quality, power, VRAM, 64 GiB fit. `gemma4:26b-a4b-it-q8_0`
+  wins the blend (44.6 tok/s, 71.4%, 25.3 GiB, 0.418 tok/s/W, TTFT ~0.37 s); switch to `gemma4:26b`
+  Q4 when the demo should feel fastest (58.4 tok/s, 69.0%).
+- **Agentic / tool-calling** — JSON/tool-call validity, tool-selection + argument correctness, latency
+  per step, failure rate. Measured on a small frozen 15-task set
+  ([`agentic-toolcall-tasks.json`](../perf/data/agentic-toolcall-tasks.json), scored by
+  [`agentic_toolcall.py`](../perf/agentic_toolcall.py)): `gemma4:26b-a4b-it-q8_0`, `qwen3-coder:30b`,
+  and `gemma4:31b-it-qat` **all scored 100% (15/15)** valid JSON + correct tool + correct args, so
+  tool-call validity does not separate them on this probe — **speed** does (Qwen3-Coder 1.28 s/step,
+  Q8 2.63 s/step, 31B-QAT 5.28 s/step). Recommendation: `qwen3-coder:30b` for tool-call-heavy,
+  high-volume agent loops; keep balanced **Q8** as the default when the agent also needs general
+  reasoning (its 71.4% generic MMLU-Pro beats Qwen3-Coder's 54.8%). n=15 is indicative, not a broad
+  agent eval.
+- **Multiagent / concurrent** — aggregate tok/s, per-agent tok/s, TTFT p50/p95 across c1/c2/c4/c8.
+  The measured 7B curve sets the shape (knee **c8**, ceiling **~128 tok/s**, TTFT p95 825 ms @ c8);
+  the per-model Q4/Q8/Qwen3-Coder sweep (`OLLAMA_NUM_PARALLEL=8`, forced-resident) quantifies the
+  Q4-vs-Q8 throughput/latency trade for concurrent local agents.
+- **Quality-only** — 42Q MMLU-Pro (plus the EXAONE 4.0 32B / Phi-4-reasoning-plus completion that the
+  capped candidate sweep could not finish). `gemma4:31b-it-qat` is the best measured local quality
+  (**78.6%**) and stays compact (18.5 GiB), but 12.3 tok/s makes it quality-first only. EXAONE is
+  **research-only / non-commercial** and never a default.
+- **Capacity / reference** — capacity, residency, customer wow factor (explicitly *not* default
+  suitability). `gpt-oss:120b` fully VRAM-resident is the 120B story; it needs the **96 GiB** carveout,
+  whereas the Gemma serving rungs run in **64 GiB** with ~62 GiB system RAM to spare.
+
+**Carveout rule:** the four Gemma rungs peak at **13.8–25.3 GiB**, so day-to-day local serving of any
+single-turn / agentic / multiagent / quality-only profile should use the **64 GiB** BIOS carveout;
+**96 GiB** is reserved for the capacity/reference profile (>60 GiB resident models). This split is
+mirrored in [`poc-strix.yaml`](../../strix-halo-poc/poc-strix.yaml) (balanced Q8 is the auto-routed
+default; Q4 serves the fast lane; compact/quality/capacity are explicit by-name).
+
 ## 4. 120B capacity/reference A/B (not the local default) [M]
 
 This A/B remains useful for the **120B capacity story**, but it is no longer the local/default

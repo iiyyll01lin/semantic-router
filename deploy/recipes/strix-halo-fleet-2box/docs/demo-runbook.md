@@ -48,6 +48,7 @@ ssh -N -L 8700:localhost:8700 test001@10.96.31.132
 - **Router tax:** **~0%** decode-throughput impact + a fixed **~1.4 s** TTFT; a cache hit removes it (exact-repeat **~1–2 ms**).
 - **Default/demo model (Halo-B):** Gemma 4 26B MoE — balanced `gemma4:26b-a4b-it-q8_0` at **44.6 tok/s / 71.4%**, or throughput `gemma4:26b` Q4 at **58.4 tok/s / 69.0%**. The 2026-07-15 candidate sweep confirms this: `qwen3-coder:30b` is faster but 54.8%, `qwen3-next:80b` is 61.9%, and `qwen3.6:27b` is 69.0% but only 13.5 tok/s.
 - **Capacity/reference model (Halo-B, 96 GiB, headless):** `gpt-oss:120b` (120B MoE) @ **~36.5 tok/s**, **60.5 GiB**, **64.3%**; largest resident footprint remains **94.59 / 96 GiB** via `mixtral:8x22b-q5_K_M`.
+- **Operating profiles (pick by workload):** single-turn → `gemma4:26b-a4b-it-q8_0` (balanced) or `gemma4:26b` Q4 (fastest feel); agentic → Q8 default (`qwen3-coder:30b` only if the tool-call bench earns it); multiagent → Q4/Q8 with `OLLAMA_NUM_PARALLEL=8`; quality-only → `gemma4:31b-it-qat` (78.6%); capacity → `gpt-oss:120b` by-name. **64 GiB carveout for the Gemma rungs, 96 GiB only for the capacity demo.** Full matrix: [`hardware-limits.md` §3.1](hardware-limits.md).
 - **Fleet TCO (simulated from real trace):** **36.1%** fewer GPUs — **23 vs 36**, **$445K vs $697K/yr**.
 - **Fleet governance:** both boxes converge to one signed config hash **`a78aebc5fd5f`**.
 

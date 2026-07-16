@@ -111,6 +111,30 @@ The largest model is set by the **BIOS VRAM carveout** a model's weights must fi
 | **Quality-only local** | `gemma4:31b-it-qat` | 12.3 tok/s | 18.5 GiB | **78.6% (33/42)** | best local quality, too slow for default |
 | **120B capacity/reference** | `gpt-oss:120b` | ~36.5 tok/s | 60.5 GiB | 64.3% (27/42) | big-MoE baseline, not the default |
 
+### Operating profiles — which model per workload
+
+The table above is by model; this one is by **workload**, because the right model depends on what the
+customer is running. Recommendations are measured on Halo-B; the profile-specific follow-ups (agentic
+tool-call scoring, per-model multiagent concurrency, EXAONE/Phi-4 quality completion) are collected in
+`perf/quant-frontier/profiles-summary-halo-b.md`.
+
+| Operating profile | Recommended | Measured basis | Carveout |
+| --- | --- | --- | ---: |
+| **Single-turn** request/response | `gemma4:26b-a4b-it-q8_0` (balanced); `gemma4:26b` Q4 for fastest feel | 44.6 tok/s / 71.4% ; Q4 58.4 tok/s / 69.0% | 64 GiB |
+| **Agentic / tool-calling** | `gemma4:26b-a4b-it-q8_0` default; `qwen3-coder:30b` only if the tool-call bench earns it | Q8 71.4% quality vs Qwen3-Coder 71.0 tok/s but 54.8% generic | 64 GiB |
+| **Multiagent / concurrent** | `gemma4:26b` Q4 (throughput) or Q8 (quality), `OLLAMA_NUM_PARALLEL=8` | 7B plateau ~120–128 tok/s, knee c8, TTFT p95 ~825 ms @ c8 | 64 GiB |
+| **Quality-only** local | `gemma4:31b-it-qat` | 78.6% (33/42) best local quality, but 12.3 tok/s | 64 GiB |
+| **Capacity / reference demo** | `gpt-oss:120b` (`-vram`), explicit by-name, never auto-routed | ~36.5 tok/s, 64.3%, 60.5 GiB | **96 GiB** |
+
+- **Default carveout is 64 GiB**, not 96: the four Gemma serving rungs peak at 13.8–25.3 GiB, so 96 GiB
+  is only needed for the capacity/reference profile. The router config
+  ([`poc-strix.yaml`](../../../strix-halo-poc/poc-strix.yaml)) auto-routes everyday traffic to the
+  balanced Q8 default and the short-QA fast lane to Q4; compact, quality-only, and capacity are
+  explicit by-name selections.
+- **Agentic caveat:** Qwen3-Coder is faster than Gemma but scores far lower on generic quality; whether
+  it is worth routing to for tool-calling is decided by tool-call/JSON validity, not raw tok/s (see the
+  summary). Until then the balanced Q8 is the safe agentic default.
+
 ## 3. Latency tax and how the cache removes it
 
 The router adds ~1.4 s to first-token latency (classification + embedding + routing). A **semantic-cache hit** skips that pipeline and the model call entirely:

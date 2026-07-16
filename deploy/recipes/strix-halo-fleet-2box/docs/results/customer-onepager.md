@@ -27,6 +27,21 @@ A single ~$2,500 mini-PC now has two complementary stories: the **Gemma 4 26B Mo
 
 **Candidate sweep confirmation (2026-07-15):** P0 Qwen candidates did not change this recommendation. `qwen3-coder:30b` is faster (**71.0 tok/s**) but low quality (**54.8%**), `qwen3-next:80b` is **49.6 tok/s / 61.9%**, and `qwen3.6:27b` reaches **69.0%** but only **13.5 tok/s** / **0.082 tok/s/W**. Lower-priority DeepSeek/Mistral/Phi/Falcon checks also did not produce a better default.
 
+## Operating profiles — the model depends on the workload
+
+There is no single "best" model — pick by workload. All figures measured on Halo-B (profile-specific
+follow-ups in the [full report](customer-report.md) and `perf/quant-frontier/profiles-summary-halo-b.md`):
+
+| Workload | Run this | Measured | Carveout |
+|---|---|---|---:|
+| **Single-turn** chat/QA | `gemma4:26b-a4b-it-q8_0` (or `gemma4:26b` Q4 for fastest feel) | 44.6 tok/s, 71.4% · Q4 58.4 tok/s, 69.0% | 64 GiB |
+| **Agentic / tool-calling** | `gemma4:26b-a4b-it-q8_0` (Qwen3-Coder only if the tool-call bench earns it) | Qwen3-Coder 71.0 tok/s but 54.8% generic | 64 GiB |
+| **Multiagent / concurrent** | `gemma4:26b` Q4 (throughput) or Q8 (quality), `OLLAMA_NUM_PARALLEL=8` | 7B plateau ~120–128 tok/s, knee c8 | 64 GiB |
+| **Quality-only** | `gemma4:31b-it-qat` | 78.6% best local quality, 12.3 tok/s | 64 GiB |
+| **Capacity demo** | `gpt-oss:120b` (explicit by-name, never auto-routed) | ~36.5 tok/s, 64.3%, 60.5 GiB | **96 GiB** |
+
+**Everyday serving uses the 64 GiB carveout** (Gemma rungs are 13.8–25.3 GiB); reserve **96 GiB** only for the capacity demo.
+
 ## Cost / ROI — three levers
 
 - **vs cloud API:** ~$0 marginal cost per token after the one-off **~$2,500/box**. At $0.60 / 1M output tokens the box pays for itself after **~4.2 billion output tokens**.
