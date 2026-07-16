@@ -76,14 +76,39 @@ for _sv in ${FLEET_SECURITY_AGENT_VARS} ${FLEET_SECURITY_CCP_VARS} ${FLEET_AGENT
   # shellcheck disable=SC2163
   [ -n "${!_sv:-}" ] && export "${_sv}"
 done
-# Build the (quoted, only-if-set) agent-side env forwarded over SSH to remotes.
+# Build the (quoted, only-if-set) agent-side env forwarded over SSH to ONE remote
+# box. Pass the box id so the four path-valued vars can resolve to THAT box's own
+# staged material when FLEET_REMOTE_STAGED=1 (set by run-hardware-validation.sh
+# stage_certs): the Ed25519 pub + CA + the box's OWN client cert/key are emitted
+# as remote-home-relative '~' paths and forwarded UNQUOTED so the remote shell
+# expands '~' to the remote $HOME. Every OTHER var -- and ALL vars when
+# FLEET_REMOTE_STAGED is unset -- keeps the verbatim `printf %q` forwarding, so
+# the default (non-staged) flow is byte-identical to before.
 remote_agent_env() {
-  local out="" v
+  local box_id="${1:-}" out="" v
   for v in ${FLEET_SECURITY_AGENT_VARS} ${FLEET_AGENT_EXTRA_VARS}; do
-    [ -n "${!v:-}" ] && out+="${v}=$(printf %q "${!v}") "
+    [ -n "${!v:-}" ] || continue
+    if [ -n "${FLEET_REMOTE_STAGED:-}" ]; then
+      case "${v}" in
+        FLEET_ED25519_PUBLIC_FILE) out+="${v}=$(fleet_remote_ed25519_pub) ";            continue ;;
+        FLEET_TLS_CA)              out+="${v}=$(fleet_remote_tls_ca) ";                  continue ;;
+        FLEET_TLS_CLIENT_CERT)     out+="${v}=$(fleet_remote_client_cert "${box_id}") "; continue ;;
+        FLEET_TLS_CLIENT_KEY)      out+="${v}=$(fleet_remote_client_key "${box_id}") ";  continue ;;
+      esac
+    fi
+    out+="${v}=$(printf %q "${!v}") "
   done
   printf '%s' "${out}"
 }
+
+# OFFLINE test hook (test-remote-agent-env.sh): sourcing this script with
+# FLEET_DEPLOY_LIB_ONLY=1 exposes remote_agent_env WITHOUT running the deploy. A
+# normal `bash deploy-fleet-2box.sh` never sets the sentinel, so execution is
+# unchanged.
+if [ -n "${FLEET_DEPLOY_LIB_ONLY:-}" ]; then
+  # shellcheck disable=SC2317  # 'exit 0' is the fallback if EXECUTED (not sourced) with the sentinel
+  return 0 2>/dev/null || exit 0
+fi
 
 FLEET_MODE="${FLEET_MODE:-mock}"
 # Per-box mode: each box defaults to FLEET_MODE but can be overridden so a capable
@@ -284,9 +309,17 @@ ROUTER_PORT="${ROUTER_PORT}" POLL_INTERVAL="${POLL_INTERVAL}" FLEET_STATE_DIR="$
   bash "${SCRIPT_DIR}/node-bring-up.sh"
 
 echo "==> [4/6] Provisioning ${#BOX_IDS[@]} remote edge box(es) over SSH"
-REMOTE_AGENT_ENV="$(remote_agent_env)"
-if [ -n "${REMOTE_AGENT_ENV}" ]; then
-  echo "    forwarding optional agent env to remotes:$(for v in ${FLEET_SECURITY_AGENT_VARS} ${FLEET_AGENT_EXTRA_VARS}; do [ -n "${!v:-}" ] && printf ' %s' "${v}"; done)"
+# The forwarded var NAMES are the same for every box; only the path-valued
+# VALUES differ per box (resolved inside bring_up_remote_box via remote_agent_env
+# <id>). Log the names once here.
+_fwd_names=""
+for v in ${FLEET_SECURITY_AGENT_VARS} ${FLEET_AGENT_EXTRA_VARS}; do
+  if [ -n "${!v:-}" ]; then _fwd_names+=" ${v}"; fi
+done
+if [ -n "${_fwd_names}" ]; then
+  echo "    forwarding optional agent env to remotes:${_fwd_names}"
+  [ -n "${FLEET_REMOTE_STAGED:-}" ] && \
+    echo "    (FLEET_REMOTE_STAGED=1: each remote gets its OWN staged paths under ${FLEET_REMOTE_KEYS_DIR} + ${FLEET_REMOTE_MTLS_DIR})"
 fi
 
 # Provision + start ONE remote edge box (identical to the proven Halo-B path).
@@ -297,6 +330,9 @@ bring_up_remote_box() {
   local ssh_opts=("${SSH_CM_OPTS[@]}") port_opts=() scp_port_opts=()
   [ -n "${key}" ] && ssh_opts+=(-i "${key}")
   if [ -n "${port}" ]; then port_opts=(-p "${port}"); scp_port_opts=(-P "${port}"); fi
+  # Per-box agent env: the path vars resolve to THIS box's own staged material
+  # when FLEET_REMOTE_STAGED=1; otherwise it is the byte-identical %q forwarding.
+  local box_env; box_env="$(remote_agent_env "${id}")"
 
   echo "    [${id}] ${target} (mode=${mode})"
   # First connection establishes the ControlMaster => authenticate ONCE per host.
@@ -357,7 +393,7 @@ bring_up_remote_box() {
        DASHBOARD_ADMIN_EMAIL=${DASHBOARD_ADMIN_EMAIL} DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD} \
        DASHBOARD_ADMIN_NAME='${DASHBOARD_ADMIN_NAME}' GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER} \
        GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD} \
-       ${REMOTE_AGENT_ENV}bash ${REMOTE_DIR}/node-bring-up.sh"
+       ${box_env}bash ${REMOTE_DIR}/node-bring-up.sh"
   else
     ssh "${ssh_opts[@]}" "${port_opts[@]}" "${target}" "mkdir -p ${REMOTE_DIR}"
     # Ship only the self-contained recipe files a mock edge needs.
@@ -370,7 +406,7 @@ bring_up_remote_box() {
       "BOX_ID=${id} CCP_URL=${CCP_URL_REMOTE} FLEET_MODE=${mode} \
        FLEET_SIGNING_KEY=${FLEET_SIGNING_KEY} FLEET_TOKEN=${FLEET_TOKEN} \
        ROUTER_PORT=${ROUTER_PORT} POLL_INTERVAL=${POLL_INTERVAL} FLEET_STATE_DIR=${REMOTE_STATE} \
-       ${REMOTE_AGENT_ENV}bash ${REMOTE_DIR}/node-bring-up.sh"
+       ${box_env}bash ${REMOTE_DIR}/node-bring-up.sh"
   fi
 }
 
@@ -387,6 +423,24 @@ else
   echo "ERROR: boxes did not converge in time. Inspect:" >&2
   echo "         CCP log: ${FLEET_STATE_DIR}/ccp.log" >&2
   echo "         agent logs: ${FLEET_STATE_DIR}/halo-a-agent.log ; on remotes: ${REMOTE_STATE}/<box>-agent.log" >&2
+  # Auto-tail each box's agent log so the real reason is inline in THIS failure
+  # output instead of only a path to go read. Best-effort throughout (|| true /
+  # 2>/dev/null): log collection must never change the exit status, so the
+  # existing `exit 1` below still stands. The [4/6] SSH ControlMaster is still
+  # open, so each per-box ssh reuses it (SSH_CM_OPTS + -i/-p per box, like
+  # bring_up_remote_box) with no new auth prompt; REMOTE_STATE's `$` is escaped
+  # at assignment (~line 182) so `${TMPDIR:-/tmp}` expands on the remote shell.
+  echo "==> [5/6] agent log tails (convergence failed):" >&2
+  echo "    ----- halo-a: ${FLEET_STATE_DIR}/halo-a-agent.log -----" >&2
+  tail -n 20 "${FLEET_STATE_DIR}/halo-a-agent.log" >&2 2>/dev/null || true
+  for idx in ${BOX_IDS[@]+"${!BOX_IDS[@]}"}; do
+    _lt_opts=("${SSH_CM_OPTS[@]}")
+    [ -n "${BOX_KEY[$idx]:-}" ] && _lt_opts+=(-i "${BOX_KEY[$idx]}")
+    [ -n "${BOX_PORT[$idx]:-}" ] && _lt_opts+=(-p "${BOX_PORT[$idx]}")
+    echo "    ----- ${BOX_IDS[$idx]}: ${REMOTE_STATE}/${BOX_IDS[$idx]}-agent.log (via ${BOX_SSH[$idx]}) -----" >&2
+    ssh "${_lt_opts[@]}" "${BOX_SSH[$idx]}" \
+      "tail -n 20 ${REMOTE_STATE}/${BOX_IDS[$idx]}-agent.log" >&2 2>/dev/null || true
+  done
   exit 1
 fi
 

@@ -11,6 +11,11 @@ drill. It drives the opt-in hardware verifier
 [`ccp-standby-sync.sh`](../ccp-standby-sync.sh),
 [`promote-standby.sh`](../promote-standby.sh)).
 
+> **Re-running?** For a glanceable one-pager — fleet addresses, the exact
+> commands, and the PASS/SKIP lines that mean "green" — see the
+> [hardware re-run checklist](hardware-rerun-checklist.md). This runbook is the
+> full detail behind it.
+
 > **These steps run ON the Strix Halo boxes, not in CI / the authoring
 > environment.** Everything here is **opt-in**; with none of the new env set the
 > default flow is byte-identical to before (HMAC over plain HTTP). The offline,
@@ -174,18 +179,28 @@ export CCP_TLS_CERT=$PWD/mtls-certs/ccp-cert.pem
 export CCP_TLS_KEY=$PWD/mtls-certs/ccp-key.pem
 export CCP_TLS_CLIENT_CA=$PWD/mtls-certs/ca-cert.pem
 
-# --- Agent side (forwarded to remotes by the deploy; local paths on Halo-A) --
+# --- Agent side (Halo-A uses these local paths; remotes get their OWN staged
+#     paths automatically -- see FLEET_REMOTE_STAGED below) --------------------
 export FLEET_ED25519_PUBLIC_FILE=$PWD/keys/ccp_ed25519.pub
 export FLEET_TLS_CA=$PWD/mtls-certs/ca-cert.pem
 export FLEET_TLS_CLIENT_CERT=$PWD/mtls-certs/halo-a-client-cert.pem
 export FLEET_TLS_CLIENT_KEY=$PWD/mtls-certs/halo-a-client-key.pem
+
+# Tell the deploy to forward each REMOTE its own home-relative staged paths (from
+# 2b) instead of Halo-A's local ones. run-hardware-validation.sh sets this for
+# you in stage_certs; set it by hand only for a manual 2b/2c/2d run.
+export FLEET_REMOTE_STAGED=1
 ```
 
-> On Halo-B the agent resolves `FLEET_ED25519_PUBLIC_FILE`, `FLEET_TLS_CA`, and
-> `FLEET_TLS_CLIENT_CERT/KEY` to the paths you staged in 2b. The deploy forwards
-> the **variable names**; set them to the remote paths if they differ (e.g.
-> `~/keys/ccp_ed25519.pub`). Because `CCP_TLS_CERT`/`CCP_TLS_KEY` are set, the
-> deploy builds `https://` CCP URLs automatically.
+> With `FLEET_REMOTE_STAGED=1` the deploy resolves the four agent **path** vars
+> per box: each remote's agent gets `~/keys/ccp_ed25519.pub`,
+> `~/mtls-certs/ca-cert.pem`, and **its own** `~/mtls-certs/<box>-client-{cert,key}.pem`
+> (the `~` expands to that box's `$HOME`) -- exactly what 2b staged. Halo-A (local)
+> keeps the `$PWD` paths above. Without the signal the deploy forwards Halo-A's
+> values verbatim (byte-identical to the pre-fix behavior), which is why a remote
+> whose home differs from Halo-A's would otherwise hit `ENOENT` on the pub key.
+> Because `CCP_TLS_CERT`/`CCP_TLS_KEY` are set, the deploy builds `https://` CCP
+> URLs automatically.
 
 ### 2d. Re-deploy with the secure transport, then run the verifier
 
@@ -199,6 +214,23 @@ FLEET_VERIFY_DRIFT_ON_GATEWAY=1 FLEET_VERIFY_STANDBY=1 \
   bash verify-hardening.sh 2>&1 \
   | tee "${FLEET_STATE_DIR}/verify-hardening-$(date +%Y%m%d-%H%M%S).log"
 ```
+
+> **Before a re-run (clear stale agents + state).** If a previous secure run
+> aborted (e.g. a box failed to converge), tear the fleet down and kill any
+> leftover agent BEFORE re-running, so a stale pull agent from the old run cannot
+> keep polling the CCP with old key/HMAC and shadow the fresh one:
+>
+> ```bash
+> bash teardown-fleet-2box.sh                 # stop the CCP + local/remote agents
+> # If an agent outlived its pidfile (e.g. a ~1d9h-old PID still polling), find and
+> # kill it explicitly (it will otherwise keep re-registering an old version):
+> pgrep -af fleet_agent.py                     # list any leftover agent(s)
+> kill <pid>                                   # e.g. kill 3415909  (escalate: kill -9)
+> ```
+>
+> `node-bring-up.sh` also stops any pre-existing agent for the SAME box before
+> starting a fresh one, so this is belt-and-suspenders for an agent that predates
+> the guard or was started outside the recipe.
 
 **Expected (full 2-box gateway run):**
 

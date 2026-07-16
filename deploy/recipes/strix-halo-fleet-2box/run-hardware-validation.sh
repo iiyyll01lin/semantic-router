@@ -176,18 +176,25 @@ EOF
 # --- Step 2b: stage per-box material on each remote --------------------------
 stage_certs() {
   local idx id target sopts popts
+  # Signal the deploy to forward each remote its OWN home-relative staged paths
+  # instead of Halo-A's local ones (deploy-fleet-2box.sh remote_agent_env). It is
+  # EXPORTED so it reaches the deploy through run-all-2box.sh. The staging
+  # locations come from fleet_common.sh (FLEET_REMOTE_KEYS_DIR /
+  # FLEET_REMOTE_MTLS_DIR), which the deploy also reads, so the paths we copy to
+  # here and the paths the deploy forwards cannot drift.
+  export FLEET_REMOTE_STAGED=1
   for idx in "${!BOX_IDS[@]}"; do
     id="${BOX_IDS[$idx]}"; target="${BOX_SSH[$idx]}"
     sopts=(); popts=()
     if [ -n "${BOX_KEY[$idx]:-}" ]; then sopts+=(-i "${BOX_KEY[$idx]}"); popts+=(-i "${BOX_KEY[$idx]}"); fi
     if [ -n "${BOX_PORT[$idx]:-}" ]; then sopts+=(-p "${BOX_PORT[$idx]}"); popts+=(-P "${BOX_PORT[$idx]}"); fi
-    say "staging Ed25519 pub + CA + '${id}' client cert/key on ${target}"
-    ssh ${sopts[@]+"${sopts[@]}"} "${target}" 'mkdir -p ~/keys ~/mtls-certs' \
-      || die "ssh ${target}: could not create ~/keys ~/mtls-certs"
-    scp ${popts[@]+"${popts[@]}"} "${KEYS_DIR}/ccp_ed25519.pub"      "${target}:~/keys/"       || die "scp pub key -> ${target} failed"
-    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/ca-cert.pem"          "${target}:~/mtls-certs/" || die "scp CA -> ${target} failed"
-    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/${id}-client-cert.pem" "${target}:~/mtls-certs/" || die "scp ${id} client cert -> ${target} failed"
-    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/${id}-client-key.pem"  "${target}:~/mtls-certs/" || die "scp ${id} client key -> ${target} failed"
+    say "staging Ed25519 pub + CA + '${id}' client cert/key on ${target} (${FLEET_REMOTE_KEYS_DIR}, ${FLEET_REMOTE_MTLS_DIR})"
+    ssh ${sopts[@]+"${sopts[@]}"} "${target}" "mkdir -p ${FLEET_REMOTE_KEYS_DIR} ${FLEET_REMOTE_MTLS_DIR}" \
+      || die "ssh ${target}: could not create ${FLEET_REMOTE_KEYS_DIR} ${FLEET_REMOTE_MTLS_DIR}"
+    scp ${popts[@]+"${popts[@]}"} "${KEYS_DIR}/ccp_ed25519.pub"       "${target}:${FLEET_REMOTE_KEYS_DIR}/" || die "scp pub key -> ${target} failed"
+    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/ca-cert.pem"           "${target}:${FLEET_REMOTE_MTLS_DIR}/" || die "scp CA -> ${target} failed"
+    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/${id}-client-cert.pem" "${target}:${FLEET_REMOTE_MTLS_DIR}/" || die "scp ${id} client cert -> ${target} failed"
+    scp ${popts[@]+"${popts[@]}"} "${MTLS_DIR}/${id}-client-key.pem"  "${target}:${FLEET_REMOTE_MTLS_DIR}/" || die "scp ${id} client key -> ${target} failed"
   done
 }
 
@@ -342,10 +349,14 @@ step "Step 2c -- export Ed25519 + TLS + mTLS env"
 export_security_env
 say "exported FLEET_SIGN_MODE=ed25519, FLEET_ED25519_*_FILE, CCP_TLS_*, FLEET_TLS_*"
 cat <<EOF
-    NOTE: the deploy forwards the AGENT-side var NAMES to each remote with THIS
-    box's values. If a remote's home paths differ from Halo-A's, override
-    FLEET_ED25519_PUBLIC_FILE / FLEET_TLS_CA / FLEET_TLS_CLIENT_CERT /
-    FLEET_TLS_CLIENT_KEY to the staged remote paths (see ${RUNBOOK} 2c).
+    NOTE: FLEET_REMOTE_STAGED=1 (set by stage_certs) makes the deploy forward
+    each remote its OWN home-relative staged paths automatically -- the four
+    agent path vars (FLEET_ED25519_PUBLIC_FILE / FLEET_TLS_CA /
+    FLEET_TLS_CLIENT_CERT / FLEET_TLS_CLIENT_KEY) resolve to
+    ${FLEET_REMOTE_KEYS_DIR}/ccp_ed25519.pub, ${FLEET_REMOTE_MTLS_DIR}/ca-cert.pem
+    and ${FLEET_REMOTE_MTLS_DIR}/<box>-client-{cert,key}.pem on each remote (its
+    own \$HOME + its own client cert). Halo-A (local) keeps its own local paths.
+    See ${RUNBOOK} Step 2c.
 EOF
 
 # --- Step 2d: secure redeploy + on-hardware verifier (covers Steps 2-6) ------
