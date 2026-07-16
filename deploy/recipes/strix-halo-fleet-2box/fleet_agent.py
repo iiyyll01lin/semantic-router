@@ -101,7 +101,7 @@ def _wait_for_hash(cfg: AgentConfig, desired_hash: str) -> bool:
         try:
             if _router_hash(cfg) == desired_hash:
                 return True
-        except RuntimeError:
+        except Exception:
             pass
         time.sleep(0.2)
     return False
@@ -134,7 +134,7 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     desired_hash = bundle["sha256"]
     try:
         cur_hash = _router_hash(cfg)
-    except RuntimeError as exc:
+    except Exception as exc:
         return {"result": "router_error", "reason": str(exc)}
 
     if cur_hash == desired_hash:
@@ -147,7 +147,7 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     converged = _wait_for_hash(cfg, desired_hash)
     try:
         new_hash = _router_hash(cfg)
-    except RuntimeError:
+    except Exception:
         new_hash = ""
     result = "applied" if converged else "apply_unconverged"
     state.applied_version = bundle["version"]

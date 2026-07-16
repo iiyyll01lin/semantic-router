@@ -14,6 +14,8 @@ asserts the PL-0036 exit criteria WITHOUT any AMD/ROCm hardware:
                                so the real single-file-mounted gateway hot-reloads
                                (an atomic rename would swap in a new inode the
                                router container never sees -> no fsnotify reload)
+  8. router outage retry     - a temporarily unavailable router returns an error
+                               result instead of killing the long-running agent
 
 Exit code 0 means all checks passed. This verifies the NEW fan-out/drift/sign/
 audit logic; the real ROCm gateway path is exercised by deploy-fleet-2box.sh on
@@ -184,6 +186,23 @@ def main() -> int:
     record("in-place write keeps the inode (real-gateway reload safe)", inode_ok,
            "inode %s preserved" % ino_before if inode_ok
            else "inode %s -> %s" % (ino_before, ino_after))
+
+    # --- 8. router outage is retryable -----------------------------------
+    # A real gateway can briefly drop :8080/config/hash while containers restart
+    # or hot-reload. The long-running pull agent must report a retryable result,
+    # not exit with an uncaught urllib connection error.
+    down_cfg = fleet_agent.AgentConfig(
+        ccp_url=ccp_url, router_api="http://127.0.0.1:1",
+        config_file=inode_path, signing_key=SIGNING_KEY, token=TOKEN,
+        box_id="router-down", poll_interval=0.05, apply_timeout=0.2)
+    try:
+        down_res = fleet_agent.reconcile_once(down_cfg, fleet_agent.AgentState())
+        outage_retry = down_res.get("result") == "router_error"
+    except Exception as exc:
+        down_res = {"result": "raised", "reason": repr(exc)}
+        outage_retry = False
+    record("router outage returns retryable router_error (agent stays alive)",
+           outage_retry, down_res.get("reason", ""))
 
     passed = sum(1 for _n, ok, _d in CHECKS if ok)
     total = len(CHECKS)
