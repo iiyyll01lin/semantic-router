@@ -6,7 +6,7 @@ listeners:
       timeout: 1200s
 providers:
     defaults:
-        default_model: qwen/qwen3.5-rocm
+        default_model: local/gemma4-26b-q8
         reasoning_families:
             qwen3:
                 type: chat_template_kwargs
@@ -73,9 +73,18 @@ providers:
             cached_input_per_1m: 0.3
           external_model_ids:
             vllm: qwen3:14b
-        - name: qwen/qwen3.5-rocm
-          reasoning_family: qwen3
-          provider_model_id: llama3.2:3b
+        # ============================================================
+        # Strix Halo LOCAL operating-profile rungs (Gemma 4, measured on Halo-B).
+        # Auto-routed local DEFAULT (general/everyday) -> local/gemma4-26b-q8 (balanced)
+        # Auto-routed fast/demo lane (short QA)         -> local/gemma4-26b-q4 (throughput)
+        # Explicit by-name compact/edge profile         -> local/gemma4-26b-qat
+        # Explicit by-name quality-only profile         -> local/gemma4-31b-qat
+        # Explicit by-name capacity/reference (never auto-routed) -> gpt-oss:120b-vram
+        # Operational carveout: 64 GiB for the Gemma rungs (13.8-25.3 GiB footprints);
+        # keep 96 GiB only for the capacity/reference profile.
+        # ============================================================
+        - name: local/gemma4-26b-q8
+          provider_model_id: gemma4:26b-a4b-it-q8_0
           backend_refs:
             - name: ollama_local
               endpoint: ollama:11434
@@ -84,7 +93,40 @@ providers:
           pricing:
             currency: USD
           external_model_ids:
-            vllm: llama3.2:3b
+            vllm: gemma4:26b-a4b-it-q8_0
+        - name: local/gemma4-26b-q4
+          provider_model_id: gemma4:26b
+          backend_refs:
+            - name: ollama_local
+              endpoint: ollama:11434
+              protocol: http
+              weight: 1
+          pricing:
+            currency: USD
+          external_model_ids:
+            vllm: gemma4:26b
+        - name: local/gemma4-26b-qat
+          provider_model_id: gemma4:26b-a4b-it-qat
+          backend_refs:
+            - name: ollama_local
+              endpoint: ollama:11434
+              protocol: http
+              weight: 1
+          pricing:
+            currency: USD
+          external_model_ids:
+            vllm: gemma4:26b-a4b-it-qat
+        - name: local/gemma4-31b-qat
+          provider_model_id: gemma4:31b-it-qat
+          backend_refs:
+            - name: ollama_local
+              endpoint: ollama:11434
+              protocol: http
+              weight: 1
+          pricing:
+            currency: USD
+          external_model_ids:
+            vllm: gemma4:31b-it-qat
         - name: gpt-oss:120b-vram
           provider_model_id: gpt-oss:120b-vram
           backend_refs:
@@ -149,22 +191,69 @@ routing:
             - tier:reasoning
             - cost:high
             - specialty:formal_proof
-        - name: qwen/qwen3.5-rocm
-          context_window_size: 262144
-          description: SIMPLE tier alias and free self-hosted default for fast QA, broad fallback, creative drafting, and most low-cost traffic.
+        # Local Strix Halo operating-profile rungs (measured Halo-B, 96 GiB carveout).
+        # quality_score = measured 42Q MMLU-Pro fraction (indicative, +/-~7 pp).
+        - name: local/gemma4-26b-q8
+          context_window_size: 131072
+          description: Balanced local DEFAULT (auto-routed) - Gemma 4 26B MoE Q8_0. Measured Halo-B 44.6 tok/s, 71.4% (30/42) MMLU-Pro, 25.3 GiB, 0.418 tok/s/W. The general/everyday self-hosted default.
           capabilities:
             - fast_qa
             - self_hosted
             - concise_answers
             - general_chat
             - creative_drafting
-          quality_score: 0.58
+            - balanced_default
+          quality_score: 0.71
           modality: text
           tags:
-            - tier:simple
+            - tier:local_default
+            - profile:balanced
             - cost:free
             - deployment:self_hosted
             - traffic:default
+        - name: local/gemma4-26b-q4
+          context_window_size: 131072
+          description: Fast/demo local route (auto-routed short-QA fast lane) - Gemma 4 26B MoE Q4_K_M. Measured 58.4 tok/s, 69.0% (29/42), 21.6 GiB, 0.481 tok/s/W; the best-feeling interactive throughput.
+          capabilities:
+            - fast_qa
+            - self_hosted
+            - concise_answers
+            - high_throughput
+          quality_score: 0.69
+          modality: text
+          tags:
+            - tier:local_fast
+            - profile:fast
+            - cost:free
+            - deployment:self_hosted
+        - name: local/gemma4-26b-qat
+          context_window_size: 131072
+          description: Compact/edge profile (explicit by-name) - Gemma 4 26B MoE QAT. Measured 65.0 tok/s, 64.3% (27/42), 13.8 GiB, 0.400 tok/s/W; smallest footprint and fastest, but lower quality so not the balanced default.
+          capabilities:
+            - self_hosted
+            - concise_answers
+            - compact_footprint
+          quality_score: 0.64
+          modality: text
+          tags:
+            - tier:local_compact
+            - profile:compact
+            - cost:free
+            - deployment:self_hosted
+        - name: local/gemma4-31b-qat
+          context_window_size: 131072
+          description: Quality-only local profile (explicit by-name) - Gemma 4 31B dense QAT. Best measured local quality 78.6% (33/42) at 18.5 GiB, but 12.3 tok/s / 0.090 tok/s/W - too slow to be the default unless the deployment is explicitly quality-first.
+          capabilities:
+            - self_hosted
+            - high_quality_local
+            - general_reasoning
+          quality_score: 0.79
+          modality: text
+          tags:
+            - tier:local_quality
+            - profile:quality
+            - cost:free
+            - deployment:self_hosted
         - name: gpt-oss:120b-vram
           context_window_size: 131072
           description: VRAM-resident gpt-oss 120b (num_gpu/use_mmap baked in via the -vram variant); explicit by-name selection only, not auto-routed.
@@ -1431,7 +1520,7 @@ routing:
                 - type: keyword
                   name: jailbreak_markers
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q8
               use_reasoning: false
           plugins:
             - type: fast_response
@@ -1827,9 +1916,8 @@ routing:
                         - type: embedding
                           name: agentic_workflows
           modelRefs:
-            - model: qwen/qwen3.5-rocm
-              use_reasoning: true
-              reasoning_effort: medium
+            - model: local/gemma4-26b-q8
+              use_reasoning: false
           plugins:
             - type: semantic-cache
               configuration:
@@ -1994,7 +2082,7 @@ routing:
                         - type: keyword
                           name: code_request_markers
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q8
               use_reasoning: false
           plugins:
             - type: semantic-cache
@@ -2087,9 +2175,8 @@ routing:
                         - type: embedding
                           name: creative_tasks
           modelRefs:
-            - model: qwen/qwen3.5-rocm
-              use_reasoning: true
-              reasoning_effort: medium
+            - model: local/gemma4-26b-q8
+              use_reasoning: false
           plugins:
             - type: semantic-cache
               configuration:
@@ -2147,7 +2234,7 @@ routing:
                         - type: keyword
                           name: reference_heavy_markers
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q8
               use_reasoning: false
           plugins:
             - type: semantic-cache
@@ -2254,7 +2341,7 @@ routing:
                                 - type: structure
                                   name: low_question_density
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q4
               use_reasoning: false
           plugins:
             - type: semantic-cache
@@ -2349,7 +2436,7 @@ routing:
                             - type: keyword
                               name: reference_heavy_markers
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q8
               use_reasoning: false
           plugins:
             - type: semantic-cache
@@ -2369,7 +2456,7 @@ routing:
           rules:
             operator: AND
           modelRefs:
-            - model: qwen/qwen3.5-rocm
+            - model: local/gemma4-26b-q8
               use_reasoning: false
           plugins:
             - type: semantic-cache
