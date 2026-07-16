@@ -42,8 +42,23 @@ OLLAMA_VOLUME="ollama"
 OLLAMA_IMAGE="ollama/ollama:rocm"
 TIER_TAGS=("llama3.2:3b" "qwen2.5:7b" "qwen2.5:14b" "qwen3:14b" "qwen2.5:32b")
 DEFAULT_ROUTER_IMAGE="ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest"
+# R3: honor an OPTIONAL, gitignored versions.env (copy versions.env.example) in
+# THIS dir BEFORE resolving the router image below, so a pinned
+# VLLM_SR_ROUTER_IMAGE=...@sha256:... is respected even when gateway-bring-up is
+# invoked DIRECTLY (run-all-2box.sh / deploy-fleet-2box.sh already source it and
+# forward it for the orchestrated path; a direct/standalone run would otherwise
+# miss the pin). Absent => unchanged behavior. `set -a` exports the assignments
+# so the `vllm-sr serve` child inherits them.
+VERSIONS_ENV="${VERSIONS_ENV:-${SCRIPT_DIR}/versions.env}"
+if [[ -f "${VERSIONS_ENV}" ]]; then
+  echo "==> [gateway] sourcing image pin ${VERSIONS_ENV}"
+  set -a
+  # shellcheck source=/dev/null
+  source "${VERSIONS_ENV}"
+  set +a
+fi
 ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-${DEFAULT_ROUTER_IMAGE}}"
-IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
+IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-ifnotpresent}"
 
 PII_MODEL_DIR="${STRIX_POC_DIR}/models/pii_classifier_modernbert-base_presidio_token_model"
 PII_ONNX_MODEL="${PII_MODEL_DIR}/onnx/model.onnx"
@@ -74,12 +89,14 @@ preflight_router_image() {
     exit 1
   fi
 
-  # Resolve to the newest PULLABLE image with no flag required. Under a pulling
-  # policy we try the requested ref first; if a pinned ref cannot be pulled (e.g.
-  # a removed digest -> registry "not found"), we auto-fall-back to :latest, so a
-  # stale pin never blocks the run. A still-pullable pin is respected; 'never'
-  # stays local-only. Whatever we resolve, we then serve EXACTLY that image and
-  # tell the CLI not to re-pull it (a re-pull of a stale digest would fail again).
+  # Resolve to the newest PULLABLE image with no flag required. 'ifnotpresent'
+  # (the default) uses an already-local copy of the requested ref AS-IS and only
+  # pulls when it is ABSENT; 'always' forces a re-pull; 'never' stays local-only.
+  # When we do pull and a pinned ref cannot be pulled (e.g. a removed digest ->
+  # registry "not found"), we auto-fall-back to :latest, so a stale pin never
+  # blocks the run. A still-pullable pin is respected. Whatever we resolve, we
+  # then serve EXACTLY that image and tell the CLI not to re-pull it (a re-pull of
+  # a stale digest would fail again).
   if [[ "${IMAGE_PULL_POLICY}" == "never" ]]; then
     if docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
       echo "    router image present locally: ${ROUTER_IMAGE}"
@@ -92,10 +109,21 @@ preflight_router_image() {
       echo "       Pre-pull it, or rerun with VLLM_SR_IMAGE_PULL_POLICY=always." >&2
       exit 1
     fi
+  elif [[ "${IMAGE_PULL_POLICY}" == "ifnotpresent" ]] && docker image inspect "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+    # TRUE ifnotpresent: the image is already local, so use it and do NOT re-pull
+    # the ~20GB image (the old code always re-pulled here with no progress output,
+    # which made the preflight look frozen for minutes).
+    echo "    router image already present locally; skipping pull: ${ROUTER_IMAGE}"
   else
-    if docker pull "${ROUTER_IMAGE}" >/dev/null 2>&1; then
+    # Pull path: policy=always (force a re-pull) OR ifnotpresent with the image
+    # ABSENT. Announce it and let `docker pull`'s progress reach the terminal (on
+    # stderr) instead of >/dev/null, so a multi-minute ~20GB pull is visibly
+    # progressing rather than looking hung. The if/elif exit-status checks below
+    # (incl. the stale-pin auto-fallback to :latest) are otherwise unchanged.
+    echo "    pulling router image ${ROUTER_IMAGE} (~20GB ROCm image; the first pull can take several minutes, cached layers are skipped; live progress below)" >&2
+    if docker pull "${ROUTER_IMAGE}" >&2; then
       echo "    router image pulled (latest available): ${ROUTER_IMAGE}"
-    elif [[ "${ROUTER_IMAGE}" != "${DEFAULT_ROUTER_IMAGE}" ]] && docker pull "${DEFAULT_ROUTER_IMAGE}" >/dev/null 2>&1; then
+    elif [[ "${ROUTER_IMAGE}" != "${DEFAULT_ROUTER_IMAGE}" ]] && docker pull "${DEFAULT_ROUTER_IMAGE}" >&2; then
       echo "    WARNING: '${ROUTER_IMAGE}' is not pullable (stale pin?); using latest instead:" >&2
       echo "             ${DEFAULT_ROUTER_IMAGE}" >&2
       ROUTER_IMAGE="${DEFAULT_ROUTER_IMAGE}"
@@ -270,8 +298,9 @@ echo "    dashboard/grafana admin: ${DASHBOARD_ADMIN_EMAIL} (password hidden; ov
 # VLLM_SR_AMD_PRESERVE_CPU=1 is REQUIRED: it reaches the container so that the
 # agent-triggered hot-reload keeps classifiers on CPU instead of re-creating
 # ROCm ONNX sessions (which would crash the router).
-# VLLM_SR_IMAGE_PULL_POLICY (default 'never' = use only local images) can be set
-# to 'ifnotpresent' so a freshly provisioned box pulls any missing runtime images.
+# VLLM_SR_IMAGE_PULL_POLICY (default 'ifnotpresent' = pull only images missing
+# locally, so a freshly provisioned box still fetches what it needs; 'always'
+# forces a re-pull, 'never' is local-only).
 export VLLM_SR_AMD_PRESERVE_CPU=1
 # Pin THIS box's dashboard to the local origin-fix build, which strips the browser
 # Origin before Envoy/ollama and so avoids the Playground CORS 403. Guarded on the
