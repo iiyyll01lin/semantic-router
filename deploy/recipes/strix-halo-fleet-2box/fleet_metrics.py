@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import os
 import re
 import sys
@@ -136,6 +137,84 @@ def convergence_metrics(audit_rows, boxes):
     }
 
 
+def parse_audit_json(text):
+    """Parse a JSON-lines audit log (ccp_server audit.log) into record dicts.
+
+    Unlike ``parse_audit`` (which reads the ``fleetctl audit`` TEXT dump), this
+    reads the raw JSON the CCP writes, so it can see the ``apply_seconds`` field
+    the agent now reports (R9). Silently skips non-JSON / non-dict lines.
+    """
+    rows = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+    return rows
+
+
+def _percentile(sorted_vals, pct):
+    """Linear-interpolated percentile of an already-sorted list."""
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    k = (len(sorted_vals) - 1) * (pct / 100.0)
+    lo = math.floor(k)
+    hi = math.ceil(k)
+    if lo == hi:
+        return sorted_vals[int(k)]
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
+
+
+def latency_metrics(audit_records):
+    """Sub-second hot-reload latency (p50/p95) from the agent write->converge
+    timer carried on ``applied`` audit records. Returns None if no samples.
+    """
+    samples = sorted(
+        float(r["apply_seconds"])
+        for r in audit_records
+        if isinstance(r, dict)
+        and r.get("result") == "applied"
+        and r.get("apply_seconds") is not None
+    )
+    if not samples:
+        return None
+    return {
+        "n": len(samples),
+        "p50_seconds": round(_percentile(samples, 50), 4),
+        "p95_seconds": round(_percentile(samples, 95), 4),
+        "mean_seconds": round(sum(samples) / len(samples), 4),
+        "min_seconds": round(samples[0], 4),
+        "max_seconds": round(samples[-1], 4),
+    }
+
+
+def latency_from_bundle(bundle):
+    """Best-effort: find a JSON audit source (records with apply_seconds) and
+    compute latency percentiles. Looks in the run bundle, then ``CCP_AUDIT_LOG``.
+    Returns None when no timer data is available (older bundles just omit it)."""
+    text = ""
+    for cand in ("audit.log", "fleet-audit.jsonl", "ccp-audit.jsonl"):
+        path = os.path.join(bundle, cand) if bundle else ""
+        if path and os.path.isfile(path):
+            text = _read(path)
+            if text:
+                break
+    if not text:
+        env_audit = os.environ.get("CCP_AUDIT_LOG", "")
+        if env_audit and os.path.isfile(env_audit):
+            text = _read(env_audit)
+    if not text:
+        return None
+    return latency_metrics(parse_audit_json(text))
+
+
 def router_readiness(bundle):
     out = {}
     for path in os.listdir(bundle) if bundle and os.path.isdir(bundle) else []:
@@ -203,6 +282,11 @@ def build_metrics(bundle):
     ccp = desired_from_ccp()
     if ccp:
         metrics["desired_config"] = ccp
+    # R9: sub-second hot-reload latency (p50/p95) from the agent write->converge
+    # timer, when a JSON audit source is available (older bundles omit it).
+    latency = latency_from_bundle(bundle)
+    if latency:
+        metrics["hot_reload_latency_seconds"] = latency
     return metrics
 
 
@@ -225,6 +309,12 @@ def summarize(m):
     if m.get("desired_config"):
         dc = m["desired_config"]
         lines.append("desired_config: %s bytes sha256=%s" % (dc["config_bytes"], dc["sha256"][:12]))
+    if m.get("hot_reload_latency_seconds"):
+        lt = m["hot_reload_latency_seconds"]
+        lines.append(
+            "hot_reload_latency (write->converge): p50=%.3fs p95=%.3fs mean=%.3fs (n=%d)"
+            % (lt["p50_seconds"], lt["p95_seconds"], lt["mean_seconds"], lt["n"])
+        )
     rr = ", ".join("%s=%ss" % (b, s) for b, s in sorted(m["router_readiness_seconds"].items()))
     if rr:
         lines.append("router_readiness: " + rr)
