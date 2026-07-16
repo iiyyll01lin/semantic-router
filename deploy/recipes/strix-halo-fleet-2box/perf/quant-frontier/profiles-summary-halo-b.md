@@ -50,7 +50,7 @@ Completes the two candidate-sweep rows that timed out under the capped runner. `
 | Model | accuracy | correct/n | wall (s) | status |
 | --- | ---: | ---: | ---: | --- |
 | EXAONE 4.0 32B (research-only / non-commercial) | 50.0% | 21/42 | 5466 | measured |
-| Phi-4 reasoning plus | _pending_ | | | pending / see skips |
+| Phi-4 reasoning plus | 57.1% | 24/42 | 3083 | measured |
 
 ## Provenance
 
@@ -72,4 +72,5 @@ Source JSON (read directly; numbers never hand-edited):
 - `conc-qwen3_coder_30b-c4.json`
 - `conc-qwen3_coder_30b-c8.json`
 - `quality-candidate-exaone4_0_32b.json` (quant-quality-mmlu.json)
+- `quality-candidate-phi4_reasoning_plus.json` (quant-quality-mmlu.json)
 
