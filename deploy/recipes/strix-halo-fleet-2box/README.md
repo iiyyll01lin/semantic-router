@@ -24,6 +24,18 @@ signing layer.
 > `run-20260701-154843`. (An earlier `HALO_B_MODE=mock` run — `run-20260701-114428`,
 > hash `76c08a3e…` — first proved real↔mock convergence.)
 
+> **🔒 Validating the opt-in hardening on hardware.** To take the landed hardening
+> to the fleet — Ed25519 + TLS + **mTLS** end-to-end, induced auto-rollback on a
+> real router, CCP-restart durability, `GET /metrics` + p50/p95 hot-reload
+> latency, N-box, and a warm-standby promotion drill — follow the ordered
+> [**hardware validation runbook**](docs/hardware-validation-runbook.md). It
+> drives [`verify-hardening.sh`](verify-hardening.sh), an opt-in, gateway-safe
+> verifier kept **separate** from `verify-fleet.sh` (so the core verifier stays
+> stable) that `[SKIP]`s any check whose env/hardware is absent. The same
+> behaviors are proven offline (no hardware) by
+> [`verify_local.py`](verify_local.py) — now **20/20**, including the mTLS
+> handshake and warm-standby restore.
+
 ## What this proves (verified on hardware)
 
 The dual-gateway run above put a **real `vllm-sr` ROCm router on BOTH boxes** under
@@ -126,6 +138,23 @@ bash verify-fleet.sh                                # re-run headless PASS/FAIL
 HALO_B_SSH=ubuntu@192.0.2.20 bash teardown-fleet-2box.sh
 ```
 
+### Key-based SSH (authenticate once) — R10
+
+The orchestrator connects to each remote box over SSH/scp many times. Set up
+key-based SSH once so there are **zero** password prompts:
+
+```bash
+ssh-copy-id ubuntu@192.0.2.20          # add -p PORT for a non-standard port
+```
+
+`run-all-2box.sh` opens a **single shared SSH ControlMaster socket** and hands it
+to `deploy-fleet-2box.sh`, the demo, log collection and teardown (via
+`FLEET_SSH_CONTROL_PATH`), so the whole run authenticates to each box **once** and
+reuses that connection — even with a passphrase-protected key, you unlock it a
+single time. Running `deploy-fleet-2box.sh` on its own still opens (and cleans up)
+its own ControlMaster. Per-box options: `HALO_B_SSH_KEY` (identity file) and
+`HALO_B_SSH_PORT`, or the `ssh_key` / `ssh_port` columns in `fleet.hosts`.
+
 ### Fully hands-off (one shot + log bundle)
 
 For an unattended run that does **deploy + verify + demo** in one go and
@@ -187,33 +216,100 @@ FLEET_MODE=gateway \
   hot-reload would fire. Do not change `fleet_agent._write_config` back to a
   temp-file rename.
 
-#### Pinning the router image (avoid `:latest` version skew)
+#### Pinning the router image (avoid `:latest` version skew) — R3
 
-Both boxes resolve the router image as `vllm-sr-rocm:latest`. Because `:latest`
-moves, a box that pulls it later can get a **newer** image whose config schema no
-longer matches the committed `poc-strix.yaml` — e.g. a fatal
+Both boxes resolve the router image as `vllm-sr-rocm:latest` by default. Because
+`:latest` moves, a box that pulls it later can get a **newer** image whose config
+schema no longer matches the committed `poc-strix.yaml` — e.g. a fatal
 `runtime_config_load_failed: removed config fields are no longer supported:
-global.router.model_selection.session_aware`. A fleet serves ONE config to both
-boxes, so they must run the **same** image. Pin it to a known-good digest:
+global.router.model_selection.session_aware`. A fleet serves ONE config to every
+box, so they must run the **same** image. Pin it to a known-good digest.
+
+**Recommended: a committed `versions.env.example` + a gitignored `versions.env`.**
+`run-all-2box.sh` and `deploy-fleet-2box.sh` source `./versions.env` (if present)
+near the top and forward the pin to **every** box (Halo-A inherits it locally;
+each remote box gets it over SSH), so the whole fleet runs the same digest:
 
 ```bash
-# On a box that already serves poc-strix.yaml OK (e.g. Halo-A), get its image:
-docker inspect --format '{{index .RepoDigests 0}}' \
-  ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest
-# -> ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:…
+cp versions.env.example versions.env      # versions.env is gitignored
+# Put your known-good digest in versions.env. Get it from a box that serves OK:
+#   docker inspect --format '{{index .RepoDigests 0}}' \
+#     ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest
+#   # -> ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:…
+HALO_A_MODE=gateway HALO_B_MODE=gateway HALO_B_SSH=… HALO_B_REPO=… \
+  bash run-all-2box.sh
+```
 
-# Then pin every gateway to it (the deploy forwards this to Halo-B):
+You can still pin ad-hoc via the environment (it wins over `versions.env`):
+
+```bash
 VLLM_SR_ROUTER_IMAGE=ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:… \
 HALO_A_MODE=gateway HALO_B_MODE=gateway HALO_B_SSH=… HALO_B_REPO=… \
   bash run-all-2box.sh
 ```
 
-`VLLM_SR_ROUTER_IMAGE` is read by `vllm-sr serve`; the deploy forwards it to
-Halo-B, and Halo-A inherits it locally. The Halo-B default
-`VLLM_SR_IMAGE_PULL_POLICY=ifnotpresent` pulls the pinned digest if it is not
-present yet. (The alternative — migrating `poc-strix.yaml` to the newer
-`global.router.learning.*` schema and running `:latest` on both — is a larger
-change tied to a specific vllm-sr release.)
+- `VLLM_SR_ROUTER_IMAGE` is read by `vllm-sr serve`; the deploy forwards it to
+  every remote box, and Halo-A inherits it locally.
+- Each run captures the **resolved** router image digest per box into the bundle
+  (`run-<ts>/router-image-digests.txt`) so you can confirm every box ran the same
+  image.
+- `ci-check.sh` fails if the pin is not an immutable `@sha256` digest (kills the
+  drift at review time) — see *CI / config lint* below.
+
+#### Fail-fast config validation before the ~44 GB pull — R2
+
+In gateway mode, `deploy-fleet-2box.sh` validates the **rendered** gateway config
+**before** any Ollama model pull or cold start, so a schema mismatch fails in
+**seconds** instead of ~9 minutes in. It runs `ci-check.sh`, which prefers the
+real `vllm-sr validate` (canonical v0.3 schema) and falls back to the structural
+[`../strix-halo-poc/validate_poc_config.py`](../strix-halo-poc/validate_poc_config.py).
+It is advisory (a missing validator warns and proceeds) but a genuinely invalid
+config **aborts** the deploy. Bypass with `FLEET_SKIP_VALIDATE=1`.
+
+##### CI / config lint
+
+`ci-check.sh` is the one gate CI and the deploy share. In CI it runs strict
+(`CI_CHECK_STRICT=1`, wired in `.github/workflows/strix-fleet-config-lint.yml`):
+it parses the committed `poc-strix.yaml` and **requires** `versions.env.example`
+to pin an `@sha256` digest. Run it locally the same way:
+
+```bash
+CI_CHECK_STRICT=1 bash ci-check.sh
+```
+
+#### Optional security env pass-through
+
+The control-plane core has **opt-in** asymmetric signing (Ed25519) and TLS (R4/R5)
+with safe fallbacks (unset ⇒ today's HMAC-over-HTTP). The orchestrator forwards a
+documented allow-list of these `FLEET_*` vars **only if they are set** (never
+required); the names match what `ccp-bring-up.sh` / `node-bring-up.sh` read.
+
+- **Agent-side** (exported for the Halo-A agent **and** forwarded to every remote
+  agent over SSH): `FLEET_SIGN_MODE`, `FLEET_ED25519_PUBLIC`,
+  `FLEET_ED25519_PUBLIC_FILE`, `FLEET_TLS_CA`, `FLEET_TLS_INSECURE`,
+  `FLEET_BUNDLE_MAX_AGE`.
+- **CCP-side** (exported for the local Halo-A CCP **only** — the private signing
+  seed and TLS server key **never leave Halo-A**): `FLEET_SIGN_MODE`,
+  `FLEET_ED25519_SECRET`, `FLEET_ED25519_SECRET_FILE`, `FLEET_BUNDLE_TS`,
+  `CCP_TLS_CERT`, `CCP_TLS_KEY`, `CCP_TLS_CLIENT_CA`, `CCP_AUDIT_MEMORY_MAX`.
+- **Extra agent knobs** (also forwarded so remotes match Halo-A; R8 health/rollback):
+  `ROUTER_HEALTH_PATH`, `ROUTER_HEALTH_TIMEOUT`, `APPLY_BACKOFF`, `APPLY_BACKOFF_MAX`.
+
+Override the lists via `FLEET_SECURITY_AGENT_VARS` / `FLEET_SECURITY_CCP_VARS` /
+`FLEET_AGENT_EXTRA_VARS` if the core renames anything. Path-valued vars
+(`*_FILE`, `FLEET_TLS_CA`) must exist on the box that reads them (stage the CA /
+public key on each edge box; the CCP's private key stays on Halo-A).
+
+#### End-to-end TLS (R5)
+
+When `CCP_TLS_CERT` + `CCP_TLS_KEY` are set, the CCP serves HTTPS and the
+orchestrator builds the agent-facing `CCP_URL` (local + remote, and the copy
+persisted in `fleet.env`) as `https://…`, so the pull agents and `fleetctl`
+actually use TLS (`fleet_lib` auto-enables it for an `https://` URL). Force the
+scheme explicitly with `FLEET_CCP_SCHEME=https` (e.g. behind an external
+terminator). With a self-signed cert the agents must trust it — set `FLEET_TLS_CA`
+to the cert (forwarded to remotes) or `FLEET_TLS_INSECURE=1`. No TLS env ⇒ plain
+`http://`, unchanged.
 
 #### Auto-provisioning Halo-B (`HALO_B_PROVISION`)
 
@@ -267,6 +363,26 @@ HALO_A_MODE=gateway HALO_B_MODE=mock \
   model, pulls any missing ROCm images; see *Auto-provisioning Halo-B* above).
   Set `HALO_B_PROVISION=skip` to manage Halo-B yourself.
 
+## Scaling beyond two boxes (N-box) — R7
+
+The recipe defaults to two boxes (Halo-A + Halo-B). To run **more**, create a
+`fleet.hosts` file (copy [`fleet.hosts.example`](fleet.hosts.example), which
+documents the column format) listing each REMOTE edge box, one per line. Halo-A
+stays the CCP + first edge node and is implicit (never listed). The orchestrator
+loops provisioning, the convergence wait, log collection and teardown over every
+listed box; a mixed fleet (some `gateway`, some `mock`) works too.
+
+```bash
+cp fleet.hosts.example fleet.hosts     # fleet.hosts is gitignored; then edit it
+HALO_A_IP=192.0.2.10 FLEET_MODE=gateway bash run-all-2box.sh
+```
+
+When `fleet.hosts` is absent (or has no active lines) the classic 2-box behavior
+driven by `HALO_B_SSH` / `HALO_B_IP` / `HALO_B_MODE` / `HALO_B_REPO` is unchanged,
+so `bash run-all-2box.sh` with the documented 2-box env works exactly as before.
+All N-box logic lives in the orchestrator scripts; the per-node bring-up scripts
+are shipped unchanged.
+
 ## Verify the logic offline (no hardware)
 
 ```bash
@@ -280,7 +396,10 @@ This is what proves the new logic in CI-like conditions.
 
 ## Research & metrics
 
-Every run emits `metrics.json` (via [`fleet_metrics.py`](fleet_metrics.py)). For the
+Every run emits `metrics.json` (via [`fleet_metrics.py`](fleet_metrics.py)). The run
+bundle also captures the CCP's raw JSON-lines `audit.log`, whose per-apply
+`write→converge` timer lets `metrics.json` report sub-second hot-reload latency
+(`hot_reload_latency_seconds`: p50/p95/mean, R9). For the
 paper-oriented pipeline (figure), per-stage data specs, efficiency metrics, and the
 novelty + feasibility argument, see
 [`docs/research-pipeline.md`](docs/research-pipeline.md); the next research
@@ -292,8 +411,8 @@ Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
 
 | File | Description |
 | --- | --- |
-| [`deploy-fleet-2box.sh`](deploy-fleet-2box.sh) | One-click orchestrator (run on Halo-A): CCP + both edge nodes + convergence wait + verify. |
-| [`run-all-2box.sh`](run-all-2box.sh) | Hands-off one-shot: deploy + verify + non-interactive demo, capturing a full log bundle for offline review. |
+| [`deploy-fleet-2box.sh`](deploy-fleet-2box.sh) | One-click orchestrator (run on Halo-A): CCP + all edge nodes (2-box default, N-box via `fleet.hosts`) + convergence wait + verify. |
+| [`run-all-2box.sh`](run-all-2box.sh) | Hands-off one-shot: deploy + verify + non-interactive demo, capturing a full log bundle (incl. per-box image digests) for offline review. |
 | [`ccp_server.py`](ccp_server.py) | Central control plane: versions/signs/serves desired config, central audit log. |
 | [`fleet_agent.py`](fleet_agent.py) | Pull agent: verify signature, detect drift via `/config/hash`, apply, report. |
 | [`fleet_lib.py`](fleet_lib.py) | Shared stdlib helpers: hashing, HMAC sign/verify, tiny HTTP. |
@@ -307,7 +426,10 @@ Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
 | [`verify_local.py`](verify_local.py) | Offline in-process end-to-end verifier (no hardware). |
 | [`fleet_metrics.py`](fleet_metrics.py) | Distil a run bundle into `metrics.json`: convergence latency, hash agreement, router readiness, config size. |
 | [`demo-fleet.sh`](demo-fleet.sh) | Narrated demo: edit one rule -> both boxes converge -> audit -> rollback. |
-| [`teardown-fleet-2box.sh`](teardown-fleet-2box.sh) | Stop CCP + both nodes (Halo-B over SSH). |
+| [`teardown-fleet-2box.sh`](teardown-fleet-2box.sh) | Stop CCP + Halo-A node + every remote node (over SSH); N-box aware. |
+| [`ci-check.sh`](ci-check.sh) | Config × pinned-image gate (R3+R2): CI strict-lint and the deploy-time pre-pull fail-fast validator. |
+| [`versions.env.example`](versions.env.example) | Template for a gitignored `versions.env` that pins `VLLM_SR_ROUTER_IMAGE` to a digest (R3). |
+| [`fleet.hosts.example`](fleet.hosts.example) | Template for a gitignored `fleet.hosts` inventory to scale past two boxes (R7). |
 | [`sample-desired-config.yaml`](sample-desired-config.yaml) | The initial desired config the CCP serves. |
 
 ## Honest boundaries
