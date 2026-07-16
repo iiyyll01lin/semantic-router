@@ -1,0 +1,44 @@
+{
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "decode_tps": 10.14444246296126,
+  "decode_tps_median": 10.14444246296126,
+  "decode_tps_runs": [
+    10.14444246296126
+  ],
+  "decode_window_s": 76.25726652145386,
+  "generated_utc": "2026-07-14T12:10:54Z",
+  "idle_samples": 14,
+  "idle_w": 19.328857142857142,
+  "idle_w_mean": 19.328857142857142,
+  "load_samples": 71,
+  "load_w_max": 147.008,
+  "load_w_mean": 140.13752112676056,
+  "load_w_peak": 147.008,
+  "model": "gemma4:31b-vram",
+  "runs_detail": [
+    {
+      "decode_s": 75.706477,
+      "decode_tps": 10.14444246296126,
+      "eval_count": 768,
+      "eval_duration_ns": 75706477000,
+      "tokens": 768,
+      "wall_s": 76.25704744599352
+    }
+  ],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 768,
+    "num_ctx": 0,
+    "prompt_text": "Write a detailed, well-structured 1000-word technical explanation of how the transformer neural network architecture works. Cover tokenization, embeddings, self-attention, multi-head attention, positional encodings, feed-forward layers, residual connections, layer normalization, the role of the softmax, and how training with teacher forcing differs from autoregressive inference. Use full paragraphs.",
+    "prompt_tokens": 256,
+    "runs": 1,
+    "think": false,
+    "use_mmap": false
+  },
+  "tok_per_watt_load": 0.07238919585130356,
+  "tok_per_watt_net_idle": 0.08397115015122515,
+  "total_decode_s": 75.706477,
+  "total_decode_tokens": 768
+}

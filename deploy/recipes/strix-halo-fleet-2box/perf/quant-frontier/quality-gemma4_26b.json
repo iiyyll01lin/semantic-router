@@ -1,0 +1,101 @@
+{
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "dataset": "quant-quality-mmlu.json",
+  "dataset_n": 42,
+  "per_model": {
+    "gemma4:26b": {
+      "accuracy": 0.6905,
+      "correct": 29,
+      "n": 42,
+      "options": {
+        "num_ctx": 4096,
+        "num_gpu": 999,
+        "num_predict": 2048,
+        "temperature": 0,
+        "use_mmap": false
+      },
+      "per_category": {
+        "biology": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "business": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "chemistry": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "computer science": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "economics": {
+          "accuracy": 1.0,
+          "correct": 3,
+          "n": 3
+        },
+        "engineering": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "health": {
+          "accuracy": 1.0,
+          "correct": 3,
+          "n": 3
+        },
+        "history": {
+          "accuracy": 0.3333,
+          "correct": 1,
+          "n": 3
+        },
+        "law": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "math": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "other": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "philosophy": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "physics": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        },
+        "psychology": {
+          "accuracy": 0.6667,
+          "correct": 2,
+          "n": 3
+        }
+      },
+      "wall_s": 298.7
+    }
+  },
+  "schema": "quant-quality/v1",
+  "shape": {
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "num_predict": 2048,
+    "think": false,
+    "use_mmap": false
+  }
+}
