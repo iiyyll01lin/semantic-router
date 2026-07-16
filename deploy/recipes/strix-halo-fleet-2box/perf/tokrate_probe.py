@@ -267,6 +267,7 @@ def aggregate(runs, wall_s, concurrency):
         "decode_tps_p95": _percentile(decode, 95),
         "prefill_tps_mean": statistics.fmean(prefill) if prefill else None,
         "ttft_ms_mean": statistics.fmean(ttft) if ttft else None,
+        "ttft_ms_median": statistics.median(ttft) if ttft else None,
         "ttft_ms_p95": _percentile(ttft, 95),
         # Aggregate decode throughput across all concurrent streams over the
         # measured wall time -- the number that actually saturates the device.

@@ -1,0 +1,38 @@
+{
+  "schema": "agentic-toolcall-tasks/v1",
+  "note": "Frozen, answer-keyed structured-JSON / tool-call task set for the Strix Halo agentic operating-profile micro-benchmark. Each task presents the SAME full tool catalog and one user request; the model must (1) select the correct tool, (2) fill the required arguments, and (3) emit ONLY a single JSON object {\"name\":..., \"arguments\":{...}}. Scored by agentic_toolcall.py: JSON validity, tool-name selection, argument correctness, and per-step latency. Checks are deliberately tolerant on free-form fields (contains) and strict on structured fields (equals / equals_number) so a competent model can score 100% while a weak one is separated on tool-selection and argument fidelity. NEVER treat this as a large-N eval; it is a small indicative probe (n=15).",
+  "tools": [
+    {"name": "get_weather", "description": "Get the current weather for a location.", "parameters": {"location": "string, city name", "unit": "string, 'celsius' or 'fahrenheit'"}},
+    {"name": "set_timer", "description": "Start a countdown timer.", "parameters": {"duration_seconds": "integer, timer length in seconds"}},
+    {"name": "convert_currency", "description": "Convert an amount from one currency to another.", "parameters": {"amount": "number", "from_currency": "string, ISO 4217 code", "to_currency": "string, ISO 4217 code"}},
+    {"name": "search_web", "description": "Search the web and return results.", "parameters": {"query": "string", "num_results": "integer"}},
+    {"name": "send_email", "description": "Send an email.", "parameters": {"to": "string, recipient address", "subject": "string", "body": "string"}},
+    {"name": "create_calendar_event", "description": "Create a calendar event.", "parameters": {"title": "string", "date": "string, YYYY-MM-DD", "time": "string, HH:MM 24h"}},
+    {"name": "calculate", "description": "Evaluate an arithmetic expression.", "parameters": {"expression": "string, e.g. '12*(3+4)'"}},
+    {"name": "play_music", "description": "Play a music track.", "parameters": {"track": "string, song title", "artist": "string"}},
+    {"name": "book_flight", "description": "Book a flight.", "parameters": {"origin": "string, IATA code", "destination": "string, IATA code", "date": "string, YYYY-MM-DD"}},
+    {"name": "translate_text", "description": "Translate text to a target language.", "parameters": {"text": "string", "target_language": "string"}},
+    {"name": "get_stock_price", "description": "Get a stock's current price.", "parameters": {"ticker": "string, stock ticker symbol"}},
+    {"name": "create_file", "description": "Create a text file.", "parameters": {"filename": "string", "content": "string"}},
+    {"name": "add_to_cart", "description": "Add a product to the shopping cart.", "parameters": {"sku": "string, product SKU", "quantity": "integer"}},
+    {"name": "set_thermostat", "description": "Set the thermostat temperature.", "parameters": {"temperature": "number", "unit": "string, 'celsius' or 'fahrenheit'"}},
+    {"name": "toggle_light", "description": "Turn a smart light on or off.", "parameters": {"room": "string", "state": "string, 'on' or 'off'"}}
+  ],
+  "tasks": [
+    {"id": "weather_tokyo", "query": "What is the current weather in Tokyo? Give it to me in Celsius.", "expect": {"name": "get_weather", "args": {"location": {"check": "equals", "value": "Tokyo"}, "unit": {"check": "equals", "value": "celsius"}}}},
+    {"id": "timer_10min", "query": "Set a timer for 10 minutes.", "expect": {"name": "set_timer", "args": {"duration_seconds": {"check": "equals_number", "value": 600}}}},
+    {"id": "fx_100usd_eur", "query": "Convert 100 US dollars to euros.", "expect": {"name": "convert_currency", "args": {"amount": {"check": "equals_number", "value": 100}, "from_currency": {"check": "equals", "value": "USD"}, "to_currency": {"check": "equals", "value": "EUR"}}}},
+    {"id": "search_mountain", "query": "Search the web for the tallest mountain in the world and return the top 3 results.", "expect": {"name": "search_web", "args": {"query": {"check": "contains", "value": "tallest mountain"}, "num_results": {"check": "equals_number", "value": 3}}}},
+    {"id": "email_alice", "query": "Send an email to alice@example.com with the subject Lunch and the body 'See you at noon'.", "expect": {"name": "send_email", "args": {"to": {"check": "equals", "value": "alice@example.com"}, "subject": {"check": "equals", "value": "Lunch"}, "body": {"check": "contains", "value": "noon"}}}},
+    {"id": "cal_dentist", "query": "Schedule a calendar event titled Dentist on 2026-08-01 at 09:00.", "expect": {"name": "create_calendar_event", "args": {"title": {"check": "equals", "value": "Dentist"}, "date": {"check": "equals", "value": "2026-08-01"}, "time": {"check": "contains", "value": "09:00"}}}},
+    {"id": "calc_47x89", "query": "What is 47 multiplied by 89? Use the calculator.", "expect": {"name": "calculate", "args": {"expression": {"check": "contains_all", "value": ["47", "89"]}}}},
+    {"id": "music_queen", "query": "Play the song Bohemian Rhapsody by Queen.", "expect": {"name": "play_music", "args": {"track": {"check": "contains", "value": "Bohemian Rhapsody"}, "artist": {"check": "equals", "value": "Queen"}}}},
+    {"id": "flight_sfo_jfk", "query": "Book a flight from SFO to JFK on 2026-09-15.", "expect": {"name": "book_flight", "args": {"origin": {"check": "equals", "value": "SFO"}, "destination": {"check": "equals", "value": "JFK"}, "date": {"check": "equals", "value": "2026-09-15"}}}},
+    {"id": "translate_fr", "query": "Translate the phrase 'good morning' into French.", "expect": {"name": "translate_text", "args": {"text": {"check": "contains", "value": "good morning"}, "target_language": {"check": "contains", "value": "French"}}}},
+    {"id": "stock_aapl", "query": "Get the current stock price of Apple, ticker AAPL.", "expect": {"name": "get_stock_price", "args": {"ticker": {"check": "equals", "value": "AAPL"}}}},
+    {"id": "file_report", "query": "Create a file named report.txt containing the text 'hello world'.", "expect": {"name": "create_file", "args": {"filename": {"check": "equals", "value": "report.txt"}, "content": {"check": "contains", "value": "hello world"}}}},
+    {"id": "cart_sku123", "query": "Add 3 units of product SKU-123 to my shopping cart.", "expect": {"name": "add_to_cart", "args": {"sku": {"check": "equals", "value": "SKU-123"}, "quantity": {"check": "equals_number", "value": 3}}}},
+    {"id": "thermostat_72f", "query": "Set the thermostat to 72 degrees Fahrenheit.", "expect": {"name": "set_thermostat", "args": {"temperature": {"check": "equals_number", "value": 72}, "unit": {"check": "equals", "value": "fahrenheit"}}}},
+    {"id": "light_kitchen_off", "query": "Turn off the light in the kitchen.", "expect": {"name": "toggle_light", "args": {"room": {"check": "equals", "value": "kitchen"}, "state": {"check": "equals", "value": "off"}}}}
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "aggregate": {
+    "aggregate_decode_tps": 47.951543347099964,
+    "concurrency": 4,
+    "decode_tps_mean": 31.12433766568514,
+    "decode_tps_median": 30.149570036258154,
+    "decode_tps_p95": 36.24731543320073,
+    "ok_runs": 16,
+    "prefill_tps_mean": 2082.8835231618905,
+    "runs": 16,
+    "success_rate": 1.0,
+    "total_completion_tokens": 192,
+    "ttft_ms_mean": 589.9690924397873,
+    "ttft_ms_median": 542.6962639976409,
+    "ttft_ms_p95": 880.6588120060042,
+    "wall_s": 4.004042134998599
+  },
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "label": "conc-gemma4_26b-a4b-it-q8_0-c4",
+  "model": "gemma4:26b-a4b-it-q8_0",
+  "runs_detail": [
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 25.905225731660718,
+      "ok": true,
+      "prefill_tps": 681.2789249888411,
+      "prompt_tokens": 232,
+      "ttft_ms": 767.8533470025286,
+      "wall_s": 1.2327095240034396
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 30.075941752926138,
+      "ok": true,
+      "prefill_tps": 549.2970418460169,
+      "prompt_tokens": 232,
+      "ttft_ms": 883.3399120048853,
+      "wall_s": 1.2833449830068275
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 29.961948325626455,
+      "ok": true,
+      "prefill_tps": 548.3803868918178,
+      "prompt_tokens": 232,
+      "ttft_ms": 880.6588120060042,
+      "wall_s": 1.2820817830070155
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 29.94392999109168,
+      "ok": true,
+      "prefill_tps": 549.7109278741351,
+      "prompt_tokens": 232,
+      "ttft_ms": 879.5547110057669,
+      "wall_s": 1.2816898180026328
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 36.21887063524881,
+      "ok": true,
+      "prefill_tps": 2957.41073591087,
+      "prompt_tokens": 232,
+      "ttft_ms": 460.6082370009972,
+      "wall_s": 0.7935201460059034
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 36.32148143215601,
+      "ok": true,
+      "prefill_tps": 3068.8642556681393,
+      "prompt_tokens": 232,
+      "ttft_ms": 462.53613400040194,
+      "wall_s": 0.7946836890041595
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 36.24731543320073,
+      "ok": true,
+      "prefill_tps": 3018.632247319663,
+      "prompt_tokens": 232,
+      "ttft_ms": 460.6547250004951,
+      "wall_s": 0.7932708290027222
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 36.19865823640137,
+      "ok": true,
+      "prefill_tps": 2887.439637576542,
+      "prompt_tokens": 232,
+      "ttft_ms": 458.9957030111691,
+      "wall_s": 0.7928760990034789
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 32.917114705172374,
+      "ok": true,
+      "prefill_tps": 2012.7706829539145,
+      "prompt_tokens": 232,
+      "ttft_ms": 562.7860759996111,
+      "wall_s": 0.9302266779995989
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 32.93427964496846,
+      "ok": true,
+      "prefill_tps": 2070.042382333259,
+      "prompt_tokens": 232,
+      "ttft_ms": 564.3766400025925,
+      "wall_s": 0.9303149839979596
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 28.721395285382965,
+      "ok": true,
+      "prefill_tps": 3611.344603219078,
+      "prompt_tokens": 232,
+      "ttft_ms": 447.4689689959632,
+      "wall_s": 0.8675784850056516
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 32.91287140118322,
+      "ok": true,
+      "prefill_tps": 2041.9479479303275,
+      "prompt_tokens": 232,
+      "ttft_ms": 563.7034770043101,
+      "wall_s": 0.9297937259980245
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 27.261636743234003,
+      "ok": true,
+      "prefill_tps": 2078.312983185373,
+      "prompt_tokens": 232,
+      "ttft_ms": 522.5109629973304,
+      "wall_s": 0.9652986709988909
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 27.254640102477445,
+      "ok": true,
+      "prefill_tps": 2130.825327430702,
+      "prompt_tokens": 232,
+      "ttft_ms": 522.6064519956708,
+      "wall_s": 0.964733108994551
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 30.22319831959017,
+      "ok": true,
+      "prefill_tps": 1607.0154536701602,
+      "prompt_tokens": 232,
+      "ttft_ms": 592.3597840010189,
+      "wall_s": 0.9921914599981392
+    },
+    {
+      "api": "ollama",
+      "completion_tokens": 12,
+      "decode_tps": 24.890894910641688,
+      "ok": true,
+      "prefill_tps": 3512.8628317914086,
+      "prompt_tokens": 232,
+      "ttft_ms": 409.49153700785246,
+      "wall_s": 0.8944524090038612
+    }
+  ],
+  "schema": "tokrate-probe/v1",
+  "shape": {
+    "concurrency": 4,
+    "max_tokens": 128,
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "prompt_tokens": 256,
+    "runs": 4,
+    "use_mmap": false
+  }
+}

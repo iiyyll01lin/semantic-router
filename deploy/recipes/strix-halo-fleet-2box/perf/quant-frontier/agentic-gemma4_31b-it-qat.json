@@ -1,0 +1,295 @@
+{
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "dataset": "agentic-toolcall-tasks.json",
+  "n_tasks": 15,
+  "n_tools": 15,
+  "per_model": {
+    "gemma4:31b-it-qat": {
+      "args_correct": 15,
+      "args_correct_rate": 1.0,
+      "failure_rate": 0.0,
+      "json_valid": 15,
+      "json_valid_rate": 1.0,
+      "latency": {
+        "decode_tps_mean": 11.35,
+        "ttft_ms_mean": 2680.6,
+        "ttft_ms_p95": 2002.2,
+        "wall_s_mean": 5.28,
+        "wall_s_median": 4.28
+      },
+      "n": 15,
+      "name_correct": 15,
+      "name_correct_rate": 1.0,
+      "per_task": [
+        {
+          "arg_detail": {
+            "location": true,
+            "unit": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.38,
+          "error": null,
+          "id": "weather_tokyo",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "get_weather",
+          "raw_span": "{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Tokyo\", \"unit\": \"celsius\"}}",
+          "step_correct": true,
+          "ttft_ms": 13316.8,
+          "wall_s": 15.516
+        },
+        {
+          "arg_detail": {
+            "duration_seconds": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.45,
+          "error": null,
+          "id": "timer_10min",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "set_timer",
+          "raw_span": "{\"name\": \"set_timer\", \"arguments\": {\"duration_seconds\": 600}}",
+          "step_correct": true,
+          "ttft_ms": 1876.7,
+          "wall_s": 3.801
+        },
+        {
+          "arg_detail": {
+            "amount": true,
+            "from_currency": true,
+            "to_currency": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.26,
+          "error": null,
+          "id": "fx_100usd_eur",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "convert_currency",
+          "raw_span": "{\"name\": \"convert_currency\", \"arguments\": {\"amount\": 100, \"from_currency\": \"USD\", \"to_currency\": \"EUR\"}}",
+          "step_correct": true,
+          "ttft_ms": 1871.7,
+          "wall_s": 5.073
+        },
+        {
+          "arg_detail": {
+            "num_results": true,
+            "query": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.31,
+          "error": null,
+          "id": "search_mountain",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "search_web",
+          "raw_span": "{\"name\": \"search_web\", \"arguments\": {\"query\": \"tallest mountain in the world\", \"num_results\": 3}}",
+          "step_correct": true,
+          "ttft_ms": 1948.9,
+          "wall_s": 4.693
+        },
+        {
+          "arg_detail": {
+            "body": true,
+            "subject": true,
+            "to": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.25,
+          "error": null,
+          "id": "email_alice",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "send_email",
+          "raw_span": "{\"name\": \"send_email\", \"arguments\": {\"to\": \"alice@example.com\", \"subject\": \"Lunch\", \"body\": \"See you at noon\"}}",
+          "step_correct": true,
+          "ttft_ms": 1962.8,
+          "wall_s": 5.255
+        },
+        {
+          "arg_detail": {
+            "date": true,
+            "time": true,
+            "title": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.2,
+          "error": null,
+          "id": "cal_dentist",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "create_calendar_event",
+          "raw_span": "{\"name\": \"create_calendar_event\", \"arguments\": {\"title\": \"Dentist\", \"date\": \"2026-08-01\", \"time\": \"09:00\"}}",
+          "step_correct": true,
+          "ttft_ms": 2002.2,
+          "wall_s": 6.113
+        },
+        {
+          "arg_detail": {
+            "expression": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.5,
+          "error": null,
+          "id": "calc_47x89",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "calculate",
+          "raw_span": "{\"name\": \"calculate\", \"arguments\": {\"expression\": \"47*89\"}}",
+          "step_correct": true,
+          "ttft_ms": 1953.4,
+          "wall_s": 3.695
+        },
+        {
+          "arg_detail": {
+            "artist": true,
+            "track": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.36,
+          "error": null,
+          "id": "music_queen",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "play_music",
+          "raw_span": "{\"name\": \"play_music\", \"arguments\": {\"track\": \"Bohemian Rhapsody\", \"artist\": \"Queen\"}}",
+          "step_correct": true,
+          "ttft_ms": 1886.9,
+          "wall_s": 4.267
+        },
+        {
+          "arg_detail": {
+            "date": true,
+            "destination": true,
+            "origin": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.22,
+          "error": null,
+          "id": "flight_sfo_jfk",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "book_flight",
+          "raw_span": "{\"name\": \"book_flight\", \"arguments\": {\"origin\": \"SFO\", \"destination\": \"JFK\", \"date\": \"2026-09-15\"}}",
+          "step_correct": true,
+          "ttft_ms": 1975.7,
+          "wall_s": 5.631
+        },
+        {
+          "arg_detail": {
+            "target_language": true,
+            "text": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.36,
+          "error": null,
+          "id": "translate_fr",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "translate_text",
+          "raw_span": "{\"name\": \"translate_text\", \"arguments\": {\"text\": \"good morning\", \"target_language\": \"French\"}}",
+          "step_correct": true,
+          "ttft_ms": 1880.4,
+          "wall_s": 4.261
+        },
+        {
+          "arg_detail": {
+            "ticker": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.5,
+          "error": null,
+          "id": "stock_aapl",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "get_stock_price",
+          "raw_span": "{\"name\": \"get_stock_price\", \"arguments\": {\"ticker\": \"AAPL\"}}",
+          "step_correct": true,
+          "ttft_ms": 1884.4,
+          "wall_s": 3.626
+        },
+        {
+          "arg_detail": {
+            "content": true,
+            "filename": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.36,
+          "error": null,
+          "id": "file_report",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "create_file",
+          "raw_span": "{\"name\": \"create_file\", \"arguments\": {\"filename\": \"report.txt\", \"content\": \"hello world\"}}",
+          "step_correct": true,
+          "ttft_ms": 1879.0,
+          "wall_s": 4.259
+        },
+        {
+          "arg_detail": {
+            "quantity": true,
+            "sku": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.3,
+          "error": null,
+          "id": "cart_sku123",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "add_to_cart",
+          "raw_span": "{\"name\": \"add_to_cart\", \"arguments\": {\"sku\": \"SKU-123\", \"quantity\": 3}}",
+          "step_correct": true,
+          "ttft_ms": 1970.4,
+          "wall_s": 4.716
+        },
+        {
+          "arg_detail": {
+            "temperature": true,
+            "unit": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.36,
+          "error": null,
+          "id": "thermostat_72f",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "set_thermostat",
+          "raw_span": "{\"name\": \"set_thermostat\", \"arguments\": {\"temperature\": 72, \"unit\": \"fahrenheit\"}}",
+          "step_correct": true,
+          "ttft_ms": 1900.1,
+          "wall_s": 4.28
+        },
+        {
+          "arg_detail": {
+            "room": true,
+            "state": true
+          },
+          "args_correct": true,
+          "decode_tps": 11.41,
+          "error": null,
+          "id": "light_kitchen_off",
+          "json_valid": true,
+          "name_correct": true,
+          "predicted_name": "toggle_light",
+          "raw_span": "{\"name\": \"toggle_light\", \"arguments\": {\"room\": \"kitchen\", \"state\": \"off\"}}",
+          "step_correct": true,
+          "ttft_ms": 1900.2,
+          "wall_s": 4.008
+        }
+      ],
+      "step_correct": 15,
+      "step_correct_rate": 1.0,
+      "wall_s_total": 79.2
+    }
+  },
+  "schema": "agentic-toolcall/v1",
+  "shape": {
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "num_predict": 512,
+    "think": false,
+    "use_mmap": false
+  }
+}
