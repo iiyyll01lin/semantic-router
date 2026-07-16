@@ -18,3 +18,8 @@ mtls-certs/
 *.pem
 *.csr
 *.srl
+
+# Ed25519 signing key material (keygen writes ./keys/ccp_ed25519.seed) — secret,
+# never committed.
+keys/
+*.seed
