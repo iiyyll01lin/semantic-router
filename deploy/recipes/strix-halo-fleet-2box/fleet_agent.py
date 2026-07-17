@@ -188,12 +188,18 @@ def _wait_for_hash(cfg: AgentConfig, desired_hash: str) -> bool:
 
 
 def _router_health(cfg: AgentConfig):
-    """Return ``(ok, detail)``: does the router still SERVE after an apply?
+    """Return ``(ok, detail)``: did the router still SERVE *and* LOAD after an apply?
 
-    Hash convergence proves the router *read* the new bytes, not that it can
-    still serve (a bad-but-parseable config can wedge it). Liveness here is "GET
-    /config/hash still answers 200"; when ``ROUTER_HEALTH_PATH`` is set we also
-    require a 200 from that stronger readiness/completion probe.
+    A converged /config/hash only proves the router *read* the new bytes (that
+    endpoint hashes the file on disk), not that it could parse/adopt them. Gates,
+    in order:
+      * GET /config/hash == 200   -- the router is still serving,
+      * GET /config/router == 200 -- the router actually LOADED the active config.
+        handleConfigGet parses it and returns 500 on invalid YAML, so a config the
+        router refused to adopt (it keeps serving the last-good one) is caught here
+        and rolled back (R8), instead of being mistaken for "applied" just because
+        the file bytes converged,
+      * when ``ROUTER_HEALTH_PATH`` is set, a 200 from that stronger readiness probe.
     """
     try:
         status, _obj = fleet_lib.http_get_json(
@@ -202,6 +208,16 @@ def _router_health(cfg: AgentConfig):
         return False, "config/hash unreachable: %s" % exc
     if status != 200:
         return False, "config/hash returned %d" % status
+    # R8 load gate: /config/router parses the active config and 500s when it cannot
+    # be loaded. This is the signal a byte-hash convergence check cannot give us --
+    # it proves the router LOADED the config, not merely that the file was written.
+    try:
+        cstatus, _cobj = fleet_lib.http_get_json(
+            cfg.router_api + "/config/router", token=None, timeout=cfg.health_timeout)
+    except Exception as exc:  # 500 PARSE_ERROR raises HTTPError -> unloadable config
+        return False, "config/router unloadable: %s" % exc
+    if cstatus != 200:
+        return False, "config/router returned %d" % cstatus
     if cfg.health_path:
         try:
             hstatus, _txt = fleet_lib.http_get_text(

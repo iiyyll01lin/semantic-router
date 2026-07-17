@@ -8,7 +8,10 @@ two primitives the agent relies on:
 - a config FILE that the agent overwrites; the mock detects the change and bumps
   a reload counter WITHOUT changing its start time, i.e. it models fsnotify
   hot-reload (reload, not restart).
-- ``GET /config/router`` -> the current active config text (for the demo).
+- ``GET /config/router`` -> the current active config as JSON, or HTTP 500 when
+  the active file fails to parse (mirrors the real handleConfigGet; this is the
+  LOAD gate the agent's R8 auto-rollback relies on -- a converged byte-hash is
+  not proof the router could load the config).
 
 The real router already ships these (see route_config_deploy.go and
 server_config_watch.go); this mock only exists for the offline verify path.
@@ -63,6 +66,24 @@ class RouterState:
     def active_text(self) -> str:
         return self._refresh().decode("utf-8", "replace")
 
+    def active_loadable(self) -> bool:
+        """Mirror the real router's GET /config/router: the active config must
+        PARSE (handleConfigGet returns 500 on invalid YAML). A converged byte-hash
+        only proves the file was READ; this models the LOAD gate the agent's R8
+        auto-rollback relies on."""
+        text = self.active_text()
+        try:
+            import yaml  # present in the vllm-sr env; optional for a stdlib-only run
+        except Exception:  # pragma: no cover - stdlib-only fallback
+            # No YAML lib: flag the explicit invalid-flow probe the verifier uses
+            # ("{[}"), which never appears in a valid config scalar.
+            return "{[}" not in text
+        try:
+            yaml.safe_load(text)
+            return True
+        except Exception:  # noqa: BLE001 - any parse error == not loadable
+            return False
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -93,6 +114,9 @@ def make_handler(state: RouterState):
             if self.path == "/config/hash":
                 return self._send(200, {"hash": state.active_hash()})
             if self.path == "/config/router":
+                if not state.active_loadable():
+                    return self._send(500, {"error": "PARSE_ERROR",
+                                            "detail": "active config failed to parse"})
                 return self._send(200, {"config": state.active_text()})
             if self.path == "/debug/router-state":
                 return self._send(200, state.snapshot())
