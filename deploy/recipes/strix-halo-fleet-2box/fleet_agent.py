@@ -186,6 +186,14 @@ def _router_loaded_hash(cfg: AgentConfig) -> str:
     return str(obj.get("hash", ""))
 
 
+def _router_config_loadable(cfg: AgentConfig) -> None:
+    status, _obj = fleet_lib.http_get_json(
+        cfg.router_api + "/config/router", token=None, timeout=cfg.health_timeout
+    )
+    if status != 200:
+        raise RuntimeError("router /config/router returned %d" % status)
+
+
 def _write_config(cfg: AgentConfig, config_text: str) -> None:
     # Back up the current file next to it, then overwrite the config IN PLACE
     # (same inode) -- NOT via a temp-file rename. The real vllm-sr gateway
@@ -231,11 +239,16 @@ def _wait_for_loaded_hash(cfg: AgentConfig, previous_hash: str):
         except Exception:
             pass
         time.sleep(0.2)
-    return (
-        False,
-        last_hash,
-        "loaded-hash did not advance within %.1fs" % cfg.apply_timeout,
-    )
+    try:
+        _router_config_loadable(cfg)
+        return True, last_hash, "loaded-hash unchanged; config/router loadable"
+    except Exception as exc:
+        return (
+            False,
+            last_hash,
+            "loaded-hash did not advance within %.1fs; config/router unloadable: %s"
+            % (cfg.apply_timeout, exc),
+        )
 
 
 def _router_health(cfg: AgentConfig):
