@@ -223,6 +223,64 @@ assert_contains "unstaged: non-path FLEET_SIGN_MODE still forwarded" \
   "${unstaged_env}" "FLEET_SIGN_MODE=ed25519"
 
 echo
+echo "==> [ship-list] static guard: every vendored module fleet_lib.py/fleet_agent.py import must ship to BOTH remote scp lists"
+# We have twice shipped fleet_lib.py/fleet_agent.py to each remote WITHOUT a
+# runtime dependency they need (first cross-box paths, then the vendored
+# _ed25519.py module), so the remote agent died with ModuleNotFoundError. This
+# OFFLINE check statically confirms that every LOCAL (non-stdlib) module those
+# two files import is present in BOTH scp file lists in deploy-fleet-2box.sh
+# (the gateway-mode and mock-mode remote pushes), so a dropped vendored dep now
+# fails HERE, before any hardware run.
+
+# The two files scp'd to every remote whose imports we must satisfy on the box.
+_sl_importers=("${SELFTEST_DIR}/fleet_lib.py" "${SELFTEST_DIR}/fleet_agent.py")
+for _sl_f in "${_sl_importers[@]}"; do
+  [ -f "${_sl_f}" ] || fail "ship-list guard: importer not found (${_sl_f})"
+done
+# Their import statements, comment-stripped so a module named only in a trailing
+# '# ...' comment can't masquerade as an import.
+_sl_import_lines="$(sed -E 's/#.*//' "${_sl_importers[@]}" \
+  | grep -E '^[[:space:]]*(import|from)[[:space:]]')" \
+  || fail "ship-list guard: found no import statements in fleet_lib.py/fleet_agent.py (parser broke?)"
+
+# The remote scp file lists in deploy-fleet-2box.sh, each flattened onto ONE line
+# (line-continuations joined). Exactly two are expected: the gateway-mode and
+# mock-mode pushes, both to ${target}:${REMOTE_DIR}/ (matched via REMOTE_DIR).
+# shellcheck disable=SC2016  # the awk body is awk code ($0 etc.), not shell
+mapfile -t _sl_lists < <(awk '
+  /^[[:space:]]*scp[[:space:]]/ { inscp = 1; buf = "" }
+  inscp {
+    line = $0; sub(/\\[[:space:]]*$/, "", line); buf = buf " " line
+    if ($0 !~ /\\[[:space:]]*$/) { if (buf ~ /REMOTE_DIR/) print buf; inscp = 0 }
+  }
+' "${DEPLOY_SCRIPT}")
+[ "${#_sl_lists[@]}" -eq 2 ] \
+  || fail "ship-list guard: expected 2 remote scp lists in deploy-fleet-2box.sh, found ${#_sl_lists[@]} (deploy structure changed -- update this guard)"
+
+# The importers are the files being shipped, not deps -- skip them; every OTHER
+# local *.py they import is a vendored dep that MUST be in EVERY remote scp list.
+_sl_importer_names=""
+for _sl_f in "${_sl_importers[@]}"; do _sl_importer_names+=" $(basename "${_sl_f}" .py) "; done
+_sl_deps=""
+for _sl_pyf in "${SELFTEST_DIR}"/*.py; do
+  _sl_mod="$(basename "${_sl_pyf}" .py)"
+  case "${_sl_importer_names}" in *" ${_sl_mod} "*) continue ;; esac
+  printf '%s\n' "${_sl_import_lines}" | grep -Fwq -- "${_sl_mod}" || continue
+  _sl_deps+=" ${_sl_mod}"
+  _sl_i=0
+  for _sl_list in "${_sl_lists[@]}"; do
+    _sl_i=$((_sl_i + 1))
+    case "${_sl_list}" in
+      *"\${SCRIPT_DIR}/${_sl_mod}.py"*) : ;;
+      *) fail "ship-list guard: vendored dep '${_sl_mod}.py' (imported by fleet_lib.py/fleet_agent.py) is MISSING from remote scp list #${_sl_i} in deploy-fleet-2box.sh -- add \"\${SCRIPT_DIR}/${_sl_mod}.py\" so the remote agent doesn't crash with ModuleNotFoundError" ;;
+    esac
+  done
+done
+[ -n "${_sl_deps}" ] \
+  || fail "ship-list guard: discovered no vendored deps at all (expected at least _ed25519) -- the import scan or file layout changed"
+note "ship-list guard: vendored dep(s)${_sl_deps} present in BOTH remote scp lists"
+
+echo
 echo "----------------------------------------------------------------"
 if [ "${PF_FAIL}" -eq 0 ]; then
   echo "PASS: set -e regression guard + ${PF_PASS} path-forwarding assertion(s) all green."

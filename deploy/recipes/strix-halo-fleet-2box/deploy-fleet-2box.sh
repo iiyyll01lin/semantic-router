@@ -354,8 +354,11 @@ bring_up_remote_box() {
     local remote_poc="${repo%/}/deploy/recipes/strix-halo-poc"
     local remote_pii="${remote_poc}/models/pii_classifier_modernbert-base_presidio_token_model"
     ssh "${ssh_opts[@]}" "${port_opts[@]}" "${target}" "mkdir -p ${REMOTE_DIR}"
+    # fleet_lib.py imports the vendored _ed25519.py (sibling module) in ed25519
+    # mode, so _ed25519.py MUST ship alongside it or the remote agent crashes
+    # with "ModuleNotFoundError: No module named '_ed25519'".
     scp "${ssh_opts[@]}" "${scp_port_opts[@]}" \
-      "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/fleet_common.sh" \
+      "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/_ed25519.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/fleet_common.sh" \
       "${SCRIPT_DIR}/node-bring-up.sh" "${SCRIPT_DIR}/gateway-bring-up.sh" \
       "${SCRIPT_DIR}/provision-halo-b.sh" \
       "${target}:${REMOTE_DIR}/"
@@ -396,9 +399,11 @@ bring_up_remote_box() {
        ${box_env}bash ${REMOTE_DIR}/node-bring-up.sh"
   else
     ssh "${ssh_opts[@]}" "${port_opts[@]}" "${target}" "mkdir -p ${REMOTE_DIR}"
-    # Ship only the self-contained recipe files a mock edge needs.
+    # Ship only the self-contained recipe files a mock edge needs. fleet_lib.py
+    # imports the vendored _ed25519.py in ed25519 mode, so that module must ship
+    # alongside it (fleet_lib imports it lazily regardless of mock/gateway mode).
     scp "${ssh_opts[@]}" "${scp_port_opts[@]}" \
-      "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/mock_router.py" \
+      "${SCRIPT_DIR}/fleet_lib.py" "${SCRIPT_DIR}/_ed25519.py" "${SCRIPT_DIR}/fleet_agent.py" "${SCRIPT_DIR}/mock_router.py" \
       "${SCRIPT_DIR}/fleet_common.sh" "${SCRIPT_DIR}/node-bring-up.sh" \
       "${target}:${REMOTE_DIR}/"
     echo "    [${id}] starting mock edge node ..."
