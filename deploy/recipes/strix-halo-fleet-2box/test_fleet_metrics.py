@@ -39,9 +39,24 @@ class ConvergenceMetricsTest(unittest.TestCase):
         # is therefore NOT converged on v9, and the stale halo-b row must not be
         # counted -- so no giant cross-box span materializes.
         audit_rows = [
-            {"ts": "2026-07-14T00:00:00Z", "box": "halo-b", "version": "v9", "result": "in_sync"},
-            {"ts": "2026-07-15T07:36:53Z", "box": "halo-a", "version": "v9", "result": "in_sync"},
-            {"ts": "2026-07-15T07:37:00Z", "box": "halo-b", "version": "v3", "result": "in_sync"},
+            {
+                "ts": "2026-07-14T00:00:00Z",
+                "box": "halo-b",
+                "version": "v9",
+                "result": "in_sync",
+            },
+            {
+                "ts": "2026-07-15T07:36:53Z",
+                "box": "halo-a",
+                "version": "v9",
+                "result": "in_sync",
+            },
+            {
+                "ts": "2026-07-15T07:37:00Z",
+                "box": "halo-b",
+                "version": "v3",
+                "result": "in_sync",
+            },
         ]
         boxes = {
             "halo-a": {"version": "v9", "result": "in_sync", "hash": "aaaa1111"},
@@ -64,8 +79,18 @@ class ConvergenceMetricsTest(unittest.TestCase):
         # Both boxes end at v9 with equal hashes; the v9 audit rows are seconds
         # apart -> converged, with a small finite cross-box span.
         audit_rows = [
-            {"ts": "2026-07-15T02:28:14Z", "box": "halo-a", "version": "v9", "result": "in_sync"},
-            {"ts": "2026-07-15T02:28:17Z", "box": "halo-b", "version": "v9", "result": "in_sync"},
+            {
+                "ts": "2026-07-15T02:28:14Z",
+                "box": "halo-a",
+                "version": "v9",
+                "result": "in_sync",
+            },
+            {
+                "ts": "2026-07-15T02:28:17Z",
+                "box": "halo-b",
+                "version": "v9",
+                "result": "in_sync",
+            },
         ]
         boxes = {
             "halo-a": {"version": "v9", "result": "in_sync", "hash": "7831beef"},
@@ -124,13 +149,17 @@ class BuildMetricsBundleTest(unittest.TestCase):
             os.environ.pop(var, None)
 
         with tempfile.TemporaryDirectory() as bundle:
-            with open(os.path.join(bundle, "fleet-status.txt"), "w", encoding="utf-8") as fh:
+            with open(
+                os.path.join(bundle, "fleet-status.txt"), "w", encoding="utf-8"
+            ) as fh:
                 fh.write(
                     "desired_version=v9 audit_count=2\n"
                     "halo-a version=v9 result=in_sync hash=7831beefcafe\n"
                     "halo-b version=v9 result=in_sync hash=7831beefcafe\n"
                 )
-            with open(os.path.join(bundle, "fleet-audit.txt"), "w", encoding="utf-8") as fh:
+            with open(
+                os.path.join(bundle, "fleet-audit.txt"), "w", encoding="utf-8"
+            ) as fh:
                 fh.write(
                     "2026-07-15T02:28:14Z halo-a v9 in_sync\n"
                     "2026-07-15T02:28:17Z halo-b v9 in_sync\n"

@@ -47,8 +47,9 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _preimage(version: str, config_sha256: str, config_text: str,
-              ts: str = "", nonce: str = "") -> bytes:
+def _preimage(
+    version: str, config_sha256: str, config_text: str, ts: str = "", nonce: str = ""
+) -> bytes:
     """Canonical bytes that get signed.
 
     With no freshness fields this is byte-identical to the ORIGINAL preimage
@@ -57,7 +58,9 @@ def _preimage(version: str, config_sha256: str, config_text: str,
     folded into the signed preimage so they cannot be altered without detection.
     """
     if ts or nonce:
-        return "\n".join([version, config_sha256, ts, nonce, config_text]).encode("utf-8")
+        return "\n".join([version, config_sha256, ts, nonce, config_text]).encode(
+            "utf-8"
+        )
     return (version + "\n" + config_sha256 + "\n" + config_text).encode("utf-8")
 
 
@@ -81,7 +84,11 @@ class BundleSigner:
         if alg == SIGN_HMAC:
             if not hmac_key:
                 raise ValueError("HMAC signer requires a non-empty signing key")
-            self._key = hmac_key.encode("utf-8") if isinstance(hmac_key, str) else bytes(hmac_key)
+            self._key = (
+                hmac_key.encode("utf-8")
+                if isinstance(hmac_key, str)
+                else bytes(hmac_key)
+            )
         elif alg == SIGN_ED25519:
             ed = _load_ed25519()
             if ed25519_seed is None:
@@ -109,7 +116,11 @@ class BundleVerifier:
     def __init__(self, alg=SIGN_HMAC, hmac_key=None, ed25519_public=None):
         self.alg = alg
         if alg == SIGN_HMAC:
-            self._key = hmac_key.encode("utf-8") if isinstance(hmac_key, str) else bytes(hmac_key or b"")
+            self._key = (
+                hmac_key.encode("utf-8")
+                if isinstance(hmac_key, str)
+                else bytes(hmac_key or b"")
+            )
         elif alg == SIGN_ED25519:
             self._public = _coerce_key_bytes(ed25519_public, 32, "Ed25519 public key")
         else:
@@ -127,8 +138,10 @@ class BundleVerifier:
         # Ed25519 verifier: reject anything not explicitly ed25519-signed, so an
         # attacker cannot strip the asymmetric signature down to a forgeable HMAC.
         if bundle_alg != SIGN_ED25519:
-            return False, ("expected an ed25519-signed bundle, got alg=%r (downgrade attempt?)"
-                           % (bundle_alg or "hmac"))
+            return False, (
+                "expected an ed25519-signed bundle, got alg=%r (downgrade attempt?)"
+                % (bundle_alg or "hmac")
+            )
         ed = _load_ed25519()
         try:
             sig = bytes.fromhex(signature_hex)
@@ -167,11 +180,19 @@ def ed25519_keygen(seed=None):
 
 
 def _as_signer(value) -> BundleSigner:
-    return value if isinstance(value, BundleSigner) else BundleSigner(SIGN_HMAC, hmac_key=value)
+    return (
+        value
+        if isinstance(value, BundleSigner)
+        else BundleSigner(SIGN_HMAC, hmac_key=value)
+    )
 
 
 def _as_verifier(value) -> BundleVerifier:
-    return value if isinstance(value, BundleVerifier) else BundleVerifier(SIGN_HMAC, hmac_key=value)
+    return (
+        value
+        if isinstance(value, BundleVerifier)
+        else BundleVerifier(SIGN_HMAC, hmac_key=value)
+    )
 
 
 def _read_key_material(env, inline_var: str, file_var: str) -> str:
@@ -189,11 +210,15 @@ def signer_from_env(env=None) -> BundleSigner:
     """Build the CCP-side signer from env. Defaults to HMAC (backward compatible);
     ``FLEET_SIGN_MODE=ed25519`` selects asymmetric signing with a private seed."""
     env = os.environ if env is None else env
-    mode = (env.get("FLEET_SIGN_MODE", SIGN_HMAC).strip().lower() or SIGN_HMAC)
+    mode = env.get("FLEET_SIGN_MODE", SIGN_HMAC).strip().lower() or SIGN_HMAC
     if mode == SIGN_ED25519:
-        seed = _read_key_material(env, "FLEET_ED25519_SECRET", "FLEET_ED25519_SECRET_FILE")
+        seed = _read_key_material(
+            env, "FLEET_ED25519_SECRET", "FLEET_ED25519_SECRET_FILE"
+        )
         if not seed:
-            raise ValueError("FLEET_SIGN_MODE=ed25519 needs FLEET_ED25519_SECRET or FLEET_ED25519_SECRET_FILE")
+            raise ValueError(
+                "FLEET_SIGN_MODE=ed25519 needs FLEET_ED25519_SECRET or FLEET_ED25519_SECRET_FILE"
+            )
         return ed25519_signer(seed)
     return hmac_signer(env.get("FLEET_SIGNING_KEY", ""))
 
@@ -201,24 +226,32 @@ def signer_from_env(env=None) -> BundleSigner:
 def verifier_from_env(env=None) -> BundleVerifier:
     """Build the agent-side verifier from env (public key for Ed25519)."""
     env = os.environ if env is None else env
-    mode = (env.get("FLEET_SIGN_MODE", SIGN_HMAC).strip().lower() or SIGN_HMAC)
+    mode = env.get("FLEET_SIGN_MODE", SIGN_HMAC).strip().lower() or SIGN_HMAC
     if mode == SIGN_ED25519:
-        pub = _read_key_material(env, "FLEET_ED25519_PUBLIC", "FLEET_ED25519_PUBLIC_FILE")
+        pub = _read_key_material(
+            env, "FLEET_ED25519_PUBLIC", "FLEET_ED25519_PUBLIC_FILE"
+        )
         if not pub:
-            raise ValueError("FLEET_SIGN_MODE=ed25519 needs FLEET_ED25519_PUBLIC or FLEET_ED25519_PUBLIC_FILE")
+            raise ValueError(
+                "FLEET_SIGN_MODE=ed25519 needs FLEET_ED25519_PUBLIC or FLEET_ED25519_PUBLIC_FILE"
+            )
         return ed25519_verifier(pub)
     return hmac_verifier(env.get("FLEET_SIGNING_KEY", ""))
 
 
-def sign_bundle(signing_key: str, version: str, config_sha256: str, config_text: str) -> str:
+def sign_bundle(
+    signing_key: str, version: str, config_sha256: str, config_text: str
+) -> str:
     """HMAC-SHA256 over the canonical bundle preimage (kept for backward compat).
 
     Equivalent to ``hmac_signer(signing_key).sign(_preimage(...))`` for the legacy
     (no timestamp/nonce) preimage; retained so any existing importer keeps working.
     """
-    return hmac.new(signing_key.encode("utf-8"),
-                    _preimage(version, config_sha256, config_text),
-                    hashlib.sha256).hexdigest()
+    return hmac.new(
+        signing_key.encode("utf-8"),
+        _preimage(version, config_sha256, config_text),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def build_bundle(signer, version: str, config_text: str, ts=None, nonce=None) -> dict:
@@ -239,7 +272,9 @@ def build_bundle(signer, version: str, config_text: str, ts=None, nonce=None) ->
         bundle["ts"] = ts
     if nonce:
         bundle["nonce"] = nonce
-    bundle["signature"] = signer.sign(_preimage(version, config_sha256, config_text, ts, nonce))
+    bundle["signature"] = signer.sign(
+        _preimage(version, config_sha256, config_text, ts, nonce)
+    )
     return bundle
 
 
@@ -313,8 +348,15 @@ def client_ssl_context(env=None):
     return ctx
 
 
-def _request(url: str, method: str, body: bytes = None, token: str = None,
-             content_type: str = None, timeout: float = 10.0, ssl_context=None):
+def _request(
+    url: str,
+    method: str,
+    body: bytes = None,
+    token: str = None,
+    content_type: str = None,
+    timeout: float = 10.0,
+    ssl_context=None,
+):
     req = urllib.request.Request(url, data=body, method=method)
     if content_type:
         req.add_header("Content-Type", content_type)
@@ -340,8 +382,14 @@ def http_get_json(url: str, token: str = None, timeout: float = 10.0):
 def http_post_json(url: str, payload: dict, token: str = None, timeout: float = 10.0):
     """POST a JSON ``payload``. Returns ``(status, obj)``."""
     body = json.dumps(payload).encode("utf-8")
-    status, raw = _request(url, "POST", body=body, token=token,
-                           content_type="application/json", timeout=timeout)
+    status, raw = _request(
+        url,
+        "POST",
+        body=body,
+        token=token,
+        content_type="application/json",
+        timeout=timeout,
+    )
     return status, json.loads(raw) if raw else {}
 
 

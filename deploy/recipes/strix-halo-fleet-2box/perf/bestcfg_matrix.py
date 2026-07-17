@@ -50,7 +50,7 @@ import time
 import urllib.error
 import urllib.request
 
-GIB = 1024 ** 3
+GIB = 1024**3
 
 # The fixed 8-cell backend matrix. Order groups by server then residency so the
 # driver reloads the 120B as few times as possible (R3 in the plan).
@@ -166,14 +166,20 @@ def classify(load_result, c1, floor):
     if not ok_runs or tps is None:
         return "load-fail", "loaded but produced no decode tokens (probe empty)"
     if tps < floor:
-        return "unusable", "single-stream decode %.2f tok/s < floor %g tok/s" % (tps, floor)
+        return "unusable", "single-stream decode %.2f tok/s < floor %g tok/s" % (
+            tps,
+            floor,
+        )
     return "loaded", None
 
 
 def build_cell(work, load_meta, floor):
     """Assemble one cell record from its load-meta + probe/res/power sidecar files."""
     cid = load_meta.get("cell_id") or cell_id(
-        load_meta.get("server"), load_meta.get("residency"), load_meta.get("num_parallel"))
+        load_meta.get("server"),
+        load_meta.get("residency"),
+        load_meta.get("num_parallel"),
+    )
 
     def _load(suffix):
         path = os.path.join(work, cid + suffix)
@@ -224,7 +230,11 @@ def _rank_key(cell):
     """(agg_c8 desc, tok/W desc, ttft_p50 asc, single-stream desc). Python sorts
     ascending, so negate the 'desc' metrics."""
     agg_c8 = (cell.get("c8") or {}).get("aggregate_decode_tps")
-    tpw = (cell.get("power") or {}).get("tok_per_watt_load") if cell.get("power") else None
+    tpw = (
+        (cell.get("power") or {}).get("tok_per_watt_load")
+        if cell.get("power")
+        else None
+    )
     ttft_p50 = (cell.get("c1") or {}).get("ttft_ms_p50")
     single = (cell.get("c1") or {}).get("decode_tps_median")
     return (-_neg(agg_c8), -_neg(tpw), _pos(ttft_p50), -_neg(single))
@@ -287,20 +297,43 @@ def recommended_config(rollup):
     if not win:
         return "No usable configuration cleared the floor on this run."
     agg = _fmt((win.get("c8") or {}).get("aggregate_decode_tps"), "%.1f")
-    tpw = _fmt((win.get("power") or {}).get("tok_per_watt_load") if win.get("power") else None, "%.3f")
+    tpw = _fmt(
+        (win.get("power") or {}).get("tok_per_watt_load") if win.get("power") else None,
+        "%.3f",
+    )
     ttft = _fmt((win.get("c8") or {}).get("ttft_ms_p95"), "%.0f")
     overlay = (rollup.get("cache_overlay") or {}).get(win.get("server")) or {}
     saved = overlay.get("ttft_saved_ms")
-    cache_bit = " (+cache: repeat TTFT %s -> %s ms)" % (
-        _fmt(overlay.get("ttft_miss_ms"), "%.0f"), _fmt(overlay.get("ttft_hit_exact_ms"), "%.0f")
-    ) if saved is not None else ""
-    gate = "" if (rollup.get("scoring") or {}).get("winner_ttft_gate_met") else \
-        " [NOTE: no cell met the TTFT p95<=%gms gate; winner is best-throughput]" % \
-        (rollup.get("shape") or {}).get("ttft_gate_ms", 2000)
-    return ("%s on Halo-B: %s + %s + NUM_PARALLEL=%s -> %s tok/s aggregate @ c8, "
-            "%s tok/s/W, TTFT p95 %s ms%s%s" % (
-                win.get("model"), win.get("server"), win.get("residency"),
-                win.get("num_parallel"), agg, tpw, ttft, cache_bit, gate))
+    cache_bit = (
+        " (+cache: repeat TTFT %s -> %s ms)"
+        % (
+            _fmt(overlay.get("ttft_miss_ms"), "%.0f"),
+            _fmt(overlay.get("ttft_hit_exact_ms"), "%.0f"),
+        )
+        if saved is not None
+        else ""
+    )
+    gate = (
+        ""
+        if (rollup.get("scoring") or {}).get("winner_ttft_gate_met")
+        else " [NOTE: no cell met the TTFT p95<=%gms gate; winner is best-throughput]"
+        % (rollup.get("shape") or {}).get("ttft_gate_ms", 2000)
+    )
+    return (
+        "%s on Halo-B: %s + %s + NUM_PARALLEL=%s -> %s tok/s aggregate @ c8, "
+        "%s tok/s/W, TTFT p95 %s ms%s%s"
+        % (
+            win.get("model"),
+            win.get("server"),
+            win.get("residency"),
+            win.get("num_parallel"),
+            agg,
+            tpw,
+            ttft,
+            cache_bit,
+            gate,
+        )
+    )
 
 
 def build_rollup(cells, cache_overlay, box, shape):
@@ -325,10 +358,20 @@ def render_table(rollup):
     scoring = rollup.get("scoring") or {}
     wid = scoring.get("winner_cell_id")
     lines = []
-    lines.append("== best-config matrix (box=%s, model=%s) =="
-                 % (rollup.get("box"), rollup.get("model_flagship")))
+    lines.append(
+        "== best-config matrix (box=%s, model=%s) =="
+        % (rollup.get("box"), rollup.get("model_flagship"))
+    )
     hdr = "%-22s %-10s %8s %10s %10s %9s %9s %s" % (
-        "cell", "status", "c1_tps", "c8_agg", "ttft95_c8", "tok/W", "vram_gib", "note")
+        "cell",
+        "status",
+        "c1_tps",
+        "c8_agg",
+        "ttft95_c8",
+        "tok/W",
+        "vram_gib",
+        "note",
+    )
     lines.append(hdr)
     for cid in _display_order(rollup):
         c = cells.get(cid)
@@ -338,24 +381,35 @@ def render_table(rollup):
         c8 = c.get("c8") or {}
         power = c.get("power") or {}
         star = " *WIN" if cid == wid else ""
-        note = (c.get("reason") or "")
-        lines.append("%-22s %-10s %8s %10s %10s %9s %9s %s%s" % (
-            cid, c.get("status"),
-            _fmt(c1.get("decode_tps_median"), "%.1f"),
-            _fmt(c8.get("aggregate_decode_tps"), "%.1f"),
-            _fmt(c8.get("ttft_ms_p95"), "%.0f"),
-            _fmt(power.get("tok_per_watt_load"), "%.3f"),
-            _fmt((c.get("resource") or {}).get("peak_vram_used_gib"), "%.1f"),
-            note, star))
+        note = c.get("reason") or ""
+        lines.append(
+            "%-22s %-10s %8s %10s %10s %9s %9s %s%s"
+            % (
+                cid,
+                c.get("status"),
+                _fmt(c1.get("decode_tps_median"), "%.1f"),
+                _fmt(c8.get("aggregate_decode_tps"), "%.1f"),
+                _fmt(c8.get("ttft_ms_p95"), "%.0f"),
+                _fmt(power.get("tok_per_watt_load"), "%.3f"),
+                _fmt((c.get("resource") or {}).get("peak_vram_used_gib"), "%.1f"),
+                note,
+                star,
+            )
+        )
     # Cache overlay summary.
     for server, ov in sorted((rollup.get("cache_overlay") or {}).items()):
-        lines.append("  cache overlay [%s winner %s]: repeat TTFT miss %s ms -> exact-hit %s ms "
-                     "(saved %s ms), semantic-0.92 hit %s ms" % (
-                         server, ov.get("cell_id"),
-                         _fmt(ov.get("ttft_miss_ms"), "%.0f"),
-                         _fmt(ov.get("ttft_hit_exact_ms"), "%.0f"),
-                         _fmt(ov.get("ttft_saved_ms"), "%.0f"),
-                         _fmt(ov.get("ttft_hit_semantic_ms"), "%.0f")))
+        lines.append(
+            "  cache overlay [%s winner %s]: repeat TTFT miss %s ms -> exact-hit %s ms "
+            "(saved %s ms), semantic-0.92 hit %s ms"
+            % (
+                server,
+                ov.get("cell_id"),
+                _fmt(ov.get("ttft_miss_ms"), "%.0f"),
+                _fmt(ov.get("ttft_hit_exact_ms"), "%.0f"),
+                _fmt(ov.get("ttft_saved_ms"), "%.0f"),
+                _fmt(ov.get("ttft_hit_semantic_ms"), "%.0f"),
+            )
+        )
     lines.append("CONCLUSION: " + rollup.get("recommended_config", ""))
     return "\n".join(lines) + "\n"
 
@@ -422,7 +476,8 @@ def inject_cache_plugin(text):
             while j < len(lines):
                 s = lines[j].strip()
                 if s.startswith("- "):
-                    item = _indent_of(lines[j]); break
+                    item = _indent_of(lines[j])
+                    break
                 if s:
                     break
                 j += 1
@@ -440,19 +495,23 @@ def set_threshold(text, t):
         s = line.strip()
         if s == "semantic_cache:":
             ins, ind0, child, done = True, _indent_of(line), None, False
-            out.append(line); continue
+            out.append(line)
+            continue
         if ins:
             ind = _indent_of(line)
             if s and ind <= ind0:
                 if not done:
                     ci = child if child is not None else ind0 + 2
-                    out.append(" " * ci + "similarity_threshold: %s" % t); done = True
+                    out.append(" " * ci + "similarity_threshold: %s" % t)
+                    done = True
                 ins = False
             else:
                 if s and child is None:
                     child = ind
                 if s.startswith("similarity_threshold:"):
-                    out.append(" " * ind + "similarity_threshold: %s" % t); done = True; continue
+                    out.append(" " * ind + "similarity_threshold: %s" % t)
+                    done = True
+                    continue
         out.append(line)
     if ins and not done:
         ci = child if child is not None else ind0 + 2
@@ -462,8 +521,13 @@ def set_threshold(text, t):
 
 def _reloaded_since(container, epoch):
     try:
-        r = subprocess.run(["docker", "logs", "--since", str(int(epoch)), container],
-                           capture_output=True, text=True, timeout=20, check=False)
+        r = subprocess.run(
+            ["docker", "logs", "--since", str(int(epoch)), container],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
         return '"config_reloaded"' in (r.stdout + r.stderr)
     except (OSError, subprocess.SubprocessError):
         return False
@@ -471,8 +535,12 @@ def _reloaded_since(container, epoch):
 
 def _docker_has(container):
     try:
-        r = subprocess.run(["docker", "inspect", container],
-                           capture_output=True, timeout=15, check=False)
+        r = subprocess.run(
+            ["docker", "inspect", container],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
         return r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -502,13 +570,27 @@ def ask_router(chat_url, question, phase, timeout=180):
     unknown headers, while the SELFTEST mock uses it to return deterministic
     hits/misses without a live embedding model.
     """
-    body = json.dumps({"model": "auto", "messages": [{"role": "user", "content": question}],
-                       "max_tokens": 16}).encode()
-    req = urllib.request.Request(chat_url, data=body, headers={
-        "Content-Type": "application/json", "x-vsr-debug": "true", "x-mock-cache": phase})
+    body = json.dumps(
+        {
+            "model": "auto",
+            "messages": [{"role": "user", "content": question}],
+            "max_tokens": 16,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        chat_url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-vsr-debug": "true",
+            "x-mock-cache": phase,
+        },
+    )
     t0 = time.perf_counter()
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 (trusted local URL)
+        resp = urllib.request.urlopen(
+            req, timeout=timeout
+        )  # noqa: S310 (trusted local URL)
         hdrs = {k.lower(): v for k, v in resp.getheaders()}
         resp.read()
     except urllib.error.HTTPError as e:
@@ -533,8 +615,16 @@ _CACHE_CASES = [
 ]
 
 
-def measure_cache_overlay(router_url, server, cell_id_, cfg_path, container,
-                          threshold, reload_timeout, reload_settle):
+def measure_cache_overlay(
+    router_url,
+    server,
+    cell_id_,
+    cfg_path,
+    container,
+    threshold,
+    reload_timeout,
+    reload_settle,
+):
     """Measure repeat-query TTFT with semantic cache OFF vs ON on one server's
     winning cell. Edits only cfg_path and restores it. Returns the overlay dict."""
     chat = router_url.rstrip("/") + "/chat/completions"
@@ -549,7 +639,7 @@ def measure_cache_overlay(router_url, server, cell_id_, cfg_path, container,
     miss = []
     for base, _ in _CACHE_CASES:
         q = base + " (overlay-off %s)" % cell_id_
-        ask_router(chat, q, "off")            # populate (miss)
+        ask_router(chat, q, "off")  # populate (miss)
         ttft, _, _ = ask_router(chat, q, "off")  # repeat -> still miss (cache off)
         if ttft is not None:
             miss.append(ttft)
@@ -561,16 +651,22 @@ def measure_cache_overlay(router_url, server, cell_id_, cfg_path, container,
     exact_hits, sem_hits, exact_n, sem_n = [], [], 0, 0
     for base, para in _CACHE_CASES:
         q = base + " (overlay-on %s)" % cell_id_
-        m, _, _ = ask_router(chat, q, "on")       # first = miss (populate)
-        te, he, _ = ask_router(chat, q, "on")     # exact repeat -> hit
+        m, _, _ = ask_router(chat, q, "on")  # first = miss (populate)
+        te, he, _ = ask_router(chat, q, "on")  # exact repeat -> hit
         if he and te is not None:
-            exact_hits.append(te); exact_n += 1
-        tp, hp, _ = ask_router(chat, para + " (overlay-on %s)" % cell_id_, "on")  # paraphrase
+            exact_hits.append(te)
+            exact_n += 1
+        tp, hp, _ = ask_router(
+            chat, para + " (overlay-on %s)" % cell_id_, "on"
+        )  # paraphrase
         if hp and tp is not None:
-            sem_hits.append(tp); sem_n += 1
+            sem_hits.append(tp)
+            sem_n += 1
 
     if orig is not None:
-        apply_config(cfg_path, orig, container, reload_timeout, reload_settle)  # restore
+        apply_config(
+            cfg_path, orig, container, reload_timeout, reload_settle
+        )  # restore
 
     miss_ms = statistics.mean(miss) if miss else None
     exact_ms = statistics.mean(exact_hits) if exact_hits else None
@@ -617,10 +713,26 @@ def _mock_handler_class():
 
         def do_GET(self):  # noqa: N802 (http.server API)
             if self.path.endswith("/api/tags"):
-                self._json({"models": [{"name": "gpt-oss:120b"}, {"name": "gpt-oss:120b-vram"}]})
+                self._json(
+                    {
+                        "models": [
+                            {"name": "gpt-oss:120b"},
+                            {"name": "gpt-oss:120b-vram"},
+                        ]
+                    }
+                )
             elif self.path.endswith("/api/ps"):
-                self._json({"models": [{"name": "gpt-oss:120b-vram",
-                                        "size": 62 * GIB, "size_vram": 62 * GIB}]})
+                self._json(
+                    {
+                        "models": [
+                            {
+                                "name": "gpt-oss:120b-vram",
+                                "size": 62 * GIB,
+                                "size_vram": 62 * GIB,
+                            }
+                        ]
+                    }
+                )
             elif self.path.endswith("/health") or self.path.endswith("/v1/models"):
                 self._json({"status": "ok", "data": [{"id": "gpt-oss-120b"}]})
             else:
@@ -634,8 +746,13 @@ def _mock_handler_class():
                 lines = [
                     {"response": "Hello", "done": False},
                     {"response": " world", "done": False},
-                    {"done": True, "eval_count": 128, "eval_duration": 1_000_000_000,
-                     "prompt_eval_count": 40, "prompt_eval_duration": 500_000_000},
+                    {
+                        "done": True,
+                        "eval_count": 128,
+                        "eval_duration": 1_000_000_000,
+                        "prompt_eval_count": 40,
+                        "prompt_eval_duration": 500_000_000,
+                    },
                 ]
                 body = "".join(json.dumps(o) + "\n" for o in lines).encode()
                 self.send_response(200)
@@ -662,9 +779,15 @@ def _mock_handler_class():
             evs = [
                 {"choices": [{"delta": {"content": "Hello"}}]},
                 {"choices": [{"delta": {"content": " world"}}]},
-                {"choices": [{"delta": {}}], "usage": {"completion_tokens": 64, "prompt_tokens": 20}},
+                {
+                    "choices": [{"delta": {}}],
+                    "usage": {"completion_tokens": 64, "prompt_tokens": 20},
+                },
             ]
-            body = ("".join("data: " + json.dumps(e) + "\n\n" for e in evs) + "data: [DONE]\n\n").encode()
+            body = (
+                "".join("data: " + json.dumps(e) + "\n\n" for e in evs)
+                + "data: [DONE]\n\n"
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(body)))
@@ -678,6 +801,7 @@ def _mock_handler_class():
 
 def mock_serve(host, port, portfile):
     import http.server
+
     srv = http.server.HTTPServer((host, port), _mock_handler_class())
     if portfile:
         with open(portfile, "w", encoding="utf-8") as fh:
@@ -697,7 +821,9 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="bestcfg_matrix", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pa = sub.add_parser("assemble", help="reduce a work dir into the rollup JSON + table")
+    pa = sub.add_parser(
+        "assemble", help="reduce a work dir into the rollup JSON + table"
+    )
     pa.add_argument("--work", required=True)
     pa.add_argument("--out", default="")
     pa.add_argument("--box", default="box")
@@ -708,7 +834,9 @@ def main(argv=None):
     pa.add_argument("--prompt-tokens", type=int, default=256)
     pa.add_argument("--concurrency-hi", type=int, default=8)
 
-    pc = sub.add_parser("cache-overlay", help="measure cache off/on repeat TTFT (router path)")
+    pc = sub.add_parser(
+        "cache-overlay", help="measure cache off/on repeat TTFT (router path)"
+    )
     pc.add_argument("--router-url", required=True)
     pc.add_argument("--server", required=True)
     pc.add_argument("--cell-id", required=True)
@@ -741,8 +869,15 @@ def main(argv=None):
 
     if args.cmd == "cache-overlay":
         ov = measure_cache_overlay(
-            args.router_url, args.server, args.cell_id, args.config, args.container,
-            args.threshold, args.reload_timeout, args.reload_settle)
+            args.router_url,
+            args.server,
+            args.cell_id,
+            args.config,
+            args.container,
+            args.threshold,
+            args.reload_timeout,
+            args.reload_settle,
+        )
         text = json.dumps(ov, indent=2, sort_keys=True)
         if args.out:
             with open(args.out, "w", encoding="utf-8") as fh:

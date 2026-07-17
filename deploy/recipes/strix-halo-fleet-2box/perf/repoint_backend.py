@@ -43,7 +43,11 @@ def repoint(lines, alias, endpoint, model):
         has_endpoint = False
         while j < n:
             lj = lines[j]
-            if lj.strip() and next_item_re.match(lj) and (len(lj) - len(lj.lstrip())) <= indent:
+            if (
+                lj.strip()
+                and next_item_re.match(lj)
+                and (len(lj) - len(lj.lstrip())) <= indent
+            ):
                 break
             if re.match(r"^\s*endpoint:\s*", lj):
                 has_endpoint = True
@@ -76,7 +80,10 @@ def main(argv=None):
         lines = fh.readlines()
     new_lines, changed = repoint(lines, args.alias, args.endpoint, args.model)
     if not changed:
-        print("ERROR: no backend-bearing model card named %r found" % args.alias, file=sys.stderr)
+        print(
+            "ERROR: no backend-bearing model card named %r found" % args.alias,
+            file=sys.stderr,
+        )
         return 1
     # In-place truncate write -- preserve the inode for fsnotify hot-reload.
     with open(args.config, "w", encoding="utf-8") as fh:

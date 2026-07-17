@@ -107,10 +107,16 @@ def read_socket_power():
     Degrades to None when rocm-smi is absent so a caller can note "no meter".
     """
     try:
-        out = subprocess.run(
-            ["rocm-smi", "--showpower"],
-            capture_output=True, text=True, timeout=8, check=False,
-        ).stdout or ""
+        out = (
+            subprocess.run(
+                ["rocm-smi", "--showpower"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            ).stdout
+            or ""
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     best = None
@@ -138,8 +144,17 @@ def sample_power(secs, interval=1.0):
     return vals
 
 
-def ollama_generate(base_url, model, prompt, num_predict, think=False, num_ctx=0,
-                    use_mmap=None, keep_alive=None, timeout=1800):
+def ollama_generate(
+    base_url,
+    model,
+    prompt,
+    num_predict,
+    think=False,
+    num_ctx=0,
+    use_mmap=None,
+    keep_alive=None,
+    timeout=1800,
+):
     """One streaming /api/generate call. Returns (eval_count, eval_ns, wall_s)."""
     url = base_url.rstrip("/") + "/api/generate"
     options = {"num_predict": num_predict, "temperature": 0}
@@ -148,8 +163,11 @@ def ollama_generate(base_url, model, prompt, num_predict, think=False, num_ctx=0
     if use_mmap is not None:
         options["use_mmap"] = bool(use_mmap)
     payload = {
-        "model": model, "prompt": prompt, "stream": True,
-        "think": bool(think), "options": options,
+        "model": model,
+        "prompt": prompt,
+        "stream": True,
+        "think": bool(think),
+        "options": options,
     }
     if keep_alive:
         payload["keep_alive"] = keep_alive
@@ -161,10 +179,14 @@ def ollama_generate(base_url, model, prompt, num_predict, think=False, num_ctx=0
         timeout = min(timeout, _CLIENT_DEADLINE_S)
     t0 = time.perf_counter()
     final = {}
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted local URL)
         for raw in resp:
             if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
-                raise TimeoutError("client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S)
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line:
                 continue
@@ -205,14 +227,18 @@ def openai_generate(base_url, model, prompt, max_tokens, timeout=1800):
     t_first = None
     chunk_tokens = 0
     usage = {}
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted local URL)
         for raw in resp:
             if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
-                raise TimeoutError("client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S)
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line or not line.startswith("data:"):
                 continue
-            body = line[len("data:"):].strip()
+            body = line[len("data:") :].strip()
             if body == "[DONE]":
                 break
             obj = json.loads(body)
@@ -237,8 +263,17 @@ def openai_generate(base_url, model, prompt, max_tokens, timeout=1800):
     return completion_tokens, decode_s, wall
 
 
-def decode_once(api, backend_url, model, prompt, num_predict, think=False,
-                num_ctx=0, use_mmap=None, keep_alive=None):
+def decode_once(
+    api,
+    backend_url,
+    model,
+    prompt,
+    num_predict,
+    think=False,
+    num_ctx=0,
+    use_mmap=None,
+    keep_alive=None,
+):
     """Drive one decode via the selected dialect; return a unified run dict.
 
     Keys: tokens, decode_s, wall_s, decode_tps (all dialects). The Ollama path
@@ -249,16 +284,24 @@ def decode_once(api, backend_url, model, prompt, num_predict, think=False,
         toks, decode_s, wall = openai_generate(backend_url, model, prompt, num_predict)
         tps = (toks / decode_s) if (toks and decode_s and decode_s > 0) else None
         return {
-            "tokens": toks, "decode_s": decode_s, "wall_s": wall,
-            "decode_tps": tps, "completion_tokens": toks,
+            "tokens": toks,
+            "decode_s": decode_s,
+            "wall_s": wall,
+            "decode_tps": tps,
+            "completion_tokens": toks,
         }
-    ec, ed, wall = ollama_generate(backend_url, model, prompt, num_predict, think,
-                                   num_ctx, use_mmap, keep_alive)
+    ec, ed, wall = ollama_generate(
+        backend_url, model, prompt, num_predict, think, num_ctx, use_mmap, keep_alive
+    )
     decode_s = (ed / 1e9) if ed else None
     tps = (ec / decode_s) if (ec and decode_s) else None
     return {
-        "tokens": ec, "decode_s": decode_s, "wall_s": wall, "decode_tps": tps,
-        "eval_count": ec, "eval_duration_ns": ed,
+        "tokens": ec,
+        "decode_s": decode_s,
+        "wall_s": wall,
+        "decode_tps": tps,
+        "eval_count": ec,
+        "eval_duration_ns": ed,
     }
 
 
@@ -294,34 +337,62 @@ def summarize(idle_w, load_w, decode_tps_vals):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="power_sampler", description=__doc__)
-    p.add_argument("--api", choices=["ollama", "openai"], default="ollama",
-                   help="backend dialect: ollama (/api/generate, default) or "
-                        "openai ({backend-url}/chat/completions for llama.cpp/vLLM)")
-    p.add_argument("--backend-url", "--base-url", dest="backend_url",
-                   default="http://localhost:11434",
-                   help="backend base URL (default localhost:11434 for ollama; pass e.g. "
-                        "http://localhost:8080/v1 for an OpenAI-compatible server). "
-                        "--base-url is a backward-compatible alias.")
-    p.add_argument("--model", required=True, help="backend model tag/name, e.g. qwen2.5:7b")
+    p.add_argument(
+        "--api",
+        choices=["ollama", "openai"],
+        default="ollama",
+        help="backend dialect: ollama (/api/generate, default) or "
+        "openai ({backend-url}/chat/completions for llama.cpp/vLLM)",
+    )
+    p.add_argument(
+        "--backend-url",
+        "--base-url",
+        dest="backend_url",
+        default="http://localhost:11434",
+        help="backend base URL (default localhost:11434 for ollama; pass e.g. "
+        "http://localhost:8080/v1 for an OpenAI-compatible server). "
+        "--base-url is a backward-compatible alias.",
+    )
+    p.add_argument(
+        "--model", required=True, help="backend model tag/name, e.g. qwen2.5:7b"
+    )
     p.add_argument("--idle-secs", type=int, default=15, help="idle power window (s)")
     p.add_argument("--max-tokens", type=int, default=600, help="decode length per run")
     p.add_argument("--runs", type=int, default=3, help="sustained decode runs")
-    p.add_argument("--prompt-tokens", type=int, default=256, help="approx prompt token budget")
-    p.add_argument("--prompt-text", default="",
-                   help="use this EXACT prompt instead of the synthetic filler. Give a "
-                        "GENERATIVE instruction (e.g. 'Write a detailed 1000-word "
-                        "explanation of how transformers work.') so a 'thinking' model "
-                        "(gemma) keeps decoding to num_predict instead of hitting EOS "
-                        "after a few tokens -- required for a stable multi-sample "
-                        "wattage. Empty = filler prompt (default, unchanged).")
-    p.add_argument("--num-ctx", type=int, default=0,
-                   help="ollama options.num_ctx; 0 = server default (recommended for 120B)")
-    p.add_argument("--no-mmap", action="store_true",
-                   help="ollama-only: send options.use_mmap=false (much faster load for 120B w/ "
-                        "CPU tensor overrides). Ignored gracefully in --api openai mode.")
-    p.add_argument("--keep-alive", default="30m", help="ollama keep_alive for the model")
-    p.add_argument("--think", action="store_true", help="allow reasoning models to think")
-    p.add_argument("--sample-interval", type=float, default=1.0, help="power sample period (s)")
+    p.add_argument(
+        "--prompt-tokens", type=int, default=256, help="approx prompt token budget"
+    )
+    p.add_argument(
+        "--prompt-text",
+        default="",
+        help="use this EXACT prompt instead of the synthetic filler. Give a "
+        "GENERATIVE instruction (e.g. 'Write a detailed 1000-word "
+        "explanation of how transformers work.') so a 'thinking' model "
+        "(gemma) keeps decoding to num_predict instead of hitting EOS "
+        "after a few tokens -- required for a stable multi-sample "
+        "wattage. Empty = filler prompt (default, unchanged).",
+    )
+    p.add_argument(
+        "--num-ctx",
+        type=int,
+        default=0,
+        help="ollama options.num_ctx; 0 = server default (recommended for 120B)",
+    )
+    p.add_argument(
+        "--no-mmap",
+        action="store_true",
+        help="ollama-only: send options.use_mmap=false (much faster load for 120B w/ "
+        "CPU tensor overrides). Ignored gracefully in --api openai mode.",
+    )
+    p.add_argument(
+        "--keep-alive", default="30m", help="ollama keep_alive for the model"
+    )
+    p.add_argument(
+        "--think", action="store_true", help="allow reasoning models to think"
+    )
+    p.add_argument(
+        "--sample-interval", type=float, default=1.0, help="power sample period (s)"
+    )
     p.add_argument("--out", default="", help="write metrics JSON here")
     args = p.parse_args(argv)
 
@@ -334,19 +405,34 @@ def main(argv=None):
 
     print("== phase 1: idle power (%ds) ==" % args.idle_secs, flush=True)
     idle_w = sample_power(args.idle_secs, args.sample_interval)
-    print("   idle samples=%d mean=%.1f W"
-          % (len(idle_w), statistics.fmean(idle_w) if idle_w else -1), flush=True)
+    print(
+        "   idle samples=%d mean=%.1f W"
+        % (len(idle_w), statistics.fmean(idle_w) if idle_w else -1),
+        flush=True,
+    )
 
     print("== phase 2: warmup (load %s via %s) ==" % (args.model, args.api), flush=True)
     t_warm = time.perf_counter()
     try:
-        warm = decode_once(args.api, args.backend_url, args.model, prompt, 16,
-                           args.think, args.num_ctx, use_mmap, args.keep_alive)
+        warm = decode_once(
+            args.api,
+            args.backend_url,
+            args.model,
+            prompt,
+            16,
+            args.think,
+            args.num_ctx,
+            use_mmap,
+            args.keep_alive,
+        )
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
         print("   warmup failed: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)
         return 1
-    print("   warmup done in %.1fs (tokens=%s)"
-          % (time.perf_counter() - t_warm, warm.get("tokens")), flush=True)
+    print(
+        "   warmup done in %.1fs (tokens=%s)"
+        % (time.perf_counter() - t_warm, warm.get("tokens")),
+        flush=True,
+    )
 
     print("== phase 3: sustained decode + power sampling ==", flush=True)
     load = []
@@ -366,14 +452,39 @@ def main(argv=None):
     t_start = time.time()
     for i in range(max(1, args.runs)):
         try:
-            r = decode_once(args.api, args.backend_url, args.model, prompt, args.max_tokens,
-                            args.think, args.num_ctx, use_mmap, args.keep_alive)
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
-            print("   run %d failed: %s: %s" % (i + 1, type(exc).__name__, exc), file=sys.stderr)
+            r = decode_once(
+                args.api,
+                args.backend_url,
+                args.model,
+                prompt,
+                args.max_tokens,
+                args.think,
+                args.num_ctx,
+                use_mmap,
+                args.keep_alive,
+            )
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            OSError,
+            ValueError,
+        ) as exc:
+            print(
+                "   run %d failed: %s: %s" % (i + 1, type(exc).__name__, exc),
+                file=sys.stderr,
+            )
             continue
         runs.append(r)
-        print("   run %d: tokens=%s decode_tps=%.2f wall=%.1fs"
-              % (i + 1, r.get("tokens"), r.get("decode_tps") or -1, r.get("wall_s") or -1), flush=True)
+        print(
+            "   run %d: tokens=%s decode_tps=%.2f wall=%.1fs"
+            % (
+                i + 1,
+                r.get("tokens"),
+                r.get("decode_tps") or -1,
+                r.get("wall_s") or -1,
+            ),
+            flush=True,
+        )
     decode_window_s = time.time() - t_start
     stop["go"] = False
     th.join(timeout=3)
@@ -393,13 +504,18 @@ def main(argv=None):
         "total_decode_s": total_decode_s,
         "decode_window_s": decode_window_s,
         "shape": {
-            "max_tokens": args.max_tokens, "runs": args.runs,
-            "prompt_tokens": args.prompt_tokens, "num_ctx": args.num_ctx,
+            "max_tokens": args.max_tokens,
+            "runs": args.runs,
+            "prompt_tokens": args.prompt_tokens,
+            "num_ctx": args.num_ctx,
             "think": args.think,
             "prompt_text": (args.prompt_text.strip() or None),
             # use_mmap only applies to the ollama load path; "n/a" for openai.
-            "use_mmap": ("n/a" if args.api == "openai"
-                         else (False if args.no_mmap else "default")),
+            "use_mmap": (
+                "n/a"
+                if args.api == "openai"
+                else (False if args.no_mmap else "default")
+            ),
             "keep_alive": args.keep_alive,
         },
         "runs_detail": runs,
@@ -410,9 +526,16 @@ def main(argv=None):
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(text + "\n")
     print(text)
-    print("\n== SUMMARY: api=%s idle=%.1fW load=%.1fW tok/s=%.2f tok/s-per-W=%.4f =="
-          % (args.api, summ["idle_w"] or -1, summ["load_w_mean"] or -1,
-             summ["decode_tps"] or -1, summ["tok_per_watt_load"] or -1))
+    print(
+        "\n== SUMMARY: api=%s idle=%.1fW load=%.1fW tok/s=%.2f tok/s-per-W=%.4f =="
+        % (
+            args.api,
+            summ["idle_w"] or -1,
+            summ["load_w_mean"] or -1,
+            summ["decode_tps"] or -1,
+            summ["tok_per_watt_load"] or -1,
+        )
+    )
     # Contract: exit 0 only when BOTH a decode rate AND power were captured.
     return 0 if (summ["decode_tps"] and summ["load_w_mean"]) else 1
 

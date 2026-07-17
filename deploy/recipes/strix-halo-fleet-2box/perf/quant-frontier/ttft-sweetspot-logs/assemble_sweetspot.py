@@ -4,13 +4,13 @@ JSONs (Task A). Reads p{N}-c{C}.json files, reduces each to the sweet-spot metri
 (single-stream decode tok/s, aggregate tok/s, TTFT p50/p95), and identifies the
 knee: the largest --parallel whose TTFT p95 @ concurrency=N stays <= the gate while
 aggregate throughput keeps climbing. Stdlib only."""
+
 from __future__ import annotations
 import argparse
 import glob
 import json
 import os
 import re
-import statistics
 import time
 
 
@@ -64,7 +64,7 @@ def main():
             continue
         rec = {"parallel": par, "concurrency": conc}
         rec.update(reduce_probe(probe))
-        rec["is_operating_point"] = (conc == par)  # server-slot-matched load
+        rec["is_operating_point"] = conc == par  # server-slot-matched load
         points.append(rec)
     points.sort(key=lambda r: (r["parallel"], r["concurrency"]))
 
@@ -74,12 +74,19 @@ def main():
     # Knee = the LARGEST --parallel whose slot-matched TTFT p95 still holds the gate
     # (task definition: "largest --parallel whose TTFT p95 stays <= ~2 s"). The
     # first --parallel that breaks the gate is recorded as the break point.
-    gated_ns = [n for n in sorted(ops)
-                if isinstance(ops[n].get("ttft_p95_ms"), (int, float))
-                and ops[n]["ttft_p95_ms"] <= gate and ops[n].get("aggregate_tps")]
-    ungated_ns = [n for n in sorted(ops)
-                  if isinstance(ops[n].get("ttft_p95_ms"), (int, float))
-                  and ops[n]["ttft_p95_ms"] > gate]
+    gated_ns = [
+        n
+        for n in sorted(ops)
+        if isinstance(ops[n].get("ttft_p95_ms"), (int, float))
+        and ops[n]["ttft_p95_ms"] <= gate
+        and ops[n].get("aggregate_tps")
+    ]
+    ungated_ns = [
+        n
+        for n in sorted(ops)
+        if isinstance(ops[n].get("ttft_p95_ms"), (int, float))
+        and ops[n]["ttft_p95_ms"] > gate
+    ]
     sweet = gated_ns[-1] if gated_ns else None
     break_n = ungated_ns[0] if ungated_ns else None
     ceil_n = max(ops) if ops else None
@@ -88,51 +95,85 @@ def main():
     if sweet is not None:
         s = ops[sweet]
         base = ops[min(ops)]
-        agg_gain = (s["aggregate_tps"] / base["aggregate_tps"] - 1.0) * 100.0 \
-            if base.get("aggregate_tps") else None
+        agg_gain = (
+            (s["aggregate_tps"] / base["aggregate_tps"] - 1.0) * 100.0
+            if base.get("aggregate_tps")
+            else None
+        )
         rationale = (
             "--parallel %d is the largest slot count whose TTFT p95 @ c%d (%s ms) holds the "
-            "<= %.0f ms interactive gate (%s tok/s aggregate, ~%s tok/s per stream)." % (
-                sweet, sweet, _fmt(s.get("ttft_p95_ms")), gate,
-                _fmt(s.get("aggregate_tps")), _fmt(s.get("single_stream_decode_tps"))))
+            "<= %.0f ms interactive gate (%s tok/s aggregate, ~%s tok/s per stream)."
+            % (
+                sweet,
+                sweet,
+                _fmt(s.get("ttft_p95_ms")),
+                gate,
+                _fmt(s.get("aggregate_tps")),
+                _fmt(s.get("single_stream_decode_tps")),
+            )
+        )
         if break_n is not None:
-            rationale += " --parallel %d is where it breaks (TTFT p95 %s ms > gate)." % (
-                break_n, _fmt(ops[break_n].get("ttft_p95_ms")))
+            rationale += (
+                " --parallel %d is where it breaks (TTFT p95 %s ms > gate)."
+                % (break_n, _fmt(ops[break_n].get("ttft_p95_ms")))
+            )
         # Honest nuance: is the aggregate actually climbing across the gated region?
         if agg_gain is not None and agg_gain < 5.0 and ceil_n is not None:
             observations.append(
                 "Aggregate is nearly flat from --parallel %d to %d (%s -> %s tok/s, +%.1f%%): the "
                 "MXFP4 120B is memory-bandwidth-bound, so concurrent streams split bandwidth "
                 "(~%s tok/s each at c%d). Real aggregate gain only appears at --parallel %d "
-                "(%s tok/s @ c%d) but that violates the latency gate (p95 %s ms)." % (
-                    min(ops), sweet, _fmt(base.get("aggregate_tps")), _fmt(s.get("aggregate_tps")),
-                    agg_gain, _fmt(s.get("single_stream_decode_tps")), sweet, ceil_n,
-                    _fmt(ops[ceil_n].get("aggregate_tps")), ceil_n, _fmt(ops[ceil_n].get("ttft_p95_ms"))))
+                "(%s tok/s @ c%d) but that violates the latency gate (p95 %s ms)."
+                % (
+                    min(ops),
+                    sweet,
+                    _fmt(base.get("aggregate_tps")),
+                    _fmt(s.get("aggregate_tps")),
+                    agg_gain,
+                    _fmt(s.get("single_stream_decode_tps")),
+                    sweet,
+                    ceil_n,
+                    _fmt(ops[ceil_n].get("aggregate_tps")),
+                    ceil_n,
+                    _fmt(ops[ceil_n].get("ttft_p95_ms")),
+                )
+            )
     else:
         rationale = "No operating point met the TTFT p95 gate; see table."
     # Single-stream (c1) decode vs --parallel: does raising slots hurt the 1-user path?
     c1 = {p["parallel"]: p for p in points if p["concurrency"] == 1}
     if 1 in c1 and c1:
         hi = max(c1)
-        d1, dhi = c1[1].get("single_stream_decode_tps"), c1[hi].get("single_stream_decode_tps")
-        if isinstance(d1, (int, float)) and isinstance(dhi, (int, float)) and dhi < d1 * 0.9:
+        d1, dhi = c1[1].get("single_stream_decode_tps"), c1[hi].get(
+            "single_stream_decode_tps"
+        )
+        if (
+            isinstance(d1, (int, float))
+            and isinstance(dhi, (int, float))
+            and dhi < d1 * 0.9
+        ):
             observations.append(
                 "Single-stream decode @ c1 falls from %s tok/s (--parallel 1) to %s tok/s "
                 "(--parallel %d): raising --parallel adds llama.cpp slot/batch overhead that "
                 "penalizes even a lone request, so over-provisioning slots hurts the "
-                "latency-critical single-user path." % (_fmt(d1), _fmt(dhi), hi))
+                "latency-critical single-user path." % (_fmt(d1), _fmt(dhi), hi)
+            )
 
     rollup = {
         "schema": "ttft-sweetspot/v1",
         "box": args.box,
         "host": args.host,
         "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "model": "gpt-oss-120b MXFP4 GGUF (%s)" % (args.served_id or "ggml-org/gpt-oss-120b-GGUF"),
+        "model": "gpt-oss-120b MXFP4 GGUF (%s)"
+        % (args.served_id or "ggml-org/gpt-oss-120b-GGUF"),
         "server": "llama.cpp llama-server ROCm (-ngl 999 resident, --no-mmap, --jinja)",
         "served_model_id": args.served_id,
         "shape": {
-            "max_tokens": 128, "prompt_tokens": 256, "api": "openai",
-            "ttft_gate_ms": gate, "tokrate_deadline_s": 120,
+            "max_tokens": 128,
+            "prompt_tokens": 256,
+            "api": "openai",
+            "ttft_gate_ms": gate,
+            "tokrate_deadline_s": 120,
             "probe": "perf/tokrate_probe.py --api openai",
         },
         "parallels_tested": sorted({p["parallel"] for p in points}),
@@ -160,17 +201,37 @@ def main():
         fh.write("\n")
 
     # Human table to stdout.
-    print("== TTFT sweet-spot sweep (box=%s, model=gpt-oss-120b MXFP4 GGUF, llama.cpp resident) ==" % args.box)
+    print(
+        "== TTFT sweet-spot sweep (box=%s, model=gpt-oss-120b MXFP4 GGUF, llama.cpp resident) =="
+        % args.box
+    )
     hdr = "%-9s %-6s %14s %12s %10s %10s %10s %8s" % (
-        "parallel", "conc", "single_dec_tps", "agg_tps", "ttftp50", "ttftp95", "ttftmean", "ok/tot")
+        "parallel",
+        "conc",
+        "single_dec_tps",
+        "agg_tps",
+        "ttftp50",
+        "ttftp95",
+        "ttftmean",
+        "ok/tot",
+    )
     print(hdr)
     for p in points:
         star = "  <-- op" if p["is_operating_point"] else ""
-        print("%-9d %-6d %14s %12s %10s %10s %10s %8s%s" % (
-            p["parallel"], p["concurrency"],
-            _fmt(p.get("single_stream_decode_tps")), _fmt(p.get("aggregate_tps")),
-            _fmt(p.get("ttft_p50_ms")), _fmt(p.get("ttft_p95_ms")), _fmt(p.get("ttft_mean_ms")),
-            "%d/%d" % (p.get("ok_runs", 0), p.get("total_runs", 0)), star))
+        print(
+            "%-9d %-6d %14s %12s %10s %10s %10s %8s%s"
+            % (
+                p["parallel"],
+                p["concurrency"],
+                _fmt(p.get("single_stream_decode_tps")),
+                _fmt(p.get("aggregate_tps")),
+                _fmt(p.get("ttft_p50_ms")),
+                _fmt(p.get("ttft_p95_ms")),
+                _fmt(p.get("ttft_mean_ms")),
+                "%d/%d" % (p.get("ok_runs", 0), p.get("total_runs", 0)),
+                star,
+            )
+        )
     print("\nSWEET SPOT: --parallel %s" % sweet)
     print("RATIONALE: %s" % rationale)
 

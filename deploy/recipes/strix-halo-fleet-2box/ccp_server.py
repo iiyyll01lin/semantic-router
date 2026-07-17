@@ -70,8 +70,15 @@ class CCPState:
     total so the HTTP shape is unchanged.
     """
 
-    def __init__(self, signing_key: str, token: str, state_dir: str,
-                 audit_memory_max: int = 1000, signer=None, bundle_ts: bool = False):
+    def __init__(
+        self,
+        signing_key: str,
+        token: str,
+        state_dir: str,
+        audit_memory_max: int = 1000,
+        signer=None,
+        bundle_ts: bool = False,
+    ):
         self.signing_key = signing_key
         self.token = token
         self.state_dir = state_dir
@@ -82,7 +89,7 @@ class CCPState:
         self._version_num = 0
         self.version = ""
         self.config_text = ""
-        self.boxes = {}   # box_id -> last reported status
+        self.boxes = {}  # box_id -> last reported status
         # Bounded in-memory audit view; full history is on disk in audit.log.
         self.audit = deque(maxlen=max(1, int(audit_memory_max)))
         self._audit_total = 0  # every record ever recorded (persisted count)
@@ -90,7 +97,9 @@ class CCPState:
         self.outcomes = {}
         # R4: the bundle signer (HMAC by default; Ed25519 when configured). A bare
         # string key keeps the old behavior for direct constructors (e.g. tests).
-        self.signer = signer if signer is not None else fleet_lib.hmac_signer(signing_key)
+        self.signer = (
+            signer if signer is not None else fleet_lib.hmac_signer(signing_key)
+        )
         self.bundle_ts = bool(bundle_ts)  # opt-in freshness timestamp in bundles
         self._restore()
 
@@ -110,8 +119,9 @@ class CCPState:
                     latest_num, latest_name = num, name
         if latest_name:
             try:
-                with open(os.path.join(self.desired_dir, latest_name),
-                          "r", encoding="utf-8") as fh:
+                with open(
+                    os.path.join(self.desired_dir, latest_name), "r", encoding="utf-8"
+                ) as fh:
                     self.config_text = fh.read()
                 self._version_num = latest_num
                 self.version = "v%d" % latest_num
@@ -135,8 +145,10 @@ class CCPState:
                         self._audit_total += 1
                         self.audit.append(rec)
                         self.boxes[str(rec.get("box_id", "unknown"))] = rec
-                        self._bump_outcome(str(rec.get("box_id", "unknown")),
-                                           str(rec.get("result", "")))
+                        self._bump_outcome(
+                            str(rec.get("box_id", "unknown")),
+                            str(rec.get("result", "")),
+                        )
             except OSError:
                 pass
 
@@ -152,8 +164,11 @@ class CCPState:
             self._version_num += 1
             self.version = "v%d" % self._version_num
             self.config_text = config_text
-            with open(os.path.join(self.desired_dir, self.version + ".yaml"), "w",
-                      encoding="utf-8") as fh:
+            with open(
+                os.path.join(self.desired_dir, self.version + ".yaml"),
+                "w",
+                encoding="utf-8",
+            ) as fh:
                 fh.write(config_text)
             return self.version
 
@@ -162,7 +177,9 @@ class CCPState:
             ts = None
             if self.bundle_ts:
                 ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            return fleet_lib.build_bundle(self.signer, self.version, self.config_text, ts=ts)
+            return fleet_lib.build_bundle(
+                self.signer, self.version, self.config_text, ts=ts
+            )
 
     def record_status(self, payload: dict) -> None:
         """Append an agent status report to the audit log and fleet view."""
@@ -232,17 +249,27 @@ class CCPState:
         for box_id, rec in sorted(boxes.items()):
             label = _prom_label(box_id)
             box_n = _version_int(rec.get("version", ""))
-            lag = (desired_n - box_n) if (desired_n is not None and box_n is not None) else 0
+            lag = (
+                (desired_n - box_n)
+                if (desired_n is not None and box_n is not None)
+                else 0
+            )
             lines.append('fleet_box_version_lag{box_id="%s"} %d' % (label, lag))
             if rec.get("apply_seconds") is not None:
-                lines.append('fleet_box_last_apply_seconds{box_id="%s"} %s'
-                             % (label, rec["apply_seconds"]))
-        lines.append("# HELP fleet_apply_outcomes_total Agent-reported apply outcomes by result.")
+                lines.append(
+                    'fleet_box_last_apply_seconds{box_id="%s"} %s'
+                    % (label, rec["apply_seconds"])
+                )
+        lines.append(
+            "# HELP fleet_apply_outcomes_total Agent-reported apply outcomes by result."
+        )
         lines.append("# TYPE fleet_apply_outcomes_total counter")
         for key in sorted(outcomes):
             box_id, _sep, result = key.partition("\x00")
-            lines.append('fleet_apply_outcomes_total{box_id="%s",result="%s"} %d'
-                         % (_prom_label(box_id), _prom_label(result), outcomes[key]))
+            lines.append(
+                'fleet_apply_outcomes_total{box_id="%s",result="%s"} %d'
+                % (_prom_label(box_id), _prom_label(result), outcomes[key])
+            )
         return "\n".join(lines) + "\n"
 
 
@@ -261,8 +288,12 @@ def make_handler(state: CCPState):
             self.end_headers()
             self.wfile.write(body)
 
-        def _send_text(self, code: int, text: str,
-                       content_type: str = "text/plain; version=0.0.4; charset=utf-8"):
+        def _send_text(
+            self,
+            code: int,
+            text: str,
+            content_type: str = "text/plain; version=0.0.4; charset=utf-8",
+        ):
             body = text.encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", content_type)
@@ -316,8 +347,13 @@ def make_handler(state: CCPState):
                 if not isinstance(config_text, str) or not config_text.strip():
                     return self._send(400, {"error": "missing 'config' string"})
                 version = state.set_desired(config_text)
-                return self._send(200, {"version": version,
-                                        "sha256": fleet_lib.sha256_hex(config_text.encode("utf-8"))})
+                return self._send(
+                    200,
+                    {
+                        "version": version,
+                        "sha256": fleet_lib.sha256_hex(config_text.encode("utf-8")),
+                    },
+                )
             if self.path == "/fleet/status":
                 state.record_status(payload)
                 return self._send(200, {"ok": True})
@@ -359,10 +395,17 @@ def main() -> int:
     port = int(os.environ.get("CCP_PORT") or "9300")
     signing_key = os.environ.get("FLEET_SIGNING_KEY", "")
     token = os.environ.get("FLEET_TOKEN", "")
-    state_dir = os.environ.get("CCP_STATE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ccp-state"))
+    state_dir = os.environ.get(
+        "CCP_STATE_DIR",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ccp-state"),
+    )
     audit_memory_max = int(os.environ.get("CCP_AUDIT_MEMORY_MAX") or "1000")
     sign_mode = os.environ.get("FLEET_SIGN_MODE", fleet_lib.SIGN_HMAC).strip().lower()
-    bundle_ts = os.environ.get("FLEET_BUNDLE_TS", "").strip().lower() in ("1", "true", "yes")
+    bundle_ts = os.environ.get("FLEET_BUNDLE_TS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not token:
         raise SystemExit("FLEET_TOKEN must be set")
     if sign_mode != fleet_lib.SIGN_ED25519 and not signing_key:
@@ -372,8 +415,14 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from exc
 
-    state = CCPState(signing_key, token, state_dir, audit_memory_max=audit_memory_max,
-                     signer=signer, bundle_ts=bundle_ts)
+    state = CCPState(
+        signing_key,
+        token,
+        state_dir,
+        audit_memory_max=audit_memory_max,
+        signer=signer,
+        bundle_ts=bundle_ts,
+    )
     # Seed from CCP_INIT_CONFIG only when nothing was restored from disk, so a
     # restart keeps the operator's desired config + version instead of re-issuing
     # v1 from the init file on every boot (R6 durability).
@@ -384,8 +433,10 @@ def main() -> int:
 
     server = make_server(host, port, state)
     scheme = _maybe_wrap_tls(server)
-    print("CCP listening on %s://%s:%d (desired_version=%s)" % (
-        scheme, host, port, state.version or "none"))
+    print(
+        "CCP listening on %s://%s:%d (desired_version=%s)"
+        % (scheme, host, port, state.version or "none")
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

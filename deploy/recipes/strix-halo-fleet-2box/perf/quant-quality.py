@@ -32,6 +32,7 @@ Thinking-model notes:
   * extract_letter() scans the FULL response and keeps the LAST "Answer: X" (then
     the last standalone A-J), so a final verdict is scored even if reasoning leaks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,8 +60,10 @@ def build_prompt(q):
             break
         lines.append("%s. %s" % (_LETTERS[i], opt))
     lines.append("")
-    lines.append("Answer with ONLY the letter of the correct option, in the exact "
-                 "format 'Answer: X'.")
+    lines.append(
+        "Answer with ONLY the letter of the correct option, in the exact "
+        "format 'Answer: X'."
+    )
     return "\n".join(lines)
 
 
@@ -87,7 +90,9 @@ def _post(url, payload, timeout):
     req = urllib.request.Request(
         url, data=data, method="POST", headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted local URL)
         return json.loads(resp.read().decode("utf-8", "replace"))
 
 
@@ -102,8 +107,12 @@ def ask_ollama(base, model, prompt, opts, timeout, think=None):
 
 
 def ask_openai(base, model, prompt, opts, timeout, think=None):
-    payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
-               "temperature": 0, "max_tokens": opts.get("num_predict", 16)}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        "max_tokens": opts.get("num_predict", 16),
+    }
     # Ollama's OpenAI-compat /chat accepts a top-level think; other servers ignore
     # an unknown field. Only included when explicitly requested (default unchanged).
     if think is not None:
@@ -128,17 +137,27 @@ def build_options(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="quant-quality", description=__doc__)
-    p.add_argument("--models", nargs="+", required=True, help="backend model tags to score")
+    p.add_argument(
+        "--models", nargs="+", required=True, help="backend model tags to score"
+    )
     p.add_argument("--dataset", default=DEFAULT_DATASET)
     p.add_argument("--backend-url", default="http://localhost:11434")
     p.add_argument("--api", choices=["ollama", "openai"], default="ollama")
     p.add_argument("--num-ctx", type=int, default=4096)
-    p.add_argument("--num-predict", type=int, default=12,
-                   help="max answer tokens (default 12: enough for just the letter). Raise "
-                        "for a 'thinking' model whose reasoning precedes the letter, e.g. "
-                        "--num-predict 2048 (early EOS keeps it cheap once thinking is off).")
-    p.add_argument("--num-gpu", type=int, default=-1,
-                   help=">=0 forces options.num_gpu (Ollama GPU layers); -1 = server default")
+    p.add_argument(
+        "--num-predict",
+        type=int,
+        default=12,
+        help="max answer tokens (default 12: enough for just the letter). Raise "
+        "for a 'thinking' model whose reasoning precedes the letter, e.g. "
+        "--num-predict 2048 (early EOS keeps it cheap once thinking is off).",
+    )
+    p.add_argument(
+        "--num-gpu",
+        type=int,
+        default=-1,
+        help=">=0 forces options.num_gpu (Ollama GPU layers); -1 = server default",
+    )
     mm = p.add_mutually_exclusive_group()
     mm.add_argument("--use-mmap", dest="use_mmap", action="store_true", default=None)
     mm.add_argument("--no-use-mmap", dest="use_mmap", action="store_false")
@@ -146,10 +165,18 @@ def main(argv=None):
     # non-thinking runs are unchanged; pass --no-think for gemma-style thinking models
     # so they answer with the letter directly instead of burning the budget reasoning.
     tk = p.add_mutually_exclusive_group()
-    tk.add_argument("--think", dest="think", action="store_true",
-                    help="send Ollama think:true (allow native reasoning)")
-    tk.add_argument("--no-think", dest="think", action="store_false",
-                    help="send Ollama think:false to disable native reasoning (gemma etc.)")
+    tk.add_argument(
+        "--think",
+        dest="think",
+        action="store_true",
+        help="send Ollama think:true (allow native reasoning)",
+    )
+    tk.add_argument(
+        "--no-think",
+        dest="think",
+        action="store_false",
+        help="send Ollama think:false to disable native reasoning (gemma etc.)",
+    )
     p.set_defaults(think=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all questions")
     p.add_argument("--timeout", type=float, default=600.0)
@@ -160,7 +187,9 @@ def main(argv=None):
         with open(args.dataset, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError) as exc:
-        print("ERROR: cannot read dataset %s: %s" % (args.dataset, exc), file=sys.stderr)
+        print(
+            "ERROR: cannot read dataset %s: %s" % (args.dataset, exc), file=sys.stderr
+        )
         return 1
     if args.limit and args.limit > 0:
         data = data[: args.limit]
@@ -169,8 +198,10 @@ def main(argv=None):
         return 1
 
     opts = build_options(args)
-    print("==> [quant-quality] dataset=%s n=%d api=%s think=%s opts=%s"
-          % (os.path.basename(args.dataset), len(data), args.api, args.think, opts))
+    print(
+        "==> [quant-quality] dataset=%s n=%d api=%s think=%s opts=%s"
+        % (os.path.basename(args.dataset), len(data), args.api, args.think, opts)
+    )
 
     per_model = {}
     for model in args.models:
@@ -181,7 +212,8 @@ def main(argv=None):
             prompt = build_prompt(q)
             try:
                 text = (ask_ollama if args.api == "ollama" else ask_openai)(
-                    args.backend_url, model, prompt, opts, args.timeout, args.think)
+                    args.backend_url, model, prompt, opts, args.timeout, args.think
+                )
                 pred = extract_letter(text)
             except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
                 pred = None
@@ -198,16 +230,26 @@ def main(argv=None):
             "accuracy": round(correct / n, 4) if n else None,
             "wall_s": round(time.perf_counter() - t0, 1),
             "per_category": {
-                k: {"n": v["n"], "correct": v["correct"],
-                    "accuracy": round(v["correct"] / v["n"], 4) if v["n"] else None}
+                k: {
+                    "n": v["n"],
+                    "correct": v["correct"],
+                    "accuracy": round(v["correct"] / v["n"], 4) if v["n"] else None,
+                }
                 for k, v in sorted(cats.items())
             },
             "options": opts,
         }
         acc = per_model[model]["accuracy"]
-        print("  %-40s accuracy=%s  (%d/%d, %.0fs)"
-              % (model, "n/a" if acc is None else "%.1f%%" % (100 * acc),
-                 correct, n, per_model[model]["wall_s"]))
+        print(
+            "  %-40s accuracy=%s  (%d/%d, %.0fs)"
+            % (
+                model,
+                "n/a" if acc is None else "%.1f%%" % (100 * acc),
+                correct,
+                n,
+                per_model[model]["wall_s"],
+            )
+        )
 
     report = {
         "schema": "quant-quality/v1",
@@ -215,9 +257,13 @@ def main(argv=None):
         "dataset_n": len(data),
         "backend_url": args.backend_url,
         "api": args.api,
-        "shape": {"num_ctx": args.num_ctx, "num_predict": args.num_predict,
-                  "num_gpu": args.num_gpu, "use_mmap": args.use_mmap,
-                  "think": args.think},
+        "shape": {
+            "num_ctx": args.num_ctx,
+            "num_predict": args.num_predict,
+            "num_gpu": args.num_gpu,
+            "use_mmap": args.use_mmap,
+            "think": args.think,
+        },
         "per_model": per_model,
     }
     out_text = json.dumps(report, indent=2, sort_keys=True)

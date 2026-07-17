@@ -36,9 +36,9 @@ import os
 
 # --- curve constants (Curve25519 / edwards25519, RFC 8032) -------------------
 _b = 256
-_q = 2 ** 255 - 19
+_q = 2**255 - 19
 # group order L
-_L = 2 ** 252 + 27742317777372353535851937790883648493
+_L = 2**252 + 27742317777372353535851937790883648493
 
 
 def _H(m: bytes) -> bytes:
@@ -128,8 +128,8 @@ def _isoncurve(P) -> bool:
 def _secret_scalar_and_prefix(seed: bytes):
     """Return (a, prefix) derived from the 32-byte seed per RFC 8032."""
     h = _H(seed)
-    a = 2 ** (_b - 2) + sum(2 ** i * _bit(h, i) for i in range(3, _b - 2))
-    return a, h[_b // 8:_b // 4]
+    a = 2 ** (_b - 2) + sum(2**i * _bit(h, i) for i in range(3, _b - 2))
+    return a, h[_b // 8 : _b // 4]
 
 
 def _coerce_seed(seed) -> bytes:
@@ -223,15 +223,21 @@ def selftest() -> bool:
         msg = bytes.fromhex(msg_hex)
         pub = publickey(seed)
         if pub.hex() != pub_hex:
-            raise AssertionError("publickey mismatch for seed %s: %s" % (seed_hex, pub.hex()))
+            raise AssertionError(
+                "publickey mismatch for seed %s: %s" % (seed_hex, pub.hex())
+            )
         sig = sign(msg, seed, pub)
         if sig.hex() != sig_hex:
-            raise AssertionError("signature mismatch for seed %s: %s" % (seed_hex, sig.hex()))
+            raise AssertionError(
+                "signature mismatch for seed %s: %s" % (seed_hex, sig.hex())
+            )
         if not verify(sig, msg, pub):
             raise AssertionError("verify failed for seed %s" % seed_hex)
         tampered = bytearray(msg) + b"\x00"
         if verify(sig, bytes(tampered), pub):
-            raise AssertionError("verify accepted a tampered message for seed %s" % seed_hex)
+            raise AssertionError(
+                "verify accepted a tampered message for seed %s" % seed_hex
+            )
     return True
 
 

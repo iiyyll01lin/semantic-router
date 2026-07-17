@@ -124,8 +124,17 @@ def sample_host_mem():
 def _parse_bytes(text):
     """'1.5GiB' / '512MiB' / '900MB' -> bytes."""
     text = text.strip()
-    units = {"B": 1, "KIB": 1024, "MIB": 1024**2, "GIB": 1024**3, "TIB": 1024**4,
-             "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4}
+    units = {
+        "B": 1,
+        "KIB": 1024,
+        "MIB": 1024**2,
+        "GIB": 1024**3,
+        "TIB": 1024**4,
+        "KB": 1000,
+        "MB": 1000**2,
+        "GB": 1000**3,
+        "TB": 1000**4,
+    }
     num = ""
     for i, ch in enumerate(text):
         if ch.isdigit() or ch == ".":
@@ -213,21 +222,47 @@ def summarize(in_path):
     out = {
         "schema": "resource-summary/v1",
         "samples": len(samples),
-        "gpu": {k: _reduce([s["gpu"].get(k) for s in samples if s.get("gpu")]) for k in gpu_keys},
-        "host": {k: _reduce([s["host"].get(k) for s in samples if s.get("host")]) for k in host_keys},
+        "gpu": {
+            k: _reduce([s["gpu"].get(k) for s in samples if s.get("gpu")])
+            for k in gpu_keys
+        },
+        "host": {
+            k: _reduce([s["host"].get(k) for s in samples if s.get("host")])
+            for k in host_keys
+        },
         "containers": {},
     }
     names = set()
     for s in samples:
         names.update((s.get("containers") or {}).keys())
     for name in sorted(names):
-        cpu = [s["containers"][name].get("cpu_pct") for s in samples if name in (s.get("containers") or {})]
-        mem = [s["containers"][name].get("mem_used_b") for s in samples if name in (s.get("containers") or {})]
+        cpu = [
+            s["containers"][name].get("cpu_pct")
+            for s in samples
+            if name in (s.get("containers") or {})
+        ]
+        mem = [
+            s["containers"][name].get("mem_used_b")
+            for s in samples
+            if name in (s.get("containers") or {})
+        ]
         out["containers"][name] = {"cpu_pct": _reduce(cpu), "mem_used_b": _reduce(mem)}
     # Convenience: the unified-memory budget + peak GPU allocation.
-    out["unified_mem_total_b"] = (out["host"]["mem_total_b"] or {}).get("max") if out["host"]["mem_total_b"] else None
-    out["peak_vram_used_b"] = (out["gpu"]["vram_used_b"] or {}).get("max") if out["gpu"]["vram_used_b"] else None
-    out["peak_gtt_used_b"] = (out["gpu"]["gtt_used_b"] or {}).get("max") if out["gpu"]["gtt_used_b"] else None
+    out["unified_mem_total_b"] = (
+        (out["host"]["mem_total_b"] or {}).get("max")
+        if out["host"]["mem_total_b"]
+        else None
+    )
+    out["peak_vram_used_b"] = (
+        (out["gpu"]["vram_used_b"] or {}).get("max")
+        if out["gpu"]["vram_used_b"]
+        else None
+    )
+    out["peak_gtt_used_b"] = (
+        (out["gpu"]["gtt_used_b"] or {}).get("max")
+        if out["gpu"]["gtt_used_b"]
+        else None
+    )
     return out
 
 
@@ -274,14 +309,24 @@ def main(argv=None):
         return 0
 
     if args.cmd == "start":
-        cmd = [sys.executable, os.path.abspath(__file__), "_loop",
-               "--out", args.out, "--interval", str(args.interval)]
+        cmd = [
+            sys.executable,
+            os.path.abspath(__file__),
+            "_loop",
+            "--out",
+            args.out,
+            "--interval",
+            str(args.interval),
+        ]
         if args.containers:
             cmd += ["--containers", args.containers]
         if args.stop_file:
             cmd += ["--stop-file", args.stop_file]
         proc = subprocess.Popen(  # noqa: S603 (fixed argv)
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         with open(args.pidfile, "w", encoding="utf-8") as fh:
             fh.write(str(proc.pid))

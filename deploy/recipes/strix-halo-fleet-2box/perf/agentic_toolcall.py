@@ -34,6 +34,7 @@ Usage:
       --no-think --num-predict 512 --num-gpu 999 --no-use-mmap \
       --out agentic-gemma-vs-qwen.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,7 +53,7 @@ DEFAULT_DATASET = os.path.join(SCRIPT_DIR, "data", "agentic-toolcall-tasks.json"
 SYSTEM_PREAMBLE = (
     "You are a function-calling assistant. You can call exactly one of the tools "
     "listed below. For the user's request, respond with ONLY a single JSON object of "
-    "the form {\"name\": \"<tool_name>\", \"arguments\": {<key>: <value>, ...}}. Use the "
+    'the form {"name": "<tool_name>", "arguments": {<key>: <value>, ...}}. Use the '
     "exact tool name and the exact argument keys from the tool's parameters. Do not "
     "include any explanation, prose, comments, or markdown code fences -- output the "
     "raw JSON object and nothing else."
@@ -60,9 +61,10 @@ SYSTEM_PREAMBLE = (
 
 
 def build_prompt(catalog_text, query):
-    return (
-        "%s\n\nAvailable tools:\n%s\n\nUser request: %s\n\nJSON tool call:"
-        % (SYSTEM_PREAMBLE, catalog_text, query)
+    return "%s\n\nAvailable tools:\n%s\n\nUser request: %s\n\nJSON tool call:" % (
+        SYSTEM_PREAMBLE,
+        catalog_text,
+        query,
     )
 
 
@@ -144,7 +146,9 @@ def score_task(task, obj):
     if not isinstance(obj, dict) or "name" not in obj:
         return False, False, False, {}
     exp = task["expect"]
-    name_ok = str(obj.get("name", "")).strip().lower() == str(exp["name"]).strip().lower()
+    name_ok = (
+        str(obj.get("name", "")).strip().lower() == str(exp["name"]).strip().lower()
+    )
     args = obj.get("arguments")
     if not isinstance(args, dict):
         args = obj.get("parameters") if isinstance(obj.get("parameters"), dict) else {}
@@ -192,14 +196,18 @@ def stream_ollama(base, model, prompt, opts, timeout, think=None):
         payload["think"] = bool(think)
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        base.rstrip("/") + "/api/generate", data=data, method="POST",
+        base.rstrip("/") + "/api/generate",
+        data=data,
+        method="POST",
         headers={"Content-Type": "application/json"},
     )
     t0 = time.perf_counter()
     t_first = None
     parts = []
     final = {}
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted local URL)
         for raw in resp:
             line = raw.decode("utf-8", "replace").strip()
             if not line:
@@ -223,25 +231,47 @@ def stream_ollama(base, model, prompt, opts, timeout, think=None):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="agentic_toolcall", description=__doc__)
-    p.add_argument("--models", nargs="+", required=True, help="backend model tags to score")
+    p.add_argument(
+        "--models", nargs="+", required=True, help="backend model tags to score"
+    )
     p.add_argument("--dataset", default=DEFAULT_DATASET)
     p.add_argument("--backend-url", default="http://localhost:11434")
-    p.add_argument("--api", choices=["ollama"], default="ollama",
-                   help="only the Ollama native transport is supported (server decode timings)")
+    p.add_argument(
+        "--api",
+        choices=["ollama"],
+        default="ollama",
+        help="only the Ollama native transport is supported (server decode timings)",
+    )
     p.add_argument("--num-ctx", type=int, default=4096)
-    p.add_argument("--num-predict", type=int, default=512,
-                   help="max answer tokens; a JSON tool call is short, but leave room for a "
-                        "thinking model whose reasoning precedes the JSON")
-    p.add_argument("--num-gpu", type=int, default=-1,
-                   help=">=0 forces options.num_gpu (Ollama GPU layers); -1 = server default")
+    p.add_argument(
+        "--num-predict",
+        type=int,
+        default=512,
+        help="max answer tokens; a JSON tool call is short, but leave room for a "
+        "thinking model whose reasoning precedes the JSON",
+    )
+    p.add_argument(
+        "--num-gpu",
+        type=int,
+        default=-1,
+        help=">=0 forces options.num_gpu (Ollama GPU layers); -1 = server default",
+    )
     mm = p.add_mutually_exclusive_group()
     mm.add_argument("--use-mmap", dest="use_mmap", action="store_true", default=None)
     mm.add_argument("--no-use-mmap", dest="use_mmap", action="store_false")
     tk = p.add_mutually_exclusive_group()
-    tk.add_argument("--think", dest="think", action="store_true",
-                    help="send Ollama think:true (allow native reasoning)")
-    tk.add_argument("--no-think", dest="think", action="store_false",
-                    help="send Ollama think:false to disable native reasoning (gemma etc.)")
+    tk.add_argument(
+        "--think",
+        dest="think",
+        action="store_true",
+        help="send Ollama think:true (allow native reasoning)",
+    )
+    tk.add_argument(
+        "--no-think",
+        dest="think",
+        action="store_false",
+        help="send Ollama think:false to disable native reasoning (gemma etc.)",
+    )
     p.set_defaults(think=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all tasks")
     p.add_argument("--timeout", type=float, default=600.0)
@@ -252,7 +282,9 @@ def main(argv=None):
         with open(args.dataset, "r", encoding="utf-8") as fh:
             spec = json.load(fh)
     except (OSError, ValueError) as exc:
-        print("ERROR: cannot read dataset %s: %s" % (args.dataset, exc), file=sys.stderr)
+        print(
+            "ERROR: cannot read dataset %s: %s" % (args.dataset, exc), file=sys.stderr
+        )
         return 1
     tools = spec.get("tools", [])
     tasks = spec.get("tasks", [])
@@ -264,8 +296,10 @@ def main(argv=None):
     catalog_text = render_catalog(tools)
 
     opts = build_options(args)
-    print("==> [agentic-toolcall] dataset=%s n_tasks=%d n_tools=%d think=%s opts=%s"
-          % (os.path.basename(args.dataset), len(tasks), len(tools), args.think, opts))
+    print(
+        "==> [agentic-toolcall] dataset=%s n_tasks=%d n_tools=%d think=%s opts=%s"
+        % (os.path.basename(args.dataset), len(tasks), len(tools), args.think, opts)
+    )
 
     per_model = {}
     for model in args.models:
@@ -279,8 +313,14 @@ def main(argv=None):
             err = None
             try:
                 text, ttft_ms, decode_tps, wall_s = stream_ollama(
-                    args.backend_url, model, prompt, opts, args.timeout, args.think)
-            except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
+                    args.backend_url, model, prompt, opts, args.timeout, args.think
+                )
+            except (
+                urllib.error.URLError,
+                urllib.error.HTTPError,
+                OSError,
+                ValueError,
+            ) as exc:
                 text, ttft_ms, decode_tps, wall_s = "", None, None, None
                 err = "%s: %s" % (type(exc).__name__, exc)
             obj, span = extract_tool_call(text)
@@ -296,20 +336,28 @@ def main(argv=None):
                 decodes.append(decode_tps)
             if ttft_ms is not None:
                 ttfts.append(ttft_ms)
-            per_task.append({
-                "id": task["id"],
-                "json_valid": jv,
-                "name_correct": nok,
-                "args_correct": aok,
-                "step_correct": step_ok,
-                "arg_detail": adetail,
-                "predicted_name": (obj or {}).get("name") if isinstance(obj, dict) else None,
-                "wall_s": round(wall_s, 3) if wall_s is not None else None,
-                "ttft_ms": round(ttft_ms, 1) if ttft_ms is not None else None,
-                "decode_tps": round(decode_tps, 2) if decode_tps is not None else None,
-                "raw_span": (span[:400] if span else (text[:400] if text else None)),
-                "error": err,
-            })
+            per_task.append(
+                {
+                    "id": task["id"],
+                    "json_valid": jv,
+                    "name_correct": nok,
+                    "args_correct": aok,
+                    "step_correct": step_ok,
+                    "arg_detail": adetail,
+                    "predicted_name": (
+                        (obj or {}).get("name") if isinstance(obj, dict) else None
+                    ),
+                    "wall_s": round(wall_s, 3) if wall_s is not None else None,
+                    "ttft_ms": round(ttft_ms, 1) if ttft_ms is not None else None,
+                    "decode_tps": (
+                        round(decode_tps, 2) if decode_tps is not None else None
+                    ),
+                    "raw_span": (
+                        span[:400] if span else (text[:400] if text else None)
+                    ),
+                    "error": err,
+                }
+            )
         per_model[model] = {
             "n": n,
             "json_valid": json_valid,
@@ -324,7 +372,9 @@ def main(argv=None):
             "latency": {
                 "wall_s_mean": round(statistics.fmean(walls), 3) if walls else None,
                 "wall_s_median": round(statistics.median(walls), 3) if walls else None,
-                "decode_tps_mean": round(statistics.fmean(decodes), 2) if decodes else None,
+                "decode_tps_mean": (
+                    round(statistics.fmean(decodes), 2) if decodes else None
+                ),
                 "ttft_ms_mean": round(statistics.fmean(ttfts), 1) if ttfts else None,
                 "ttft_ms_p95": round(_percentile(ttfts, 95), 1) if ttfts else None,
             },
@@ -332,13 +382,17 @@ def main(argv=None):
             "per_task": per_task,
         }
         m = per_model[model]
-        print("  %-40s step=%s json=%s name=%s args=%s  (%.0fs)"
-              % (model,
-                 "%.1f%%" % (100 * m["step_correct_rate"]),
-                 "%.1f%%" % (100 * m["json_valid_rate"]),
-                 "%.1f%%" % (100 * m["name_correct_rate"]),
-                 "%.1f%%" % (100 * m["args_correct_rate"]),
-                 m["wall_s_total"]))
+        print(
+            "  %-40s step=%s json=%s name=%s args=%s  (%.0fs)"
+            % (
+                model,
+                "%.1f%%" % (100 * m["step_correct_rate"]),
+                "%.1f%%" % (100 * m["json_valid_rate"]),
+                "%.1f%%" % (100 * m["name_correct_rate"]),
+                "%.1f%%" % (100 * m["args_correct_rate"]),
+                m["wall_s_total"],
+            )
+        )
 
     report = {
         "schema": "agentic-toolcall/v1",
@@ -347,8 +401,13 @@ def main(argv=None):
         "n_tools": len(tools),
         "backend_url": args.backend_url,
         "api": args.api,
-        "shape": {"num_ctx": args.num_ctx, "num_predict": args.num_predict,
-                  "num_gpu": args.num_gpu, "use_mmap": args.use_mmap, "think": args.think},
+        "shape": {
+            "num_ctx": args.num_ctx,
+            "num_predict": args.num_predict,
+            "num_gpu": args.num_gpu,
+            "use_mmap": args.use_mmap,
+            "think": args.think,
+        },
         "per_model": per_model,
     }
     out_text = json.dumps(report, indent=2, sort_keys=True)

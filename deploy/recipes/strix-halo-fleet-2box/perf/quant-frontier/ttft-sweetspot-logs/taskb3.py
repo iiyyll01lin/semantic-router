@@ -18,6 +18,7 @@ Reuses the vetted config-edit mechanics from bestcfg_matrix.py + repoint_backend
 try/finally ALWAYS restores the original runtime-config (same inode -> hot-reload).
 Stdlib only.
 """
+
 import json
 import statistics
 import sys
@@ -27,7 +28,7 @@ import urllib.request
 
 PERF = "/home/test001/gemma-bench/strix-halo-fleet-2box/perf"
 sys.path.insert(0, PERF)
-import bestcfg_matrix as b   # noqa: E402
+import bestcfg_matrix as b  # noqa: E402
 import repoint_backend as rp  # noqa: E402
 
 CFG = "/tmp/vllm-sr-fleet/gateway/.vllm-sr/runtime-config.yaml"
@@ -51,10 +52,18 @@ CASES = [
 
 def ask(question):
     """One router chat request; return (ttft_ms, hit_bool, similarity, selected_model)."""
-    body = json.dumps({"model": "auto", "messages": [{"role": "user", "content": question}],
-                       "max_tokens": MAX_TOKENS}).encode()
-    req = urllib.request.Request(CHAT, data=body, headers={
-        "Content-Type": "application/json", "x-vsr-debug": "true"})
+    body = json.dumps(
+        {
+            "model": "auto",
+            "messages": [{"role": "user", "content": question}],
+            "max_tokens": MAX_TOKENS,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        CHAT,
+        data=body,
+        headers={"Content-Type": "application/json", "x-vsr-debug": "true"},
+    )
     t0 = time.perf_counter()
     hdrs = {}
     try:
@@ -72,7 +81,12 @@ def ask(question):
     ttft = (time.perf_counter() - t0) * 1000.0
     hit = str(hdrs.get("x-vsr-cache-hit", "")).lower() == "true"
     sim = hdrs.get("x-vsr-cache-similarity")
-    return ttft, hit, (float(sim) if sim else None), hdrs.get("x-vsr-selected-model", "?")
+    return (
+        ttft,
+        hit,
+        (float(sim) if sim else None),
+        hdrs.get("x-vsr-selected-model", "?"),
+    )
 
 
 def hash_now():
@@ -87,34 +101,51 @@ def main():
     log = []
     try:
         # 1) repoint default_model -> llama-server, 2) enable cache @ threshold.
-        lines, changed = rp.repoint(orig.splitlines(keepends=True), ALIAS, ENDPOINT, MODEL)
+        lines, changed = rp.repoint(
+            orig.splitlines(keepends=True), ALIAS, ENDPOINT, MODEL
+        )
         if not changed:
-            print("ERROR: repoint of %s failed" % ALIAS); return 1
+            print("ERROR: repoint of %s failed" % ALIAS)
+            return 1
         text = b.set_threshold(b.inject_cache_plugin("".join(lines)), THRESHOLD)
         b.apply_config(CFG, text, CTR, 45, 3)
-        print("applied: repoint %s->%s + cache@%s (hash %s)" % (ALIAS, ENDPOINT, THRESHOLD, hash_now()))
+        print(
+            "applied: repoint %s->%s + cache@%s (hash %s)"
+            % (ALIAS, ENDPOINT, THRESHOLD, hash_now())
+        )
 
         miss, exact, sem, sel_models = [], [], [], set()
         exact_n = sem_n = 0
         for i, (base, para) in enumerate(CASES):
             q = base + " (taskb3 %d)" % i
-            m, mh, _, msel = ask(q)                 # populate (miss)
+            m, mh, _, msel = ask(q)  # populate (miss)
             sel_models.add(msel)
-            time.sleep(DELAY)                        # let post-response store finish
-            te, he, se_, _ = ask(q)                  # exact repeat -> expect hit
+            time.sleep(DELAY)  # let post-response store finish
+            te, he, se_, _ = ask(q)  # exact repeat -> expect hit
             time.sleep(0.4)
             tp, hp, sp, _ = ask(para + " (taskb3 %d)" % i)  # paraphrase -> semantic hit
-            rec = {"case": i, "sel_model": msel, "miss_ms": m, "miss_was_hit": mh,
-                   "exact_ms": te, "exact_hit": he, "exact_sim": se_,
-                   "sem_ms": tp, "sem_hit": hp, "sem_sim": sp}
+            rec = {
+                "case": i,
+                "sel_model": msel,
+                "miss_ms": m,
+                "miss_was_hit": mh,
+                "exact_ms": te,
+                "exact_hit": he,
+                "exact_sim": se_,
+                "sem_ms": tp,
+                "sem_hit": hp,
+                "sem_sim": sp,
+            }
             log.append(rec)
             print(json.dumps(rec))
             if m is not None and not mh:
                 miss.append(m)
             if he and te is not None:
-                exact.append(te); exact_n += 1
+                exact.append(te)
+                exact_n += 1
             if hp and tp is not None:
-                sem.append(tp); sem_n += 1
+                sem.append(tp)
+                sem_n += 1
 
         out = {
             "schema": "bestcfg-cache-overlay/v1",
@@ -126,14 +157,20 @@ def main():
             "threshold": THRESHOLD,
             "max_tokens": MAX_TOKENS,
             "repeat_delay_s": DELAY,
-            "method_note": ("miss->exact-repeat-hit->semantic-0.92-hit through the router; "
-                            "default_model repointed at llama-server so misses are served by "
-                            "llama.cpp; %.1fs inter-arrival so the async cache store completes." % DELAY),
+            "method_note": (
+                "miss->exact-repeat-hit->semantic-0.92-hit through the router; "
+                "default_model repointed at llama-server so misses are served by "
+                "llama.cpp; %.1fs inter-arrival so the async cache store completes."
+                % DELAY
+            ),
             "ttft_miss_ms": statistics.mean(miss) if miss else None,
             "ttft_hit_exact_ms": statistics.mean(exact) if exact else None,
             "ttft_hit_semantic_ms": statistics.mean(sem) if sem else None,
-            "ttft_saved_ms": (statistics.mean(miss) - statistics.mean(exact))
-                             if (miss and exact) else None,
+            "ttft_saved_ms": (
+                (statistics.mean(miss) - statistics.mean(exact))
+                if (miss and exact)
+                else None
+            ),
             "exact_hit_rate": exact_n / len(CASES),
             "semantic_hit_rate": sem_n / len(CASES),
             "cases": len(CASES),
@@ -143,12 +180,29 @@ def main():
             json.dump(out, fh, indent=2, sort_keys=True)
             fh.write("\n")
         print("WROTE " + OUT)
-        print(json.dumps({k: out[k] for k in ("ttft_miss_ms", "ttft_hit_exact_ms",
-              "ttft_hit_semantic_ms", "ttft_saved_ms", "exact_hit_rate", "semantic_hit_rate")}, indent=2))
+        print(
+            json.dumps(
+                {
+                    k: out[k]
+                    for k in (
+                        "ttft_miss_ms",
+                        "ttft_hit_exact_ms",
+                        "ttft_hit_semantic_ms",
+                        "ttft_saved_ms",
+                        "exact_hit_rate",
+                        "semantic_hit_rate",
+                    )
+                },
+                indent=2,
+            )
+        )
     finally:
-        b.apply_config(CFG, orig, CTR, 45, 3)   # ALWAYS restore original config
+        b.apply_config(CFG, orig, CTR, 45, 3)  # ALWAYS restore original config
         inj = "- type: semantic-cache" in open(CFG, "r", encoding="utf-8").read()
-        print("RESTORED original config; hash=%s cache_injection_present=%s" % (hash_now(), inj))
+        print(
+            "RESTORED original config; hash=%s cache_injection_present=%s"
+            % (hash_now(), inj)
+        )
     return 0
 
 

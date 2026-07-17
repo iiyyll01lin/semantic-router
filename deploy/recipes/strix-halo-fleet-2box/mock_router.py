@@ -37,7 +37,7 @@ class RouterState:
 
     def __init__(self, config_path: str):
         self.config_path = config_path
-        self.start_time = time.time()   # never changes -> proves "no restart"
+        self.start_time = time.time()  # never changes -> proves "no restart"
         self.reload_count = 0
         self._last_seen = None
         self._loaded = None
@@ -127,11 +127,18 @@ def make_handler(state: RouterState):
             if self.path == "/config/hash":
                 return self._send(200, {"hash": state.active_hash()})
             if self.path == "/config/loaded-hash":
-                return self._send(200, {"hash": state.loaded_hash(), "source": "loaded"})
+                return self._send(
+                    200, {"hash": state.loaded_hash(), "source": "loaded"}
+                )
             if self.path == "/config/router":
                 if not state.active_loadable():
-                    return self._send(500, {"error": "PARSE_ERROR",
-                                            "detail": "active config failed to parse"})
+                    return self._send(
+                        500,
+                        {
+                            "error": "PARSE_ERROR",
+                            "detail": "active config failed to parse",
+                        },
+                    )
                 return self._send(200, {"config": state.active_text()})
             if self.path == "/debug/router-state":
                 return self._send(200, state.snapshot())
@@ -147,8 +154,12 @@ def make_server(host: str, port: int, state: RouterState) -> ThreadingHTTPServer
 def main() -> int:
     host = os.environ.get("MOCK_ROUTER_HOST", "127.0.0.1")
     port = int(os.environ.get("MOCK_ROUTER_PORT", "8080"))
-    config_path = os.environ.get("MOCK_ROUTER_CONFIG", os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), ".mock-router-config.yaml"))
+    config_path = os.environ.get(
+        "MOCK_ROUTER_CONFIG",
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), ".mock-router-config.yaml"
+        ),
+    )
     state = RouterState(config_path)
     server = make_server(host, port, state)
     print("mock router on %s:%d (config=%s)" % (host, port, config_path))

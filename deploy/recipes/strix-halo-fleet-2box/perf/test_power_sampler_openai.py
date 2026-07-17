@@ -62,24 +62,37 @@ class _MockBackend(http.server.BaseHTTPRequestHandler):
         if self.path.endswith("/api/generate"):
             # eval_count/eval_duration -> 30 tok / 1.0 s => decode_tps == 30.
             lines = [{"response": "hi", "done": False}] * 3 + [
-                {"done": True, "eval_count": 30, "eval_duration": 1_000_000_000,
-                 "prompt_eval_count": 40, "prompt_eval_duration": 500_000_000},
+                {
+                    "done": True,
+                    "eval_count": 30,
+                    "eval_duration": 1_000_000_000,
+                    "prompt_eval_count": 40,
+                    "prompt_eval_duration": 500_000_000,
+                },
             ]
             body = "".join(json.dumps(o) + "\n" for o in lines).encode()
             ctype = "application/x-ndjson"
         elif self.path.startswith("/nousage"):
             # 15 content chunks, NO usage chunk -> fallback counts chunks == 15.
             evs = [{"choices": [{"delta": {"content": "hi "}}]} for _ in range(15)]
-            body = ("".join("data: " + json.dumps(e) + "\n\n" for e in evs)
-                    + "data: [DONE]\n\n").encode()
+            body = (
+                "".join("data: " + json.dumps(e) + "\n\n" for e in evs)
+                + "data: [DONE]\n\n"
+            ).encode()
             ctype = "text/event-stream"
         else:  # /chat/completions with server usage
             # 20 content chunks but usage says 25 -> decode uses the usage number.
             evs = [{"choices": [{"delta": {"content": "hi "}}]} for _ in range(20)]
-            evs.append({"choices": [{"delta": {}}],
-                        "usage": {"completion_tokens": 25, "prompt_tokens": 10}})
-            body = ("".join("data: " + json.dumps(e) + "\n\n" for e in evs)
-                    + "data: [DONE]\n\n").encode()
+            evs.append(
+                {
+                    "choices": [{"delta": {}}],
+                    "usage": {"completion_tokens": 25, "prompt_tokens": 10},
+                }
+            )
+            body = (
+                "".join("data: " + json.dumps(e) + "\n\n" for e in evs)
+                + "data: [DONE]\n\n"
+            ).encode()
             ctype = "text/event-stream"
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -104,6 +117,7 @@ def _wrap(fn):
     def inner(*a, **k):
         _STATE["load"] = True  # a decode is in flight -> report load power
         return fn(*a, **k)
+
     return inner
 
 
@@ -113,11 +127,27 @@ def _install_power_mock():
     power_sampler.read_socket_power = lambda: 110.0 if _STATE["load"] else 12.0
 
 
-_FAST = ["--idle-secs", "1", "--sample-interval", "0.1", "--runs", "1",
-         "--max-tokens", "32"]
+_FAST = [
+    "--idle-secs",
+    "1",
+    "--sample-interval",
+    "0.1",
+    "--runs",
+    "1",
+    "--max-tokens",
+    "32",
+]
 
-_SCHEMA_KEYS = ["idle_w", "load_w_mean", "load_w_peak", "decode_tps",
-                "tok_per_watt_load", "tok_per_watt_net_idle", "api", "model"]
+_SCHEMA_KEYS = [
+    "idle_w",
+    "load_w_mean",
+    "load_w_peak",
+    "decode_tps",
+    "tok_per_watt_load",
+    "tok_per_watt_net_idle",
+    "api",
+    "model",
+]
 
 
 def _run(tmp, name, argv):
@@ -133,46 +163,77 @@ def main():
     _install_power_mock()
     srv, base = _start_backend()
     try:
-        rc, d = _run(tmp, "oai.json",
-                     ["--api", "openai", "--backend-url", base, "--model", "m"] + _FAST)
-        check("1. openai exit 0 + schema + api/model + decode_tps from usage(25)",
-              rc == 0
-              and all(k in d for k in _SCHEMA_KEYS)
-              and d["api"] == "openai" and d["model"] == "m"
-              and d["runs_detail"][0]["tokens"] == 25
-              and (d["decode_tps"] or 0) > 0
-              and (d["tok_per_watt_load"] or 0) > 0
-              and (d["tok_per_watt_net_idle"] or 0) > 0
-              and abs(d["idle_w"] - 12.0) < 1e-6 and abs(d["load_w_mean"] - 110.0) < 1e-6)
+        rc, d = _run(
+            tmp,
+            "oai.json",
+            ["--api", "openai", "--backend-url", base, "--model", "m"] + _FAST,
+        )
+        check(
+            "1. openai exit 0 + schema + api/model + decode_tps from usage(25)",
+            rc == 0
+            and all(k in d for k in _SCHEMA_KEYS)
+            and d["api"] == "openai"
+            and d["model"] == "m"
+            and d["runs_detail"][0]["tokens"] == 25
+            and (d["decode_tps"] or 0) > 0
+            and (d["tok_per_watt_load"] or 0) > 0
+            and (d["tok_per_watt_net_idle"] or 0) > 0
+            and abs(d["idle_w"] - 12.0) < 1e-6
+            and abs(d["load_w_mean"] - 110.0) < 1e-6,
+        )
 
-        rc, d = _run(tmp, "oai_nousage.json",
-                     ["--api", "openai", "--backend-url", base + "/nousage", "--model", "m"] + _FAST)
-        check("2. openai no server usage -> token count falls back to chunks(15)",
-              rc == 0 and d["runs_detail"][0]["tokens"] == 15 and (d["decode_tps"] or 0) > 0)
+        rc, d = _run(
+            tmp,
+            "oai_nousage.json",
+            ["--api", "openai", "--backend-url", base + "/nousage", "--model", "m"]
+            + _FAST,
+        )
+        check(
+            "2. openai no server usage -> token count falls back to chunks(15)",
+            rc == 0
+            and d["runs_detail"][0]["tokens"] == 15
+            and (d["decode_tps"] or 0) > 0,
+        )
 
-        rc, d = _run(tmp, "oai_nommap.json",
-                     ["--api", "openai", "--backend-url", base, "--model", "m", "--no-mmap"] + _FAST)
-        check("3. openai --no-mmap ignored gracefully (shape.use_mmap == n/a, exit 0)",
-              rc == 0 and d["shape"]["use_mmap"] == "n/a")
+        rc, d = _run(
+            tmp,
+            "oai_nommap.json",
+            ["--api", "openai", "--backend-url", base, "--model", "m", "--no-mmap"]
+            + _FAST,
+        )
+        check(
+            "3. openai --no-mmap ignored gracefully (shape.use_mmap == n/a, exit 0)",
+            rc == 0 and d["shape"]["use_mmap"] == "n/a",
+        )
 
-        rc, d = _run(tmp, "oll.json",
-                     ["--api", "ollama", "--backend-url", base, "--model", "m"] + _FAST)
-        check("4. ollama unchanged -> exit 0, decode_tps==30, back-compat keys present",
-              rc == 0
-              and abs((d["decode_tps"] or 0) - 30.0) < 1e-6
-              and abs((d["decode_tps_median"] or 0) - 30.0) < 1e-6
-              and "idle_w_mean" in d and "load_w_max" in d
-              and d["runs_detail"][0]["eval_count"] == 30
-              and d["shape"]["use_mmap"] == "default")
+        rc, d = _run(
+            tmp,
+            "oll.json",
+            ["--api", "ollama", "--backend-url", base, "--model", "m"] + _FAST,
+        )
+        check(
+            "4. ollama unchanged -> exit 0, decode_tps==30, back-compat keys present",
+            rc == 0
+            and abs((d["decode_tps"] or 0) - 30.0) < 1e-6
+            and abs((d["decode_tps_median"] or 0) - 30.0) < 1e-6
+            and "idle_w_mean" in d
+            and "load_w_max" in d
+            and d["runs_detail"][0]["eval_count"] == 30
+            and d["shape"]["use_mmap"] == "default",
+        )
 
         # Unreachable backend: warmup fails and main() returns 1 without writing
         # an --out file (preserved behavior), so assert on the exit code only.
         _STATE["load"] = False
         rc = power_sampler.main(
             ["--api", "openai", "--backend-url", "http://127.0.0.1:1", "--model", "m"]
-            + _FAST + ["--out", os.path.join(tmp, "err.json")])
-        check("5. unreachable backend -> no decode rate -> exit 1",
-              rc == 1 and not os.path.exists(os.path.join(tmp, "err.json")))
+            + _FAST
+            + ["--out", os.path.join(tmp, "err.json")]
+        )
+        check(
+            "5. unreachable backend -> no decode rate -> exit 1",
+            rc == 1 and not os.path.exists(os.path.join(tmp, "err.json")),
+        )
     finally:
         srv.shutdown()
         power_sampler.openai_generate = _REAL_OAI

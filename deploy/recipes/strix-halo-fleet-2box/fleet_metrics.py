@@ -330,7 +330,12 @@ def summarize(m):
     lines = ["== fleet metrics (%s, mode=%s) ==" % (m["bundle"], m["fleet_mode"])]
     lines.append(
         "boxes=%s desired=%s audit=%s hash_agreement=%s"
-        % (",".join(m["boxes"]), m["desired_version"], m["audit_count"], m["hash_agreement"])
+        % (
+            ",".join(m["boxes"]),
+            m["desired_version"],
+            m["audit_count"],
+            m["hash_agreement"],
+        )
     )
     c = m["convergence"]
     poll = c.get("poll_interval_seconds")
@@ -347,14 +352,19 @@ def summarize(m):
     )
     if m.get("desired_config"):
         dc = m["desired_config"]
-        lines.append("desired_config: %s bytes sha256=%s" % (dc["config_bytes"], dc["sha256"][:12]))
+        lines.append(
+            "desired_config: %s bytes sha256=%s"
+            % (dc["config_bytes"], dc["sha256"][:12])
+        )
     if m.get("hot_reload_latency_seconds"):
         lt = m["hot_reload_latency_seconds"]
         lines.append(
             "hot_reload_latency (write->converge): p50=%.3fs p95=%.3fs mean=%.3fs (n=%d)"
             % (lt["p50_seconds"], lt["p95_seconds"], lt["mean_seconds"], lt["n"])
         )
-    rr = ", ".join("%s=%ss" % (b, s) for b, s in sorted(m["router_readiness_seconds"].items()))
+    rr = ", ".join(
+        "%s=%ss" % (b, s) for b, s in sorted(m["router_readiness_seconds"].items())
+    )
     if rr:
         lines.append("router_readiness: " + rr)
     return "\n".join(lines)
@@ -367,7 +377,11 @@ def _fmt(x):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="fleet_metrics")
     p.add_argument("--bundle", required=True, help="run bundle directory")
-    p.add_argument("--out", default="", help="write metrics.json here (default: <bundle>/metrics.json)")
+    p.add_argument(
+        "--out",
+        default="",
+        help="write metrics.json here (default: <bundle>/metrics.json)",
+    )
     args = p.parse_args(argv)
 
     metrics = build_metrics(args.bundle)

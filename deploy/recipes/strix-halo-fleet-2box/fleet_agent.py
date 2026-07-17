@@ -66,11 +66,25 @@ def _bundle_age_seconds(ts: str):
 
 
 class AgentConfig:
-    def __init__(self, ccp_url, router_api, config_file, signing_key, token,
-                 box_id, poll_interval=5.0, apply_timeout=15.0, health_path="",
-                 health_timeout=5.0, apply_backoff=30.0, apply_backoff_max=300.0,
-                 verifier=None, bundle_max_age=0.0, status_buffer="",
-                 status_buffer_max=1000):
+    def __init__(
+        self,
+        ccp_url,
+        router_api,
+        config_file,
+        signing_key,
+        token,
+        box_id,
+        poll_interval=5.0,
+        apply_timeout=15.0,
+        health_path="",
+        health_timeout=5.0,
+        apply_backoff=30.0,
+        apply_backoff_max=300.0,
+        verifier=None,
+        bundle_max_age=0.0,
+        status_buffer="",
+        status_buffer_max=1000,
+    ):
         self.ccp_url = ccp_url.rstrip("/")
         self.router_api = router_api.rstrip("/")
         self.config_file = config_file
@@ -82,7 +96,9 @@ class AgentConfig:
         # R4: the bundle verifier (HMAC by default; Ed25519 public key when
         # configured). A bare signing_key keeps the old behavior for direct
         # constructors (e.g. verify_local passes the shared HMAC key).
-        self.verifier = verifier if verifier is not None else fleet_lib.hmac_verifier(signing_key)
+        self.verifier = (
+            verifier if verifier is not None else fleet_lib.hmac_verifier(signing_key)
+        )
         # R4 freshness: reject a signed bundle older than this many seconds (0 =
         # off). Only meaningful when the CCP stamps bundles (FLEET_BUNDLE_TS=1).
         self.bundle_max_age = float(bundle_max_age)
@@ -95,7 +111,11 @@ class AgentConfig:
         # R8 health-gated apply: an OPTIONAL stronger readiness probe hit after
         # apply (e.g. a lightweight completion or /health). When unset, health is
         # simply "GET /config/hash still answers 200" (the router is alive).
-        self.health_path = ("/" + health_path.strip("/")) if health_path and health_path.strip("/") else ""
+        self.health_path = (
+            ("/" + health_path.strip("/"))
+            if health_path and health_path.strip("/")
+            else ""
+        )
         self.health_timeout = float(health_timeout)
         # R8 backoff: after a failed (unhealthy/unconverged) apply we restore the
         # backup and refuse to rewrite the SAME bad version until this grows-then-
@@ -113,7 +133,9 @@ class AgentConfig:
         if missing:
             raise SystemExit("missing env: " + ", ".join(missing))
         try:
-            verifier = fleet_lib.verifier_from_env()  # HMAC by default; Ed25519 if configured
+            verifier = (
+                fleet_lib.verifier_from_env()
+            )  # HMAC by default; Ed25519 if configured
         except (ValueError, OSError) as exc:
             raise SystemExit(str(exc)) from exc
         return cls(
@@ -156,7 +178,9 @@ def _router_hash(cfg: AgentConfig) -> str:
 
 
 def _router_loaded_hash(cfg: AgentConfig) -> str:
-    status, obj = fleet_lib.http_get_json(cfg.router_api + "/config/loaded-hash", token=None)
+    status, obj = fleet_lib.http_get_json(
+        cfg.router_api + "/config/loaded-hash", token=None
+    )
     if status != 200:
         raise RuntimeError("router /config/loaded-hash returned %d" % status)
     return str(obj.get("hash", ""))
@@ -207,7 +231,11 @@ def _wait_for_loaded_hash(cfg: AgentConfig, previous_hash: str):
         except Exception:
             pass
         time.sleep(0.2)
-    return False, last_hash, "loaded-hash did not advance within %.1fs" % cfg.apply_timeout
+    return (
+        False,
+        last_hash,
+        "loaded-hash did not advance within %.1fs" % cfg.apply_timeout,
+    )
 
 
 def _router_health(cfg: AgentConfig):
@@ -225,7 +253,8 @@ def _router_health(cfg: AgentConfig):
     """
     try:
         status, _obj = fleet_lib.http_get_json(
-            cfg.router_api + "/config/hash", token=None, timeout=cfg.health_timeout)
+            cfg.router_api + "/config/hash", token=None, timeout=cfg.health_timeout
+        )
     except Exception as exc:  # non-200 raises HTTPError -> unhealthy
         return False, "config/hash unreachable: %s" % exc
     if status != 200:
@@ -237,7 +266,8 @@ def _router_health(cfg: AgentConfig):
     if cfg.health_path:
         try:
             hstatus, _txt = fleet_lib.http_get_text(
-                cfg.router_api + cfg.health_path, token=None, timeout=cfg.health_timeout)
+                cfg.router_api + cfg.health_path, token=None, timeout=cfg.health_timeout
+            )
         except Exception as exc:
             return False, "health probe %s failed: %s" % (cfg.health_path, exc)
         if hstatus != 200:
@@ -291,7 +321,7 @@ def _write_status_buffer(cfg: AgentConfig, records: list) -> None:
     # temp+replace is correct here -- the in-place rule only applies to the
     # bind-mounted config file in _write_config.
     if len(records) > cfg.status_buffer_max:
-        records = records[-cfg.status_buffer_max:]
+        records = records[-cfg.status_buffer_max :]
     try:
         if not records:
             if os.path.exists(cfg.status_buffer):
@@ -326,7 +356,8 @@ def _report(cfg: AgentConfig, payload: dict) -> None:
             continue
         try:
             status, _obj = fleet_lib.http_post_json(
-                cfg.ccp_url + "/fleet/status", rec, token=cfg.token)
+                cfg.ccp_url + "/fleet/status", rec, token=cfg.token
+            )
             if status != 200:
                 failed = True
                 unsent.append(rec)
@@ -339,7 +370,9 @@ def _report(cfg: AgentConfig, payload: dict) -> None:
 def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     """Run one reconcile cycle. Returns a result dict (also used by the verifier)."""
     try:
-        status, bundle = fleet_lib.http_get_json(cfg.ccp_url + "/fleet/desired", token=cfg.token)
+        status, bundle = fleet_lib.http_get_json(
+            cfg.ccp_url + "/fleet/desired", token=cfg.token
+        )
     except Exception as exc:  # network/pull failure -> retry next cycle
         return {"result": "pull_error", "reason": str(exc)}
     if status != 200:
@@ -347,8 +380,14 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
 
     ok, reason = fleet_lib.verify_bundle(cfg.verifier, bundle)
     if not ok:
-        _report(cfg, {"result": "rejected", "reason": reason,
-                      "version": str(bundle.get("version", ""))})
+        _report(
+            cfg,
+            {
+                "result": "rejected",
+                "reason": reason,
+                "version": str(bundle.get("version", "")),
+            },
+        )
         return {"result": "rejected", "reason": reason}
 
     version = str(bundle["version"])
@@ -359,7 +398,10 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     # can re-apply the current desired config after an out-of-band edit.
     new_n, last_n = _version_num(version), _version_num(state.applied_version)
     if new_n is not None and last_n is not None and new_n < last_n:
-        reason = "anti-downgrade: %s is older than applied %s" % (version, state.applied_version)
+        reason = "anti-downgrade: %s is older than applied %s" % (
+            version,
+            state.applied_version,
+        )
         _report(cfg, {"result": "rejected", "reason": reason, "version": version})
         return {"result": "rejected", "reason": reason}
 
@@ -387,19 +429,33 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
         state.backoff_seconds = 0.0
         if state.applied_version != version:
             state.applied_version = version
-            _report(cfg, {"result": "in_sync", "version": version, "hash": cur_hash,
-                          "loaded_hash": cur_loaded_hash})
-        return {"result": "in_sync", "version": version, "hash": cur_hash,
-                "loaded_hash": cur_loaded_hash}
+            _report(
+                cfg,
+                {
+                    "result": "in_sync",
+                    "version": version,
+                    "hash": cur_hash,
+                    "loaded_hash": cur_loaded_hash,
+                },
+            )
+        return {
+            "result": "in_sync",
+            "version": version,
+            "hash": cur_hash,
+            "loaded_hash": cur_loaded_hash,
+        }
 
     # Drift detected: we must (re)apply this version. If this exact version just
     # failed to apply healthily, back off instead of rewriting the same bad
     # config every cycle (that would thrash the router's fsnotify hot-reload).
     now = time.time()
     if version == state.failed_version and now < state.backoff_until:
-        return {"result": "apply_backoff", "version": version,
-                "reason": "backing off %.1fs after a failed apply of %s"
-                          % (state.backoff_until - now, version)}
+        return {
+            "result": "apply_backoff",
+            "version": version,
+            "reason": "backing off %.1fs after a failed apply of %s"
+            % (state.backoff_until - now, version),
+        }
 
     # Apply + time the write->converge window (R9 hot-reload latency timer).
     t0 = time.monotonic()
@@ -410,7 +466,9 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     loaded_converged, loaded_hash, loaded_detail = (False, cur_loaded_hash, "")
     healthy, health_detail = (True, "ok")
     if converged:
-        loaded_converged, loaded_hash, loaded_detail = _wait_for_loaded_hash(cfg, cur_loaded_hash)
+        loaded_converged, loaded_hash, loaded_detail = _wait_for_loaded_hash(
+            cfg, cur_loaded_hash
+        )
     if converged and loaded_converged:
         healthy, health_detail = _router_health(cfg)
 
@@ -425,10 +483,23 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
         state.failed_version = ""
         state.backoff_until = 0.0
         state.backoff_seconds = 0.0
-        _report(cfg, {"result": "applied", "version": version, "hash": new_hash,
-                      "loaded_hash": loaded_hash, "apply_seconds": apply_seconds})
-        return {"result": "applied", "version": version, "hash": new_hash,
-                "loaded_hash": loaded_hash, "apply_seconds": apply_seconds}
+        _report(
+            cfg,
+            {
+                "result": "applied",
+                "version": version,
+                "hash": new_hash,
+                "loaded_hash": loaded_hash,
+                "apply_seconds": apply_seconds,
+            },
+        )
+        return {
+            "result": "applied",
+            "version": version,
+            "hash": new_hash,
+            "loaded_hash": loaded_hash,
+            "apply_seconds": apply_seconds,
+        }
 
     # Health-gated apply FAILED (never converged, or converged but the router is
     # no longer serving): restore the .bak and report rolled_back (R8). Never
@@ -451,20 +522,35 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     state.failed_version = version
     state.backoff_seconds = min(
         cfg.apply_backoff_max,
-        cfg.apply_backoff if state.backoff_seconds <= 0 else state.backoff_seconds * 2)
+        cfg.apply_backoff if state.backoff_seconds <= 0 else state.backoff_seconds * 2,
+    )
     state.backoff_until = now + state.backoff_seconds
     state.last_result = "rolled_back"
     detail = reason + ("; restored .bak" if restored else "; no .bak to restore")
-    _report(cfg, {"result": "rolled_back", "version": version, "hash": prev_hash,
-                  "reason": detail, "apply_seconds": apply_seconds})
-    return {"result": "rolled_back", "version": version, "hash": prev_hash,
-            "reason": detail}
+    _report(
+        cfg,
+        {
+            "result": "rolled_back",
+            "version": version,
+            "hash": prev_hash,
+            "reason": detail,
+            "apply_seconds": apply_seconds,
+        },
+    )
+    return {
+        "result": "rolled_back",
+        "version": version,
+        "hash": prev_hash,
+        "reason": detail,
+    }
 
 
 def run_loop(cfg: AgentConfig) -> int:
     state = AgentState()
-    print("agent[%s] pulling %s -> router %s every %.1fs" % (
-        cfg.box_id, cfg.ccp_url, cfg.router_api, cfg.poll_interval))
+    print(
+        "agent[%s] pulling %s -> router %s every %.1fs"
+        % (cfg.box_id, cfg.ccp_url, cfg.router_api, cfg.poll_interval)
+    )
     while True:
         res = reconcile_once(cfg, state)
         if res.get("result") not in ("in_sync",):
