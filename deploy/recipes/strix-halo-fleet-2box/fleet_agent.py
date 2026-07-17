@@ -6,9 +6,10 @@ edge AIPC needs no inbound exposure. Each cycle:
 
   1. GET  <CCP>/fleet/desired              (pull the signed bundle)
   2. verify the HMAC signature + content hash (reject tampered/unsigned bundles)
-  3. GET  <router>/config/hash             (read the active-config drift signal)
+  3. GET  <router>/config/hash             (read the file-byte drift signal)
   4. if drift: back up + write the local config file -> the router hot-reloads
-     via fsnotify (no restart); poll /config/hash until it converges
+     via fsnotify (no restart); poll /config/hash until the bytes converge and
+     /config/loaded-hash until the runtime config advances
   5. POST <CCP>/fleet/status               (report what was applied -> audit)
 
 Applying by writing the watched config file reuses the router's existing
@@ -154,6 +155,13 @@ def _router_hash(cfg: AgentConfig) -> str:
     return str(obj.get("hash", ""))
 
 
+def _router_loaded_hash(cfg: AgentConfig) -> str:
+    status, obj = fleet_lib.http_get_json(cfg.router_api + "/config/loaded-hash", token=None)
+    if status != 200:
+        raise RuntimeError("router /config/loaded-hash returned %d" % status)
+    return str(obj.get("hash", ""))
+
+
 def _write_config(cfg: AgentConfig, config_text: str) -> None:
     # Back up the current file next to it, then overwrite the config IN PLACE
     # (same inode) -- NOT via a temp-file rename. The real vllm-sr gateway
@@ -188,18 +196,31 @@ def _wait_for_hash(cfg: AgentConfig, desired_hash: str) -> bool:
     return False
 
 
+def _wait_for_loaded_hash(cfg: AgentConfig, previous_hash: str):
+    deadline = time.time() + cfg.apply_timeout
+    last_hash = previous_hash
+    while time.time() < deadline:
+        try:
+            last_hash = _router_loaded_hash(cfg)
+            if last_hash and last_hash != previous_hash:
+                return True, last_hash, "loaded-hash advanced"
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return False, last_hash, "loaded-hash did not advance within %.1fs" % cfg.apply_timeout
+
+
 def _router_health(cfg: AgentConfig):
     """Return ``(ok, detail)``: did the router still SERVE *and* LOAD after an apply?
 
     A converged /config/hash only proves the router *read* the new bytes (that
-    endpoint hashes the file on disk), not that it could parse/adopt them. Gates,
+    endpoint hashes the file on disk), not that it adopted them. Gates,
     in order:
-      * GET /config/hash == 200   -- the router is still serving,
-      * GET /config/router == 200 -- the router actually LOADED the active config.
-        handleConfigGet parses it and returns 500 on invalid YAML, so a config the
-        router refused to adopt (it keeps serving the last-good one) is caught here
-        and rolled back (R8), instead of being mistaken for "applied" just because
-        the file bytes converged,
+      * GET /config/hash == 200        -- the router is still serving,
+      * GET /config/loaded-hash == 200 -- the router can report the last loaded
+        runtime config. The caller separately waits for this signal to advance,
+        so a config the router refused to adopt is rolled back (R8) instead of
+        being mistaken for "applied" just because file bytes converged,
       * when ``ROUTER_HEALTH_PATH`` is set, a 200 from that stronger readiness probe.
     """
     try:
@@ -209,16 +230,10 @@ def _router_health(cfg: AgentConfig):
         return False, "config/hash unreachable: %s" % exc
     if status != 200:
         return False, "config/hash returned %d" % status
-    # R8 load gate: /config/router parses the active config and 500s when it cannot
-    # be loaded. This is the signal a byte-hash convergence check cannot give us --
-    # it proves the router LOADED the config, not merely that the file was written.
     try:
-        cstatus, _cobj = fleet_lib.http_get_json(
-            cfg.router_api + "/config/router", token=None, timeout=cfg.health_timeout)
-    except Exception as exc:  # 500 PARSE_ERROR raises HTTPError -> unloadable config
-        return False, "config/router unloadable: %s" % exc
-    if cstatus != 200:
-        return False, "config/router returned %d" % cstatus
+        _router_loaded_hash(cfg)
+    except Exception as exc:
+        return False, "config/loaded-hash unreachable: %s" % exc
     if cfg.health_path:
         try:
             hstatus, _txt = fleet_lib.http_get_text(
@@ -360,6 +375,7 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     desired_hash = bundle["sha256"]
     try:
         cur_hash = _router_hash(cfg)
+        cur_loaded_hash = _router_loaded_hash(cfg)
     except Exception as exc:
         return {"result": "router_error", "reason": str(exc)}
 
@@ -371,8 +387,10 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
         state.backoff_seconds = 0.0
         if state.applied_version != version:
             state.applied_version = version
-            _report(cfg, {"result": "in_sync", "version": version, "hash": cur_hash})
-        return {"result": "in_sync", "version": version, "hash": cur_hash}
+            _report(cfg, {"result": "in_sync", "version": version, "hash": cur_hash,
+                          "loaded_hash": cur_loaded_hash})
+        return {"result": "in_sync", "version": version, "hash": cur_hash,
+                "loaded_hash": cur_loaded_hash}
 
     # Drift detected: we must (re)apply this version. If this exact version just
     # failed to apply healthily, back off instead of rewriting the same bad
@@ -389,11 +407,14 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
     converged = _wait_for_hash(cfg, desired_hash)
     apply_seconds = round(time.monotonic() - t0, 3)
 
+    loaded_converged, loaded_hash, loaded_detail = (False, cur_loaded_hash, "")
     healthy, health_detail = (True, "ok")
     if converged:
+        loaded_converged, loaded_hash, loaded_detail = _wait_for_loaded_hash(cfg, cur_loaded_hash)
+    if converged and loaded_converged:
         healthy, health_detail = _router_health(cfg)
 
-    if converged and healthy:
+    if converged and loaded_converged and healthy:
         try:
             new_hash = _router_hash(cfg)
         except Exception:
@@ -405,15 +426,17 @@ def reconcile_once(cfg: AgentConfig, state: AgentState) -> dict:
         state.backoff_until = 0.0
         state.backoff_seconds = 0.0
         _report(cfg, {"result": "applied", "version": version, "hash": new_hash,
-                      "apply_seconds": apply_seconds})
+                      "loaded_hash": loaded_hash, "apply_seconds": apply_seconds})
         return {"result": "applied", "version": version, "hash": new_hash,
-                "apply_seconds": apply_seconds}
+                "loaded_hash": loaded_hash, "apply_seconds": apply_seconds}
 
     # Health-gated apply FAILED (never converged, or converged but the router is
     # no longer serving): restore the .bak and report rolled_back (R8). Never
     # mark the bad version as applied; keep the last good applied_version.
     if not converged:
         reason = "did not converge within %.1fs" % cfg.apply_timeout
+    elif not loaded_converged:
+        reason = loaded_detail
     else:
         reason = "router unhealthy after apply: %s" % health_detail
     restored = _restore_backup(cfg)

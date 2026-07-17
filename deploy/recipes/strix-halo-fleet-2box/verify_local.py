@@ -23,8 +23,9 @@ Hardening checks (R4/R6/R8):
   10. anti-downgrade          - a stale but validly-signed OLDER bundle is rejected
                                 once a newer version has been applied
   11. auto-rollback           - an UNLOADABLE apply (invalid config the router
-                                refuses to load -> /config/router 500) restores the
-                                .bak, reports rolled_back, then backs off that version
+                                refuses to load -> /config/loaded-hash does not
+                                advance) restores the .bak, reports rolled_back,
+                                then backs off that version
   12. CCP durability          - desired config + version counter + audit survive a
                                 simulated CCP restart (no version collision)
 
@@ -71,12 +72,13 @@ CHECKS = []
 
 
 class _CtlRouterState:
-    """Mock router that can drive the agent's auto-rollback two ways: GET
-    /config/router returns 500 when the active config is invalid YAML (the real
-    handleConfigGet LOAD gate the agent now checks, R8), and /healthz returns 503
-    when the active config contains ``UNHEALTHY`` (the optional ROUTER_HEALTH_PATH
-    readiness gate). Reuses mock_router.RouterState for the file-hash/hot-reload +
-    parse semantics (a converged byte-hash != a loadable/serving router)."""
+    """Mock router that can drive the agent's auto-rollback two ways:
+    /config/loaded-hash stays pinned to the last-good config when the active
+    file is invalid YAML (the real loaded runtime signal the agent now checks,
+    R8), and /healthz returns 503 when the active config contains ``UNHEALTHY``
+    (the optional ROUTER_HEALTH_PATH readiness gate). Reuses
+    mock_router.RouterState for the file-hash/hot-reload + parse semantics
+    (a converged byte-hash != a loadable/serving router)."""
 
     def __init__(self, config_path: str):
         self.r = mock_router.RouterState(config_path)
@@ -100,6 +102,8 @@ def _ctl_router_handler(state: _CtlRouterState):
         def do_GET(self):
             if self.path == "/config/hash":
                 return self._json(200, {"hash": state.r.active_hash()})
+            if self.path == "/config/loaded-hash":
+                return self._json(200, {"hash": state.r.loaded_hash(), "source": "loaded"})
             if self.path == "/healthz":
                 unhealthy = "UNHEALTHY" in state.r.active_text()
                 return self._json(503 if unhealthy else 200, {"ok": not unhealthy})
@@ -458,14 +462,14 @@ def main() -> int:
     fleet_agent.reconcile_once(rb_cfg, rb_state)     # healthy apply
     good_hash = rb_router.r.active_hash()
     # Invalid YAML: the file bytes converge (a byte-hash cannot tell), but the
-    # router refuses to LOAD it -> GET /config/router 500 -> agent rolls back.
+    # router refuses to LOAD it -> /config/loaded-hash stays at last-good -> agent rolls back.
     # Mirrors the real hardware R8 probe (verify-hardening.sh check_auto_rollback).
     set_desired(ccp_url, "version: v0.3\n# rb bad B invalid-on-reload\nfleet_verify_rollback_probe: {[}\n")
     rb_res = fleet_agent.reconcile_once(rb_cfg, rb_state)
     with open(rb_path, "r", encoding="utf-8") as fh:
         on_disk = fh.read()
-    record("auto-rollback on unloadable apply (invalid config -> /config/router 500, restores .bak, reports rolled_back)",
-           rb_res.get("result") == "rolled_back" and "config/router" in rb_res.get("reason", "")
+    record("auto-rollback on unloadable apply (invalid config -> loaded-hash mismatch, restores .bak, reports rolled_back)",
+           rb_res.get("result") == "rolled_back" and "loaded-hash" in rb_res.get("reason", "")
            and rb_router.r.active_hash() == good_hash
            and "# rb good A" in on_disk, rb_res.get("reason", ""))
     rb_res2 = fleet_agent.reconcile_once(rb_cfg, rb_state)  # same bad version again

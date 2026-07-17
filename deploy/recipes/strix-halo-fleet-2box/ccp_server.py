@@ -174,6 +174,8 @@ class CCPState:
             "result": str(payload.get("result", "")),
             "reason": str(payload.get("reason", "")),
         }
+        if payload.get("loaded_hash") is not None:
+            rec["loaded_hash"] = str(payload.get("loaded_hash", ""))
         # R9: keep the agent's write->converge timer when present (used by
         # /metrics and by fleet_metrics.py to compute p50/p95 hot-reload latency).
         if payload.get("apply_seconds") is not None:

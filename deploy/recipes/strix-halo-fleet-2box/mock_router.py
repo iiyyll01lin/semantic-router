@@ -5,6 +5,7 @@ fan-out logic can be verified end-to-end WITHOUT AMD/ROCm hardware. It models th
 two primitives the agent relies on:
 
 - ``GET /config/hash``   -> SHA256 of the active config file (the drift signal),
+- ``GET /config/loaded-hash`` -> SHA256 of the last successfully loaded config,
 - a config FILE that the agent overwrites; the mock detects the change and bumps
   a reload counter WITHOUT changing its start time, i.e. it models fsnotify
   hot-reload (reload, not restart).
@@ -38,40 +39,16 @@ class RouterState:
         self.config_path = config_path
         self.start_time = time.time()   # never changes -> proves "no restart"
         self.reload_count = 0
-        self._last_loaded = None
+        self._last_seen = None
+        self._loaded = None
         self._lock = threading.Lock()
         if not os.path.exists(config_path):
             with open(config_path, "w", encoding="utf-8") as fh:
                 fh.write("")
         self._refresh()
 
-    def _refresh(self):
-        """Read the file; if it changed since last load, count a hot-reload."""
-        try:
-            with open(self.config_path, "rb") as fh:
-                data = fh.read()
-        except OSError:
-            data = b""
-        with self._lock:
-            if self._last_loaded is None:
-                self._last_loaded = data
-            elif data != self._last_loaded:
-                self._last_loaded = data
-                self.reload_count += 1
-            return data
-
-    def active_hash(self) -> str:
-        return fleet_lib.sha256_hex(self._refresh())
-
-    def active_text(self) -> str:
-        return self._refresh().decode("utf-8", "replace")
-
-    def active_loadable(self) -> bool:
-        """Mirror the real router's GET /config/router: the active config must
-        PARSE (handleConfigGet returns 500 on invalid YAML). A converged byte-hash
-        only proves the file was READ; this models the LOAD gate the agent's R8
-        auto-rollback relies on."""
-        text = self.active_text()
+    def _loadable_bytes(self, data: bytes) -> bool:
+        text = data.decode("utf-8", "replace")
         try:
             import yaml  # present in the vllm-sr env; optional for a stdlib-only run
         except Exception:  # pragma: no cover - stdlib-only fallback
@@ -83,6 +60,42 @@ class RouterState:
             return True
         except Exception:  # noqa: BLE001 - any parse error == not loadable
             return False
+
+    def _refresh(self):
+        """Read the file, count hot-reload, and keep last-good loaded bytes."""
+        try:
+            with open(self.config_path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            data = b""
+        with self._lock:
+            if self._last_seen is None:
+                self._last_seen = data
+            elif data != self._last_seen:
+                self._last_seen = data
+                self.reload_count += 1
+            if self._loadable_bytes(data):
+                self._loaded = data
+            return data
+
+    def active_hash(self) -> str:
+        return fleet_lib.sha256_hex(self._refresh())
+
+    def loaded_hash(self) -> str:
+        self._refresh()
+        with self._lock:
+            data = self._loaded or b""
+        return fleet_lib.sha256_hex(data)
+
+    def active_text(self) -> str:
+        return self._refresh().decode("utf-8", "replace")
+
+    def active_loadable(self) -> bool:
+        """Mirror the real router's GET /config/router: the active config must
+        PARSE (handleConfigGet returns 500 on invalid YAML). A converged byte-hash
+        only proves the file was READ; this models the LOAD gate the agent's R8
+        auto-rollback relies on."""
+        return self._loadable_bytes(self._refresh())
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -113,6 +126,8 @@ def make_handler(state: RouterState):
                 return self._send(200, {"status": "ok"})
             if self.path == "/config/hash":
                 return self._send(200, {"hash": state.active_hash()})
+            if self.path == "/config/loaded-hash":
+                return self._send(200, {"hash": state.loaded_hash(), "source": "loaded"})
             if self.path == "/config/router":
                 if not state.active_loadable():
                     return self._send(500, {"error": "PARSE_ERROR",
