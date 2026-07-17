@@ -1,0 +1,426 @@
+{
+  "box": "halo-b",
+  "cache_overlay": {
+    "llamacpp": {
+      "cases": 3,
+      "cell_id": "llamacpp-resident-p8",
+      "exact_hit_rate": 0.0,
+      "schema": "bestcfg-cache-overlay/v1",
+      "semantic_hit_rate": 0.0,
+      "server": "llamacpp",
+      "threshold": "0.92",
+      "ttft_hit_exact_ms": null,
+      "ttft_hit_semantic_ms": null,
+      "ttft_miss_ms": null,
+      "ttft_saved_ms": null
+    },
+    "ollama": {
+      "cases": 3,
+      "cell_id": "ollama-resident-p8",
+      "exact_hit_rate": 0.6666666666666666,
+      "schema": "bestcfg-cache-overlay/v1",
+      "semantic_hit_rate": 0.6666666666666666,
+      "server": "ollama",
+      "threshold": "0.92",
+      "ttft_hit_exact_ms": 689.1768560017226,
+      "ttft_hit_semantic_ms": 658.5904929961544,
+      "ttft_miss_ms": 1040.6766116648214,
+      "ttft_saved_ms": 351.49975566309877
+    }
+  },
+  "cells": [
+    {
+      "c1": {
+        "aggregate_decode_tps": 29.32230049850038,
+        "concurrency": 1,
+        "decode_tps_median": 30.526034067795678,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 152.47547733209407,
+        "ttft_ms_p50": 152.46795299754012,
+        "ttft_ms_p95": 156.53676800138783
+      },
+      "c8": {
+        "aggregate_decode_tps": 29.656997758482824,
+        "concurrency": 8,
+        "decode_tps_median": 30.9180260127793,
+        "ok_runs": 8,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 15326.70605174826,
+        "ttft_ms_p50": 17387.66822699108,
+        "ttft_ms_p95": 30396.387663000496
+      },
+      "cell_id": "llamacpp-auto-p1",
+      "model": "gpt-oss-120b",
+      "num_parallel": 1,
+      "power": {
+        "api": "openai",
+        "decode_tps": 26.93142901075136,
+        "idle_w": 16.263214285714287,
+        "load_w_mean": 109.05117021276595,
+        "load_w_peak": 117.089,
+        "model": "gpt-oss-120b",
+        "tok_per_watt_load": 0.2469613939786834,
+        "tok_per_watt_net_idle": 0.2902470341293475
+      },
+      "reason": null,
+      "residency": "auto",
+      "resource": {
+        "gpu_resident_frac": null,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 33198424064,
+        "peak_sys_used_gib": 30.92,
+        "peak_vram_used_b": 34672709632.0,
+        "peak_vram_used_gib": 32.29
+      },
+      "server": "llamacpp",
+      "status": "loaded"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": 27.818341864493593,
+        "concurrency": 1,
+        "decode_tps_median": 28.286561961683436,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 168.83268133581927,
+        "ttft_ms_p50": 161.75967700837646,
+        "ttft_ms_p95": 194.94825799483806
+      },
+      "c8": {
+        "aggregate_decode_tps": null,
+        "concurrency": 8,
+        "decode_tps_median": null,
+        "ok_runs": 0,
+        "success_rate": 0.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "cell_id": "llamacpp-auto-p8",
+      "model": "gpt-oss-120b",
+      "num_parallel": 8,
+      "power": null,
+      "reason": null,
+      "residency": "auto",
+      "resource": {
+        "gpu_resident_frac": null,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 33252270080,
+        "peak_sys_used_gib": 30.97,
+        "peak_vram_used_b": 34807980032.0,
+        "peak_vram_used_gib": 32.42
+      },
+      "server": "llamacpp",
+      "status": "loaded"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": 50.888987306156565,
+        "concurrency": 1,
+        "decode_tps_median": 52.717275387021374,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 88.26940833144666,
+        "ttft_ms_p50": 86.48751500004437,
+        "ttft_ms_p95": 93.1191179988673
+      },
+      "c8": {
+        "aggregate_decode_tps": 50.7159905193572,
+        "concurrency": 8,
+        "decode_tps_median": 52.942799913749695,
+        "ok_runs": 8,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 9005.040726122388,
+        "ttft_ms_p50": 10245.861128001707,
+        "ttft_ms_p95": 17773.218739996082
+      },
+      "cell_id": "llamacpp-resident-p1",
+      "model": "gpt-oss-120b",
+      "num_parallel": 1,
+      "power": {
+        "api": "openai",
+        "decode_tps": 48.66209043790209,
+        "idle_w": 16.18092857142857,
+        "load_w_mean": 100.08611111111111,
+        "load_w_peak": 108.02,
+        "model": "gpt-oss-120b",
+        "tok_per_watt_load": 0.48620223023631737,
+        "tok_per_watt_net_idle": 0.5799652532176733
+      },
+      "reason": null,
+      "residency": "resident",
+      "resource": {
+        "gpu_resident_frac": null,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 4129320960,
+        "peak_sys_used_gib": 3.85,
+        "peak_vram_used_b": 63476736000.0,
+        "peak_vram_used_gib": 59.12
+      },
+      "server": "llamacpp",
+      "status": "loaded"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": 51.134735489392504,
+        "concurrency": 1,
+        "decode_tps_median": 52.92266065305175,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 84.63605799382397,
+        "ttft_ms_p50": 84.2694430029951,
+        "ttft_ms_p95": 85.56162798777223
+      },
+      "c8": {
+        "aggregate_decode_tps": 95.17131631721604,
+        "concurrency": 8,
+        "decode_tps_median": 16.44945209194067,
+        "ok_runs": 8,
+        "success_rate": 1.0,
+        "ttft_ms_mean": 2958.9037682471826,
+        "ttft_ms_p50": 2974.0593409951543,
+        "ttft_ms_p95": 2975.7631669926923
+      },
+      "cell_id": "llamacpp-resident-p8",
+      "model": "gpt-oss-120b",
+      "num_parallel": 8,
+      "power": {
+        "api": "openai",
+        "decode_tps": 52.43137500375143,
+        "idle_w": 17.68542857142857,
+        "load_w_mean": 81.79425,
+        "load_w_peak": 104.018,
+        "model": "gpt-oss-120b",
+        "tok_per_watt_load": 0.6410154137210308,
+        "tok_per_watt_net_idle": 0.81784961625241
+      },
+      "reason": null,
+      "residency": "resident",
+      "resource": {
+        "gpu_resident_frac": null,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 4219355136,
+        "peak_sys_used_gib": 3.93,
+        "peak_vram_used_b": 63623925760.0,
+        "peak_vram_used_gib": 59.25
+      },
+      "server": "llamacpp",
+      "status": "loaded"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": null,
+        "concurrency": 1,
+        "decode_tps_median": null,
+        "ok_runs": 0,
+        "success_rate": 0.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "c8": {
+        "aggregate_decode_tps": null,
+        "concurrency": 8,
+        "decode_tps_median": null,
+        "ok_runs": 0,
+        "success_rate": 0.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "cell_id": "ollama-auto-p1",
+      "model": "gpt-oss:120b",
+      "num_parallel": 1,
+      "power": null,
+      "reason": "loaded but produced no decode tokens (probe empty)",
+      "residency": "auto",
+      "resource": {
+        "gpu_resident_frac": 0.339,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 3985252352,
+        "peak_sys_used_gib": 3.71,
+        "peak_vram_used_b": 29132771328.0,
+        "peak_vram_used_gib": 27.13
+      },
+      "server": "ollama",
+      "status": "load-fail"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": null,
+        "concurrency": null,
+        "decode_tps_median": null,
+        "ok_runs": 0,
+        "success_rate": null,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "c8": {
+        "aggregate_decode_tps": null,
+        "concurrency": null,
+        "decode_tps_median": null,
+        "ok_runs": 0,
+        "success_rate": null,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "cell_id": "ollama-auto-p8",
+      "model": "gpt-oss:120b",
+      "num_parallel": 8,
+      "power": null,
+      "reason": "warm load failed (model missing / OOM)",
+      "residency": "auto",
+      "resource": {
+        "gpu_resident_frac": null,
+        "peak_gtt_used_b": null,
+        "peak_gtt_used_gib": null,
+        "peak_sys_used_b": null,
+        "peak_sys_used_gib": null,
+        "peak_vram_used_b": null,
+        "peak_vram_used_gib": null
+      },
+      "server": "ollama",
+      "status": "load-fail"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": 33.65969253758498,
+        "concurrency": 1,
+        "decode_tps_median": 36.54663950794518,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "c8": {
+        "aggregate_decode_tps": 35.514355654906666,
+        "concurrency": 8,
+        "decode_tps_median": 36.53120251459113,
+        "ok_runs": 8,
+        "success_rate": 1.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "cell_id": "ollama-resident-p1",
+      "model": "gpt-oss:120b-vram",
+      "num_parallel": 1,
+      "power": {
+        "api": "ollama",
+        "decode_tps": 36.359772337090604,
+        "idle_w": 14.829357142857143,
+        "load_w_mean": 88.77028571428572,
+        "load_w_peak": 102.091,
+        "model": "gpt-oss:120b-vram",
+        "tok_per_watt_load": 0.40959395415395466,
+        "tok_per_watt_net_idle": 0.4917408131000987
+      },
+      "reason": null,
+      "residency": "resident",
+      "resource": {
+        "gpu_resident_frac": 1.0,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 5266132992,
+        "peak_sys_used_gib": 4.9,
+        "peak_vram_used_b": 69755940864.0,
+        "peak_vram_used_gib": 64.97
+      },
+      "server": "ollama",
+      "status": "loaded"
+    },
+    {
+      "c1": {
+        "aggregate_decode_tps": 33.80790942907578,
+        "concurrency": 1,
+        "decode_tps_median": 36.56228799942871,
+        "ok_runs": 3,
+        "success_rate": 1.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "c8": {
+        "aggregate_decode_tps": 65.71378991820633,
+        "concurrency": 8,
+        "decode_tps_median": 12.560560275367752,
+        "ok_runs": 8,
+        "success_rate": 1.0,
+        "ttft_ms_mean": null,
+        "ttft_ms_p50": null,
+        "ttft_ms_p95": null
+      },
+      "cell_id": "ollama-resident-p8",
+      "model": "gpt-oss:120b-vram",
+      "num_parallel": 8,
+      "power": {
+        "api": "ollama",
+        "decode_tps": 36.43788570980524,
+        "idle_w": 17.552142857142858,
+        "load_w_mean": 88.07533333333333,
+        "load_w_peak": 104.075,
+        "model": "gpt-oss:120b-vram",
+        "tok_per_watt_load": 0.4137127199042325,
+        "tok_per_watt_net_idle": 0.5166794846314722
+      },
+      "reason": null,
+      "residency": "resident",
+      "resource": {
+        "gpu_resident_frac": 1.0,
+        "peak_gtt_used_b": 25006080.0,
+        "peak_gtt_used_gib": 0.02,
+        "peak_sys_used_b": 5234618368,
+        "peak_sys_used_gib": 4.88,
+        "peak_vram_used_b": 74701594624.0,
+        "peak_vram_used_gib": 69.57
+      },
+      "server": "ollama",
+      "status": "loaded"
+    }
+  ],
+  "generated_utc": "2026-07-14T11:50:32Z",
+  "model_flagship": "gpt-oss:120b",
+  "recommended_config": "gpt-oss-120b on Halo-B: llamacpp + resident + NUM_PARALLEL=8 -> 95.2 tok/s aggregate @ c8, 0.641 tok/s/W, TTFT p95 2976 ms [NOTE: no cell met the TTFT p95<=2000ms gate; winner is best-throughput]",
+  "schema": "bestcfg-matrix/v1",
+  "scoring": {
+    "eligible_count": 6,
+    "per_server_winner": {
+      "llamacpp": {
+        "cell_id": "llamacpp-resident-p8",
+        "ttft_gate_met": false
+      },
+      "ollama": {
+        "cell_id": "ollama-resident-p8",
+        "ttft_gate_met": false
+      }
+    },
+    "ranked_cell_ids": [
+      "llamacpp-resident-p8",
+      "ollama-resident-p8",
+      "llamacpp-resident-p1",
+      "ollama-resident-p1",
+      "llamacpp-auto-p1",
+      "llamacpp-auto-p8"
+    ],
+    "winner_cell_id": "llamacpp-resident-p8",
+    "winner_ttft_gate_met": false
+  },
+  "shape": {
+    "concurrency_hi": 8,
+    "concurrency_lo": 1,
+    "max_tokens": 128,
+    "model_flagship": "gpt-oss:120b",
+    "oom_min_tps": 3.0,
+    "prompt_tokens": 256,
+    "ttft_gate_ms": 2000.0
+  }
+}

@@ -36,6 +36,7 @@ Env / args:
   LABEL      tag stored in the JSON (e.g. "baseline" or "post-head-trim")
 Usage: python3 route-accuracy.py [LABEL]
 """
+
 import json
 import os
 import socket
@@ -51,8 +52,11 @@ BOX = os.environ.get("BOX", socket.gethostname() or "box")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # repo root = .../deploy/recipes/strix-halo-fleet-2box/perf -> up 4
 REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", ".."))
-CASES = os.environ.get("CASES", os.path.join(REPO_ROOT, "e2e/testcases/testdata/domain_classify_cases.json"))
-LABEL = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LABEL", "baseline"))
+CASES = os.environ.get(
+    "CASES",
+    os.path.join(REPO_ROOT, "e2e/testcases/testdata/domain_classify_cases.json"),
+)
+LABEL = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LABEL", "baseline")
 OUT = os.environ.get("OUT", os.path.join(SCRIPT_DIR, "route-accuracy-%s.json" % BOX))
 
 
@@ -62,20 +66,29 @@ def norm(s):
 
 def classify_intent(text):
     body = json.dumps({"text": text}).encode()
-    req = urllib.request.Request(INTENT_URL, data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        INTENT_URL, data=body, headers={"Content-Type": "application/json"}
+    )
     resp = urllib.request.urlopen(req, timeout=120)
     return json.load(resp)
 
 
 def main():
     cases = json.load(open(CASES, encoding="utf-8"))
-    print("route-accuracy: label=%s  base=%s  cases=%d  corpus=%s" % (LABEL, BASE_URL, len(cases), CASES))
+    print(
+        "route-accuracy: label=%s  base=%s  cases=%d  corpus=%s"
+        % (LABEL, BASE_URL, len(cases), CASES)
+    )
 
-    per_cat = defaultdict(lambda: {
-        "n": 0, "domain_correct": 0,
-        "decisions": defaultdict(int), "models": defaultdict(int),
-        "errors": 0,
-    })
+    per_cat = defaultdict(
+        lambda: {
+            "n": 0,
+            "domain_correct": 0,
+            "decisions": defaultdict(int),
+            "models": defaultdict(int),
+            "errors": 0,
+        }
+    )
     records = []
     overall_correct = 0
     overall_n = 0
@@ -103,11 +116,17 @@ def main():
             overall_correct += 1
         st["decisions"][decision] += 1
         st["models"][model] += 1
-        records.append({
-            "category": expected, "question": q, "domain_correct": correct,
-            "matched_domains": domains, "routing_decision": decision,
-            "recommended_model": model, "confidence": conf,
-        })
+        records.append(
+            {
+                "category": expected,
+                "question": q,
+                "domain_correct": correct,
+                "matched_domains": domains,
+                "routing_decision": decision,
+                "recommended_model": model,
+                "confidence": conf,
+            }
+        )
         if (i + 1) % 25 == 0:
             print("  %d/%d  (%.0fs)" % (i + 1, len(cases), time.time() - t0))
 
@@ -150,13 +169,22 @@ def main():
 
     # Print readable summary
     print("\n==== ROUTING-ACCURACY BASELINE (%s) ====" % LABEL)
-    print("overall domain accuracy: %.1f%%  (%d/%d)" % (overall_acc * 100, overall_correct, overall_n))
+    print(
+        "overall domain accuracy: %.1f%%  (%d/%d)"
+        % (overall_acc * 100, overall_correct, overall_n)
+    )
     print("\nper-category domain accuracy + dominant decision -> model:")
-    print("  %-18s %6s  %-8s  %-26s %s" % ("category", "acc", "n", "top_decision", "top_model"))
+    print(
+        "  %-18s %6s  %-8s  %-26s %s"
+        % ("category", "acc", "n", "top_decision", "top_model")
+    )
     for cat, s in summary.items():
         top_dec = next(iter(s["decisions"]), "-")
         top_mod = next(iter(s["models"]), "-")
-        print("  %-18s %5.0f%%  %-8d  %-26s %s" % (cat, (s["domain_accuracy"] or 0) * 100, s["n"], top_dec, top_mod))
+        print(
+            "  %-18s %5.0f%%  %-8d  %-26s %s"
+            % (cat, (s["domain_accuracy"] or 0) * 100, s["n"], top_dec, top_mod)
+        )
     print("\ndecision distribution:", dict(list(out["decision_distribution"].items())))
     print("model distribution   :", dict(list(out["model_distribution"].items())))
     print("\nwrote %s" % OUT)

@@ -1,0 +1,113 @@
+{
+  "aggregate": {
+    "aggregate_decode_tps": 30.651649299018672,
+    "concurrency": 1,
+    "decode_tps_mean": 31.85642976876969,
+    "decode_tps_median": 30.22276396960769,
+    "decode_tps_p95": 35.95878357029134,
+    "ok_runs": 8,
+    "prefill_tps_mean": null,
+    "runs": 8,
+    "success_rate": 1.0,
+    "total_completion_tokens": 1024,
+    "ttft_ms_mean": 137.63750449834333,
+    "ttft_ms_p95": 148.2185710046906,
+    "wall_s": 33.407663973004674
+  },
+  "api": "openai",
+  "backend_url": "http://localhost:8081/v1",
+  "label": "p4-c1",
+  "model": "ggml-org/gpt-oss-120b-GGUF",
+  "runs_detail": [
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 30.22479395345333,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 145.64087300095707,
+      "wall_s": 4.380574622991844
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 30.216724277923596,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 146.0023719992023,
+      "wall_s": 4.382067102997098
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 30.22073398576205,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 146.7017339891754,
+      "wall_s": 4.382204420995549
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 30.009948239231562,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 146.57420499133877,
+      "wall_s": 4.41182647999085
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 29.908876213231068,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 148.2185710046906,
+      "wall_s": 4.427884550008457
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 34.33635547730969,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 146.25519599940162,
+      "wall_s": 3.874082398993778
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 35.95878357029134,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 90.16170899849385,
+      "wall_s": 3.6497926890006056
+    },
+    {
+      "api": "openai",
+      "completion_tokens": 128,
+      "decode_tps": 33.975222432954894,
+      "ok": true,
+      "prefill_tps": null,
+      "prompt_tokens": 277,
+      "ttft_ms": 131.54537600348704,
+      "wall_s": 3.89899679600785
+    }
+  ],
+  "schema": "tokrate-probe/v1",
+  "shape": {
+    "concurrency": 1,
+    "max_tokens": 128,
+    "num_ctx": 0,
+    "num_gpu": -1,
+    "prompt_tokens": 256,
+    "runs": 8,
+    "use_mmap": null
+  }
+}

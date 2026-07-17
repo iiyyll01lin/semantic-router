@@ -1,0 +1,308 @@
+{
+  "box": "halo-b",
+  "candidates": [
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-qwen3_coder_30b.json",
+        "quality": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/quality-candidate-qwen3_coder_30b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-qwen3_coder_30b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "Qwen3-Coder 30B A3B",
+      "power": {
+        "decode_tps": 26.020029188509827,
+        "load_samples": 28,
+        "load_w_mean": 75.1209642857143,
+        "tok_per_watt_load": 0.34637506900930504
+      },
+      "priority": "P0",
+      "quality": {
+        "accuracy": 0.5476,
+        "correct": 23,
+        "n": 42,
+        "wall_s": 103.1
+      },
+      "slug": "qwen3_coder_30b",
+      "speed": {
+        "decode_tps": 70.96312317719918,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 18.06,
+        "verdict": "usable"
+      },
+      "status": "measured",
+      "tag": "qwen3-coder:30b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-qwen3_6_27b.json",
+        "quality": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/quality-candidate-qwen3_6_27b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-qwen3_6_27b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "Qwen3.6 27B",
+      "power": {
+        "decode_tps": 9.132910316271495,
+        "load_samples": 78,
+        "load_w_mean": 111.99926923076922,
+        "tok_per_watt_load": 0.08154437416420605
+      },
+      "priority": "P0",
+      "quality": {
+        "accuracy": 0.6905,
+        "correct": 29,
+        "n": 42,
+        "wall_s": 1655.3
+      },
+      "slug": "qwen3_6_27b",
+      "speed": {
+        "decode_tps": 13.456799607055395,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 15.6,
+        "verdict": "usable"
+      },
+      "status": "measured",
+      "tag": "qwen3.6:27b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-qwen3_next_80b.json",
+        "quality": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/quality-candidate-qwen3_next_80b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-qwen3_next_80b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "Qwen3-Next 80B A3B",
+      "power": {
+        "decode_tps": 26.59893082688283,
+        "load_samples": 27,
+        "load_w_mean": 87.16325925925925,
+        "tok_per_watt_load": 0.3051621870605677
+      },
+      "priority": "P0",
+      "quality": {
+        "accuracy": 0.619,
+        "correct": 26,
+        "n": 42,
+        "wall_s": 1351.4
+      },
+      "slug": "qwen3_next_80b",
+      "speed": {
+        "decode_tps": 49.557160731191814,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 47.4,
+        "verdict": "usable"
+      },
+      "status": "measured",
+      "tag": "qwen3-next:80b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-exaone4_0_32b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-exaone4_0_32b.json"
+      },
+      "default_ok": false,
+      "license": "EXAONE AI Model License 1.2 - NC",
+      "name": "EXAONE 4.0 32B",
+      "power": {
+        "decode_tps": 11.027339830452243,
+        "load_samples": 45,
+        "load_w_mean": 141.03386666666668,
+        "tok_per_watt_load": 0.07818930368345742
+      },
+      "priority": "P1",
+      "skip_reason": "quality pass exceeded capped runner or produced no JSON",
+      "slug": "exaone4_0_32b",
+      "speed": {
+        "decode_tps": 11.117217311042744,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 19.35,
+        "verdict": "usable"
+      },
+      "status": "partial",
+      "tag": "ingu627/exaone4.0:32b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-openthinker2_32b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-openthinker2_32b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "OpenThinker2 32B",
+      "power": {
+        "decode_tps": 10.836657550939947,
+        "load_samples": 67,
+        "load_w_mean": 139.95373134328358,
+        "tok_per_watt_load": 0.07743028675926761
+      },
+      "priority": "P1",
+      "skip_reason": "quality pass exceeded capped runner or produced no JSON",
+      "slug": "openthinker2_32b",
+      "speed": {
+        "decode_tps": 10.973537999018982,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 19.69,
+        "verdict": "usable"
+      },
+      "status": "partial",
+      "tag": "openthinker:32b-v2-q4_K_M"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-deepseek_r1_32b.json",
+        "quality": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/quality-candidate-deepseek_r1_32b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-deepseek_r1_32b.json"
+      },
+      "default_ok": true,
+      "license": "MIT",
+      "name": "DeepSeek-R1 Distill 32B",
+      "power": {
+        "decode_tps": 7.141945136656191,
+        "load_samples": 98,
+        "load_w_mean": 113.6349693877551,
+        "tok_per_watt_load": 0.0628498883322248
+      },
+      "priority": "P1/P2",
+      "quality": {
+        "accuracy": 0.5,
+        "correct": 21,
+        "n": 42,
+        "wall_s": 1125.7
+      },
+      "slug": "deepseek_r1_32b",
+      "speed": {
+        "decode_tps": 10.976752782765992,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 19.69,
+        "verdict": "usable"
+      },
+      "status": "measured",
+      "tag": "deepseek-r1:32b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-magistral_small_24b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-magistral_small_24b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "Magistral Small 24B",
+      "power": {
+        "decode_tps": 14.977097911139474,
+        "load_samples": 48,
+        "load_w_mean": 140.57577083333334,
+        "tok_per_watt_load": 0.10654110464666293
+      },
+      "priority": "P1/P2",
+      "skip_reason": "quality pass exceeded capped runner or produced no JSON",
+      "slug": "magistral_small_24b",
+      "speed": {
+        "decode_tps": 15.16778053743348,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 14.65,
+        "verdict": "usable"
+      },
+      "status": "partial",
+      "tag": "magistral:24b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-mistral_small_24b.json",
+        "quality": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/quality-candidate-mistral_small_24b.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-mistral_small_24b.json"
+      },
+      "default_ok": true,
+      "license": "Apache-2.0",
+      "name": "Mistral Small 3.2 24B",
+      "power": {
+        "decode_tps": 14.975469771029552,
+        "load_samples": 49,
+        "load_w_mean": 140.5224693877551,
+        "tok_per_watt_load": 0.10656993031987302
+      },
+      "priority": "P1/P2",
+      "quality": {
+        "accuracy": 0.5476,
+        "correct": 23,
+        "n": 42,
+        "wall_s": 523.9
+      },
+      "slug": "mistral_small_24b",
+      "speed": {
+        "decode_tps": 15.177547616165828,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 14.65,
+        "verdict": "usable"
+      },
+      "status": "measured",
+      "tag": "mistral-small:24b"
+    },
+    {
+      "artifacts": {
+        "power": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/pw-candidate-phi4_reasoning_plus.json",
+        "speed": "deploy/recipes/strix-halo-fleet-2box/perf/quant-frontier/sweep-candidate-phi4_reasoning_plus.json"
+      },
+      "default_ok": true,
+      "license": "MIT",
+      "name": "Phi-4 reasoning plus",
+      "power": {
+        "decode_tps": 19.52649967204125,
+        "load_samples": 37,
+        "load_w_mean": 140.08691891891894,
+        "tok_per_watt_load": 0.13938845841375821
+      },
+      "priority": "P1/P2",
+      "skip_reason": "quality pass exceeded capped runner or produced no JSON",
+      "slug": "phi4_reasoning_plus",
+      "speed": {
+        "decode_tps": 19.767873819901254,
+        "mem_mode": "vram-fit",
+        "peak_vram_gib": 11.64,
+        "verdict": "usable"
+      },
+      "status": "partial",
+      "tag": "phi4-reasoning:plus"
+    },
+    {
+      "attempted_tags": [
+        "MichelRosselli/GLM-4.5-Air:Q4_K_M",
+        "MichelRosselli/GLM-4.5-Air:Q2_K"
+      ],
+      "license": "MIT",
+      "name": "GLM-4.5-Air",
+      "priority": "P1",
+      "skip_reason": "preferred Q4 community tag is 73GB and Q2 fallback is not comparable to Q4/Q8 frontier; skipped to keep P1/P2 sweep bounded",
+      "status": "skipped"
+    },
+    {
+      "attempted_tags": [
+        "deepseek-r1:70b"
+      ],
+      "license": "MIT",
+      "name": "DeepSeek-R1 Distill 70B",
+      "priority": "P1/P2",
+      "skip_reason": "lower-priority 70B reasoning tag would add large pull plus likely long 42Q quality runtime after 32B reasoning candidate was measured",
+      "status": "skipped"
+    },
+    {
+      "attempted_tags": [
+        "falcon-h1:34b-q4_K_M",
+        "falcon-h1:34b"
+      ],
+      "license": "Falcon-LLM License",
+      "name": "Falcon-H1 34B",
+      "priority": "P1/P2",
+      "skip_reason": "both attempted Ollama manifests returned pull model manifest: file does not exist",
+      "status": "skipped"
+    }
+  ],
+  "constraints": {
+    "power": "--max-tokens 768 sustained prompt --no-mmap; P1/P2 capped",
+    "quality": "--no-think --num-predict 2048 --num-gpu 999 --no-use-mmap --limit 42; P1/P2 capped at 1800s",
+    "speed": "NUM_GPU=999 USE_MMAP=false NUM_CTX=4096 MAX_TOKENS=96 PROMPT_TOKENS=256 RUNS=2 WARMUP=1"
+  },
+  "generated_utc": "2026-07-15T20:57:00Z",
+  "schema": "strix-halo-candidate-summary/v1"
+}

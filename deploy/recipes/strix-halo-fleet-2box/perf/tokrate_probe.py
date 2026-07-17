@@ -36,12 +36,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+
+# Optional per-request wall-clock deadline (seconds), read from the environment so a
+# caller (e.g. bestcfg-matrix.sh's per-cell probes) can bound a pathologically slow
+# CPU-offload decode that trickles tokens forever and therefore never trips the
+# per-read socket timeout. 0/unset = disabled (default => byte-for-byte unchanged
+# behavior for every existing caller). When set, a request exceeding the deadline is
+# reported as a FAILED run (ok=False, TimeoutError), so a cell that can only decode
+# far below the usable floor is recorded skip/load-fail-with-reason instead of
+# hanging the whole matrix on one bad backend.
+_CLIENT_DEADLINE_S = float(os.environ.get("TOKRATE_DEADLINE", "0") or 0)
 
 # A deterministic filler used to grow the prompt toward a target token budget.
 # Kept ASCII + generic so tokenization is stable across model families.
@@ -78,11 +89,22 @@ def _open_stream(url, payload, timeout):
     req = urllib.request.Request(
         url, data=data, method="POST", headers={"Content-Type": "application/json"}
     )
-    return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 (trusted local URL)
+    return urllib.request.urlopen(
+        req, timeout=timeout
+    )  # noqa: S310 (trusted local URL)
 
 
-def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0,
-               num_gpu=-1, use_mmap=None):
+def run_ollama(
+    base_url,
+    model,
+    prompt,
+    max_tokens,
+    think,
+    timeout,
+    num_ctx=0,
+    num_gpu=-1,
+    use_mmap=None,
+):
     """One streaming /api/generate call. Returns a per-run metrics dict."""
     url = base_url.rstrip("/") + "/api/generate"
     options = {"num_predict": max_tokens, "temperature": 0}
@@ -113,6 +135,10 @@ def run_ollama(base_url, model, prompt, max_tokens, think, timeout, num_ctx=0,
     final = {}
     with _open_stream(url, payload, timeout) as resp:
         for raw in resp:
+            if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line:
                 continue
@@ -163,6 +189,10 @@ def run_openai(base_url, model, prompt, max_tokens, extra_body, timeout):
     usage = {}
     with _open_stream(url, payload, timeout) as resp:
         for raw in resp:
+            if _CLIENT_DEADLINE_S and (time.perf_counter() - t0) > _CLIENT_DEADLINE_S:
+                raise TimeoutError(
+                    "client deadline %.0fs exceeded" % _CLIENT_DEADLINE_S
+                )
             line = raw.decode("utf-8", "replace").strip()
             if not line or not line.startswith("data:"):
                 continue
@@ -213,18 +243,38 @@ def run_openai(base_url, model, prompt, max_tokens, extra_body, timeout):
 
 
 def one_run(args, prompt):
+    # When a client deadline is set, also cap the per-read socket timeout at it so a
+    # fully-frozen (zero-token) decode is bounded too, not just a slow trickle.
+    eff_timeout = args.timeout
+    if _CLIENT_DEADLINE_S:
+        eff_timeout = min(args.timeout, _CLIENT_DEADLINE_S)
     try:
         if args.api == "ollama":
             return run_ollama(
-                args.backend_url, args.model, prompt, args.max_tokens, args.think,
-                args.timeout, getattr(args, "num_ctx", 0),
-                getattr(args, "num_gpu", -1), getattr(args, "use_mmap", None),
+                args.backend_url,
+                args.model,
+                prompt,
+                args.max_tokens,
+                args.think,
+                eff_timeout,
+                getattr(args, "num_ctx", 0),
+                getattr(args, "num_gpu", -1),
+                getattr(args, "use_mmap", None),
             )
         return run_openai(
-            args.backend_url, args.model, prompt, args.max_tokens, args.extra_body, args.timeout
+            args.backend_url,
+            args.model,
+            prompt,
+            args.max_tokens,
+            args.extra_body,
+            eff_timeout,
         )
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
-        return {"ok": False, "api": args.api, "error": "%s: %s" % (type(exc).__name__, exc)}
+        return {
+            "ok": False,
+            "api": args.api,
+            "error": "%s: %s" % (type(exc).__name__, exc),
+        }
 
 
 def aggregate(runs, wall_s, concurrency):
@@ -243,10 +293,13 @@ def aggregate(runs, wall_s, concurrency):
         "decode_tps_p95": _percentile(decode, 95),
         "prefill_tps_mean": statistics.fmean(prefill) if prefill else None,
         "ttft_ms_mean": statistics.fmean(ttft) if ttft else None,
+        "ttft_ms_median": statistics.median(ttft) if ttft else None,
         "ttft_ms_p95": _percentile(ttft, 95),
         # Aggregate decode throughput across all concurrent streams over the
         # measured wall time -- the number that actually saturates the device.
-        "aggregate_decode_tps": (total_completion / wall_s) if wall_s and total_completion else None,
+        "aggregate_decode_tps": (
+            (total_completion / wall_s) if wall_s and total_completion else None
+        ),
         "total_completion_tokens": total_completion,
         "wall_s": wall_s,
     }
@@ -254,31 +307,70 @@ def aggregate(runs, wall_s, concurrency):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="tokrate_probe", description=__doc__)
-    p.add_argument("--backend-url", required=True, help="e.g. http://localhost:11434 or http://localhost:8080/v1")
+    p.add_argument(
+        "--backend-url",
+        required=True,
+        help="e.g. http://localhost:11434 or http://localhost:8080/v1",
+    )
     p.add_argument("--api", choices=["ollama", "openai", "auto"], default="auto")
     p.add_argument("--model", required=True, help="backend model tag/name")
     p.add_argument("--max-tokens", type=int, default=128, help="decode length target")
-    p.add_argument("--num-ctx", type=int, default=0,
-                   help="ollama: force options.num_ctx (KV-cache size); 0 = server default. "
-                        "Used by maxmodel-sweep.sh to drive a footprint past the VRAM carveout.")
-    p.add_argument("--num-gpu", type=int, default=-1,
-                   help="ollama: force options.num_gpu (# layers pinned on GPU); <0 = do not "
-                        "send (server auto-estimate). Set high (e.g. 999) to pin ALL layers on "
-                        "GPU so weights stay resident in the VRAM carveout instead of being "
-                        "CPU-offloaded.")
-    p.add_argument("--use-mmap", dest="use_mmap", action="store_true", default=None,
-                   help="ollama: send options.use_mmap=true (default: send nothing).")
-    p.add_argument("--no-use-mmap", dest="use_mmap", action="store_false", default=None,
-                   help="ollama: send options.use_mmap=false -- load weights straight into the "
-                        "VRAM carveout instead of mmap'ing from disk (pair with --num-gpu 999 to "
-                        "bypass Ollama's system-RAM layer budget). Default sends nothing.")
-    p.add_argument("--prompt-tokens", type=int, default=256, help="approx prompt token budget")
-    p.add_argument("--prompt", default="", help="explicit prompt (overrides --prompt-tokens)")
-    p.add_argument("--runs", type=int, default=3, help="sequential batches of --concurrency streams")
-    p.add_argument("--concurrency", type=int, default=1, help="parallel streams per batch")
-    p.add_argument("--warmup", type=int, default=1, help="warmup runs (model load) not counted")
-    p.add_argument("--think", action="store_true", help="allow thinking models to think (Ollama)")
-    p.add_argument("--extra-body", default="", help="JSON merged into the OpenAI request body")
+    p.add_argument(
+        "--num-ctx",
+        type=int,
+        default=0,
+        help="ollama: force options.num_ctx (KV-cache size); 0 = server default. "
+        "Used by maxmodel-sweep.sh to drive a footprint past the VRAM carveout.",
+    )
+    p.add_argument(
+        "--num-gpu",
+        type=int,
+        default=-1,
+        help="ollama: force options.num_gpu (# layers pinned on GPU); <0 = do not "
+        "send (server auto-estimate). Set high (e.g. 999) to pin ALL layers on "
+        "GPU so weights stay resident in the VRAM carveout instead of being "
+        "CPU-offloaded.",
+    )
+    p.add_argument(
+        "--use-mmap",
+        dest="use_mmap",
+        action="store_true",
+        default=None,
+        help="ollama: send options.use_mmap=true (default: send nothing).",
+    )
+    p.add_argument(
+        "--no-use-mmap",
+        dest="use_mmap",
+        action="store_false",
+        default=None,
+        help="ollama: send options.use_mmap=false -- load weights straight into the "
+        "VRAM carveout instead of mmap'ing from disk (pair with --num-gpu 999 to "
+        "bypass Ollama's system-RAM layer budget). Default sends nothing.",
+    )
+    p.add_argument(
+        "--prompt-tokens", type=int, default=256, help="approx prompt token budget"
+    )
+    p.add_argument(
+        "--prompt", default="", help="explicit prompt (overrides --prompt-tokens)"
+    )
+    p.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="sequential batches of --concurrency streams",
+    )
+    p.add_argument(
+        "--concurrency", type=int, default=1, help="parallel streams per batch"
+    )
+    p.add_argument(
+        "--warmup", type=int, default=1, help="warmup runs (model load) not counted"
+    )
+    p.add_argument(
+        "--think", action="store_true", help="allow thinking models to think (Ollama)"
+    )
+    p.add_argument(
+        "--extra-body", default="", help="JSON merged into the OpenAI request body"
+    )
     p.add_argument("--timeout", type=float, default=600.0)
     p.add_argument("--label", default="", help="free-form label carried into the JSON")
     p.add_argument("--out", default="", help="write metrics JSON here")
@@ -302,8 +394,10 @@ def main(argv=None):
         batch = [None] * args.concurrency
         threads = []
         for i in range(args.concurrency):
+
             def _worker(idx=i):
                 batch[idx] = one_run(args, prompt)
+
             th = threading.Thread(target=_worker)
             th.start()
             threads.append(th)
