@@ -52,5 +52,9 @@ jobs:
           CI_CHECK_STRICT: '1'
         run: bash ci-check.sh
 
+      - name: Run the recipe offline test suite (run-tests.sh)
+        working-directory: deploy/recipes/strix-halo-fleet-2box
+        run: bash run-tests.sh
+
       - name: Run the structural validator test
         run: python deploy/recipes/strix-halo-poc/test_validate_poc_config.py
