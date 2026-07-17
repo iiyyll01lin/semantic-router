@@ -102,23 +102,49 @@ def parse_audit(text):
     return rows
 
 
-def convergence_metrics(audit_rows, boxes):
+def convergence_metrics(audit_rows, boxes, desired_version=""):
     """Per-version cross-box convergence span in seconds.
 
-    For each version, take the earliest and latest audit timestamp across ALL
-    known boxes; the span is how long the fleet took to fully converge that
-    version (bounded by the agent poll interval). Only versions that every box
-    reported are counted as `applied`.
+    The FINAL ``fleet-status.txt`` snapshot (``boxes``) is authoritative for
+    convergence -- it is exactly what ``fleetctl wait-converged`` checks. The
+    audit log is persistent and reuses version numbers across runs, so it can
+    NOT prove convergence on its own (a ``v9`` applied a week ago must not count
+    as converged today). A version is therefore ``applied_by_all`` only when
+    every configured box's FINAL reported version == ``desired_version`` (the
+    fleet actually converged) and this is that version.
+
+    The cross-box span is measured only across the boxes that ACTUALLY ended at
+    a version (final version == this version), using each box's most-recent
+    audit timestamp, so a stale row from a box that has since moved to another
+    version cannot inflate the span across runs.
     """
     box_set = set(boxes) or {r["box"] for r in audit_rows}
+    final_versions = {b: rec.get("version") for b, rec in boxes.items()}
+    # Rows are chronological, so the last write wins: this keeps the MOST-RECENT
+    # timestamp per (version, box).
     by_version = {}
     for r in audit_rows:
         by_version.setdefault(r["version"], {})[r["box"]] = _parse_ts(r["ts"])
+    # Authoritative convergence signal: every configured box's FINAL version is
+    # the desired one (matches `fleetctl wait-converged`).
+    converged_all_boxes = bool(box_set) and all(
+        final_versions.get(b) == desired_version for b in box_set
+    )
     per_version, spans = [], []
     for version in sorted(by_version, key=lambda v: int(v.lstrip("v") or 0)):
         stamps = by_version[version]
-        applied = box_set.issubset(set(stamps))
-        span = (max(stamps.values()) - min(stamps.values())).total_seconds()
+        applied = converged_all_boxes and version == desired_version
+        # Only count timestamps from boxes that ACTUALLY ended at this version,
+        # so a box that reported it in an earlier run (but has since moved on)
+        # cannot drag in a cross-run timestamp and fake a huge span.
+        conv_stamps = [
+            ts for b, ts in stamps.items() if final_versions.get(b) == version
+        ]
+        span = (
+            (max(conv_stamps) - min(conv_stamps)).total_seconds()
+            if len(conv_stamps) >= 2
+            else 0.0
+        )
         per_version.append(
             {
                 "version": version,
@@ -132,6 +158,7 @@ def convergence_metrics(audit_rows, boxes):
     return {
         "per_version": per_version,
         "converged_versions": sum(1 for p in per_version if p["applied_by_all"]),
+        "converged_all_boxes": converged_all_boxes,
         "max_cross_box_span_seconds": max(spans) if spans else None,
         "mean_cross_box_span_seconds": (sum(spans) / len(spans)) if spans else None,
     }
@@ -258,11 +285,20 @@ def build_metrics(bundle):
     poll_m = re.search(r"POLL_INTERVAL=(\d+)", env_txt)
     desired_version, audit_count, boxes = parse_status(status_txt)
     audit_rows = parse_audit(audit_txt)
-    conv = convergence_metrics(audit_rows, boxes)
+    conv = convergence_metrics(audit_rows, boxes, desired_version)
     conv["poll_interval_seconds"] = int(poll_m.group(1)) if poll_m else None
 
-    hashes = {b: rec["hash"] for b, rec in boxes.items()}
-    hash_agreement = len(set(hashes.values())) == 1 if hashes else None
+    # hash_agreement only across boxes that actually reached the desired version
+    # -- a box stuck at an old version must not "agree" via a coincidentally
+    # equal hash (that would falsely signal a converged, correct fleet).
+    converged_hashes = {
+        b: rec["hash"]
+        for b, rec in boxes.items()
+        if rec.get("version") == desired_version
+    }
+    hash_agreement = (
+        len(set(converged_hashes.values())) == 1 if converged_hashes else None
+    )
 
     metrics = {
         "schema": "fleet-metrics/v1",
@@ -297,13 +333,16 @@ def summarize(m):
         % (",".join(m["boxes"]), m["desired_version"], m["audit_count"], m["hash_agreement"])
     )
     c = m["convergence"]
+    poll = c.get("poll_interval_seconds")
+    poll_str = _fmt(poll) + ("s" if poll is not None else "")
     lines.append(
-        "convergence: %s versions all-boxes; cross-box span mean=%s max=%s s (poll=%ss)"
+        "convergence: %s versions all-boxes (converged_all=%s); cross-box span mean=%s max=%s s (poll=%s)"
         % (
             c["converged_versions"],
+            c.get("converged_all_boxes"),
             _fmt(c["mean_cross_box_span_seconds"]),
             _fmt(c["max_cross_box_span_seconds"]),
-            c["poll_interval_seconds"],
+            poll_str,
         )
     )
     if m.get("desired_config"):
