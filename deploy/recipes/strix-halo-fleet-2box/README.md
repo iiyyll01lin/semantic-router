@@ -34,7 +34,9 @@ signing layer.
 > stable) that `[SKIP]`s any check whose env/hardware is absent. The same
 > behaviors are proven offline (no hardware) by
 > [`verify_local.py`](verify_local.py) — now **20/20**, including the mTLS
-> handshake and warm-standby restore.
+> handshake and warm-standby restore. Re-running the proof? The
+> [hardware re-run checklist](docs/hardware-rerun-checklist.md) is the glanceable
+> one-pager (addresses, commands, PASS/SKIP lines).
 
 ## What this proves (verified on hardware)
 
