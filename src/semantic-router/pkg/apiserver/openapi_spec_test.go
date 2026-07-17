@@ -184,6 +184,7 @@ func documentedOpenAPIPaths() []string {
 		"/config/router/rollback",
 		"/config/router/versions",
 		"/config/hash",
+		"/config/loaded-hash",
 		"/v1/memory",
 		"/v1/vector_stores",
 		"/v1/files",
