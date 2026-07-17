@@ -162,6 +162,12 @@ ALL VERIFY-HARDENING CHECKS PASSED (1 skipped as not-applicable)
 - `metrics.txt` + `metrics.json` — `converged_all=True` + `hot_reload_latency_seconds` p50/p95.
 - `router-image-digests.txt` — the same pinned router image per box (R3).
 
+> A concrete captured run is recorded in
+> [`validation-record-20260717.md`](validation-record-20260717.md) (run
+> `run-20260717-142520`: `8 passed, 0 failed, 1 skipped`, R8 `[PASS]`), with the
+> committed human-readable proof files under
+> [`validation-evidence/run-20260717-142520/`](validation-evidence/run-20260717-142520/).
+
 ---
 
 ## Troubleshooting quick map

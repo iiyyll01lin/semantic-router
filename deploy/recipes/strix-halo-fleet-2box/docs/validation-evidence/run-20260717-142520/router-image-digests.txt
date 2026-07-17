@@ -1,0 +1,4 @@
+# router image digest per box, resolved at run time (R3 drift evidence)
+# pinned VLLM_SR_ROUTER_IMAGE=ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest
+halo-a ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:99c96cae498c006b0094ed851446a53b88f81294ec872e66b1a449469c7708b8
+halo-b ghcr.io/vllm-project/semantic-router/vllm-sr-rocm@sha256:d84b27f04df25c24cd75b5c69432d5c6d4ad6af45d45bea52bb5cf4637bfe63b

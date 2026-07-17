@@ -1,0 +1,5 @@
+== fleet metrics (run-20260717-142520, mode=gateway) ==
+boxes=halo-a,halo-b desired=v33 audit=244 hash_agreement=True
+convergence: 1 versions all-boxes (converged_all=True); cross-box span mean=1.0 max=1.0 s (poll=3.0s)
+desired_config: 108818 bytes sha256=298d9463cdb3
+hot_reload_latency (write->converge): p50=0.010s p95=0.019s mean=0.012s (n=52)
