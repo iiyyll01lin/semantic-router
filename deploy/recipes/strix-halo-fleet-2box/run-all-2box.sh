@@ -188,4 +188,19 @@ echo "Log bundle (share this whole directory if anything failed):"
 echo "  ${RUN_DIR}"
 ls -1 "${RUN_DIR}" 2>/dev/null | sed 's/^/    /'
 echo "=============================================================="
+
+# On a FAILED run ONLY, reap the local halo-a agent (and its mock router) so a
+# failed run never leaves an orphan polling the CCP and spamming "Connection
+# reset by peer". This runs at the very END -- after all log collection, the
+# metrics distillation, and the summary above -- so nothing here disturbs the
+# evidence bundle. A SUCCESSFUL run intentionally LEAVES THE FLEET UP:
+# run-hardware-validation.sh Step 2d runs verify-hardening.sh against the live
+# fleet after this script returns, and the deploy advertises the fleet stays up
+# for demo/verify/teardown. pkill is a scoped safety net for a stale pid.
+if [ "${rc}" -ne 0 ]; then
+  echo "==> [run-all] failed run: reaping local halo-a agent/router"
+  fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-agent.pid"
+  fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-router.pid"
+  command -v pkill >/dev/null 2>&1 && pkill -f "fleet_agent.py --tag halo-a" 2>/dev/null || true
+fi
 exit "${rc}"

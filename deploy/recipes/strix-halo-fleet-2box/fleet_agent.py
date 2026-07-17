@@ -19,6 +19,7 @@ writes. See docs/agent/plans/pl-0036-edge-fleet-config-control-plane.md.
 
 from __future__ import annotations
 
+import argparse
 import calendar
 import json
 import os
@@ -449,6 +450,18 @@ def run_loop(cfg: AgentConfig) -> int:
 
 
 def main() -> int:
+    # Accept an identifying "--tag <box_id>" marker on the command line so a
+    # launched agent can be reaped scope-safely (e.g. pkill -f
+    # "fleet_agent.py --tag halo-a") even if its pid ever leaves the pidfile: a
+    # stale agent left polling the now-HTTPS+mTLS CCP otherwise spams
+    # "Connection reset by peer". The tag is PURELY an argv marker for process
+    # identification -- its value is intentionally ignored, all configuration
+    # still comes from the environment via AgentConfig.from_env(), and the
+    # ONESHOT path (and every other existing flow) is unchanged. add_help=False +
+    # parse_known_args keeps this from adding required args or new exit paths.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--tag", default=None)
+    parser.parse_known_args()
     cfg = AgentConfig.from_env()
     if os.environ.get("ONESHOT"):
         print(reconcile_once(cfg, AgentState()))

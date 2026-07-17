@@ -30,6 +30,10 @@ REMOTE_STATE='${TMPDIR:-/tmp}/vllm-sr-fleet'
 
 echo "==> Stopping local (Halo-A) CCP, router, and agent"
 fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-agent.pid"
+# Safety net: reap a local halo-a agent that outlived its pidfile. Scoped by the
+# exact "--tag halo-a" argv so it only matches this box's agent and never the
+# CCP (ccp_server.py) or another box's process.
+command -v pkill >/dev/null 2>&1 && pkill -f "fleet_agent.py --tag halo-a" 2>/dev/null || true
 fleet_stop_pidfile "${FLEET_STATE_DIR}/halo-a-router.pid"
 fleet_stop_pidfile "${FLEET_STATE_DIR}/ccp.pid"
 if [ "${FLEET_MODE:-mock}" = "gateway" ]; then
@@ -73,7 +77,7 @@ else
     REMOTE_STOP=""
     [ "${_bmode}" = "gateway" ] && REMOTE_STOP="vllm-sr stop >/dev/null 2>&1 || true; "
     ssh "${SSH_OPTS[@]}" "${target}" \
-      "${REMOTE_STOP}for f in ${id}-agent ${id}-router; do p=${REMOTE_STATE}/\$f.pid; [ -f \"\$p\" ] && kill \"\$(cat \"\$p\")\" 2>/dev/null || true; rm -f \"\$p\"; done; rm -rf ${REMOTE_DIR}" \
+      "${REMOTE_STOP}for f in ${id}-agent ${id}-router; do p=${REMOTE_STATE}/\$f.pid; [ -f \"\$p\" ] && kill \"\$(cat \"\$p\")\" 2>/dev/null || true; rm -f \"\$p\"; done; command -v pkill >/dev/null 2>&1 && pkill -f 'fleet_agent.py --tag ${id}' 2>/dev/null || true; rm -rf ${REMOTE_DIR}" \
       || echo "    (warning: could not reach ${id}; stop it manually if it is still running)"
   done
 fi
