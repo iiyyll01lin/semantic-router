@@ -45,7 +45,8 @@ def cmd_set_desired(args):
     with open(args.file, "r", encoding="utf-8") as fh:
         config_text = fh.read()
     status, obj = fleet_lib.http_post_json(
-        url + "/fleet/desired", {"config": config_text}, token=token)
+        url + "/fleet/desired", {"config": config_text}, token=token
+    )
     if status != 200:
         raise SystemExit("set-desired -> %d %s" % (status, obj))
     print("%s %s" % (obj.get("version", "?"), obj.get("sha256", "")))
@@ -66,11 +67,20 @@ def cmd_status(_args):
     status, obj = fleet_lib.http_get_json(url + "/fleet/status", token=token)
     if status != 200:
         raise SystemExit("status -> %d" % status)
-    print("desired_version=%s audit_count=%s" % (
-        obj.get("desired_version", ""), obj.get("audit_count", 0)))
+    print(
+        "desired_version=%s audit_count=%s"
+        % (obj.get("desired_version", ""), obj.get("audit_count", 0))
+    )
     for box_id, rec in sorted(obj.get("boxes", {}).items()):
-        print("  %-10s version=%-4s result=%-12s hash=%s" % (
-            box_id, rec.get("version", ""), rec.get("result", ""), rec.get("hash", "")[:12]))
+        print(
+            "  %-10s version=%-4s result=%-12s hash=%s"
+            % (
+                box_id,
+                rec.get("version", ""),
+                rec.get("result", ""),
+                rec.get("hash", "")[:12],
+            )
+        )
 
 
 def cmd_audit(_args):
@@ -79,9 +89,16 @@ def cmd_audit(_args):
     if status != 200:
         raise SystemExit("audit -> %d" % status)
     for rec in obj.get("audit", []):
-        print("%s %-10s %-4s %-12s %s" % (
-            rec.get("ts", ""), rec.get("box_id", ""), rec.get("version", ""),
-            rec.get("result", ""), rec.get("reason", "")))
+        print(
+            "%s %-10s %-4s %-12s %s"
+            % (
+                rec.get("ts", ""),
+                rec.get("box_id", ""),
+                rec.get("version", ""),
+                rec.get("result", ""),
+                rec.get("reason", ""),
+            )
+        )
 
 
 def cmd_wait_converged(args):
@@ -98,7 +115,9 @@ def cmd_wait_converged(args):
         summary = []
         for b in boxes:
             rec = reported.get(b)
-            good = bool(rec) and rec.get("version") == want_v and rec.get("hash") == want_h
+            good = (
+                bool(rec) and rec.get("version") == want_v and rec.get("hash") == want_h
+            )
             ok = ok and good
             summary.append("%s=%s" % (b, "ok" if good else "..."))
         last = "desired=%s [%s]" % (want_v, " ".join(summary))
@@ -113,7 +132,9 @@ def cmd_wait_converged(args):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="fleetctl")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sp = sub.add_parser("set-desired"); sp.add_argument("file"); sp.set_defaults(fn=cmd_set_desired)
+    sp = sub.add_parser("set-desired")
+    sp.add_argument("file")
+    sp.set_defaults(fn=cmd_set_desired)
     sub.add_parser("desired-hash").set_defaults(fn=cmd_desired_hash)
     sub.add_parser("desired-version").set_defaults(fn=cmd_desired_version)
     sub.add_parser("status").set_defaults(fn=cmd_status)

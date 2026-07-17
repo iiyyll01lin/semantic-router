@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import os
 import re
 import sys
@@ -101,23 +102,49 @@ def parse_audit(text):
     return rows
 
 
-def convergence_metrics(audit_rows, boxes):
+def convergence_metrics(audit_rows, boxes, desired_version=""):
     """Per-version cross-box convergence span in seconds.
 
-    For each version, take the earliest and latest audit timestamp across ALL
-    known boxes; the span is how long the fleet took to fully converge that
-    version (bounded by the agent poll interval). Only versions that every box
-    reported are counted as `applied`.
+    The FINAL ``fleet-status.txt`` snapshot (``boxes``) is authoritative for
+    convergence -- it is exactly what ``fleetctl wait-converged`` checks. The
+    audit log is persistent and reuses version numbers across runs, so it can
+    NOT prove convergence on its own (a ``v9`` applied a week ago must not count
+    as converged today). A version is therefore ``applied_by_all`` only when
+    every configured box's FINAL reported version == ``desired_version`` (the
+    fleet actually converged) and this is that version.
+
+    The cross-box span is measured only across the boxes that ACTUALLY ended at
+    a version (final version == this version), using each box's most-recent
+    audit timestamp, so a stale row from a box that has since moved to another
+    version cannot inflate the span across runs.
     """
     box_set = set(boxes) or {r["box"] for r in audit_rows}
+    final_versions = {b: rec.get("version") for b, rec in boxes.items()}
+    # Rows are chronological, so the last write wins: this keeps the MOST-RECENT
+    # timestamp per (version, box).
     by_version = {}
     for r in audit_rows:
         by_version.setdefault(r["version"], {})[r["box"]] = _parse_ts(r["ts"])
+    # Authoritative convergence signal: every configured box's FINAL version is
+    # the desired one (matches `fleetctl wait-converged`).
+    converged_all_boxes = bool(box_set) and all(
+        final_versions.get(b) == desired_version for b in box_set
+    )
     per_version, spans = [], []
     for version in sorted(by_version, key=lambda v: int(v.lstrip("v") or 0)):
         stamps = by_version[version]
-        applied = box_set.issubset(set(stamps))
-        span = (max(stamps.values()) - min(stamps.values())).total_seconds()
+        applied = converged_all_boxes and version == desired_version
+        # Only count timestamps from boxes that ACTUALLY ended at this version,
+        # so a box that reported it in an earlier run (but has since moved on)
+        # cannot drag in a cross-run timestamp and fake a huge span.
+        conv_stamps = [
+            ts for b, ts in stamps.items() if final_versions.get(b) == version
+        ]
+        span = (
+            (max(conv_stamps) - min(conv_stamps)).total_seconds()
+            if len(conv_stamps) >= 2
+            else 0.0
+        )
         per_version.append(
             {
                 "version": version,
@@ -131,9 +158,88 @@ def convergence_metrics(audit_rows, boxes):
     return {
         "per_version": per_version,
         "converged_versions": sum(1 for p in per_version if p["applied_by_all"]),
+        "converged_all_boxes": converged_all_boxes,
         "max_cross_box_span_seconds": max(spans) if spans else None,
         "mean_cross_box_span_seconds": (sum(spans) / len(spans)) if spans else None,
     }
+
+
+def parse_audit_json(text):
+    """Parse a JSON-lines audit log (ccp_server audit.log) into record dicts.
+
+    Unlike ``parse_audit`` (which reads the ``fleetctl audit`` TEXT dump), this
+    reads the raw JSON the CCP writes, so it can see the ``apply_seconds`` field
+    the agent now reports (R9). Silently skips non-JSON / non-dict lines.
+    """
+    rows = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+    return rows
+
+
+def _percentile(sorted_vals, pct):
+    """Linear-interpolated percentile of an already-sorted list."""
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    k = (len(sorted_vals) - 1) * (pct / 100.0)
+    lo = math.floor(k)
+    hi = math.ceil(k)
+    if lo == hi:
+        return sorted_vals[int(k)]
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
+
+
+def latency_metrics(audit_records):
+    """Sub-second hot-reload latency (p50/p95) from the agent write->converge
+    timer carried on ``applied`` audit records. Returns None if no samples.
+    """
+    samples = sorted(
+        float(r["apply_seconds"])
+        for r in audit_records
+        if isinstance(r, dict)
+        and r.get("result") == "applied"
+        and r.get("apply_seconds") is not None
+    )
+    if not samples:
+        return None
+    return {
+        "n": len(samples),
+        "p50_seconds": round(_percentile(samples, 50), 4),
+        "p95_seconds": round(_percentile(samples, 95), 4),
+        "mean_seconds": round(sum(samples) / len(samples), 4),
+        "min_seconds": round(samples[0], 4),
+        "max_seconds": round(samples[-1], 4),
+    }
+
+
+def latency_from_bundle(bundle):
+    """Best-effort: find a JSON audit source (records with apply_seconds) and
+    compute latency percentiles. Looks in the run bundle, then ``CCP_AUDIT_LOG``.
+    Returns None when no timer data is available (older bundles just omit it)."""
+    text = ""
+    for cand in ("audit.log", "fleet-audit.jsonl", "ccp-audit.jsonl"):
+        path = os.path.join(bundle, cand) if bundle else ""
+        if path and os.path.isfile(path):
+            text = _read(path)
+            if text:
+                break
+    if not text:
+        env_audit = os.environ.get("CCP_AUDIT_LOG", "")
+        if env_audit and os.path.isfile(env_audit):
+            text = _read(env_audit)
+    if not text:
+        return None
+    return latency_metrics(parse_audit_json(text))
 
 
 def router_readiness(bundle):
@@ -179,11 +285,20 @@ def build_metrics(bundle):
     poll_m = re.search(r"POLL_INTERVAL=(\d+)", env_txt)
     desired_version, audit_count, boxes = parse_status(status_txt)
     audit_rows = parse_audit(audit_txt)
-    conv = convergence_metrics(audit_rows, boxes)
+    conv = convergence_metrics(audit_rows, boxes, desired_version)
     conv["poll_interval_seconds"] = int(poll_m.group(1)) if poll_m else None
 
-    hashes = {b: rec["hash"] for b, rec in boxes.items()}
-    hash_agreement = len(set(hashes.values())) == 1 if hashes else None
+    # hash_agreement only across boxes that actually reached the desired version
+    # -- a box stuck at an old version must not "agree" via a coincidentally
+    # equal hash (that would falsely signal a converged, correct fleet).
+    converged_hashes = {
+        b: rec["hash"]
+        for b, rec in boxes.items()
+        if rec.get("version") == desired_version
+    }
+    hash_agreement = (
+        len(set(converged_hashes.values())) == 1 if converged_hashes else None
+    )
 
     metrics = {
         "schema": "fleet-metrics/v1",
@@ -203,6 +318,11 @@ def build_metrics(bundle):
     ccp = desired_from_ccp()
     if ccp:
         metrics["desired_config"] = ccp
+    # R9: sub-second hot-reload latency (p50/p95) from the agent write->converge
+    # timer, when a JSON audit source is available (older bundles omit it).
+    latency = latency_from_bundle(bundle)
+    if latency:
+        metrics["hot_reload_latency_seconds"] = latency
     return metrics
 
 
@@ -210,22 +330,41 @@ def summarize(m):
     lines = ["== fleet metrics (%s, mode=%s) ==" % (m["bundle"], m["fleet_mode"])]
     lines.append(
         "boxes=%s desired=%s audit=%s hash_agreement=%s"
-        % (",".join(m["boxes"]), m["desired_version"], m["audit_count"], m["hash_agreement"])
+        % (
+            ",".join(m["boxes"]),
+            m["desired_version"],
+            m["audit_count"],
+            m["hash_agreement"],
+        )
     )
     c = m["convergence"]
+    poll = c.get("poll_interval_seconds")
+    poll_str = _fmt(poll) + ("s" if poll is not None else "")
     lines.append(
-        "convergence: %s versions all-boxes; cross-box span mean=%s max=%s s (poll=%ss)"
+        "convergence: %s versions all-boxes (converged_all=%s); cross-box span mean=%s max=%s s (poll=%s)"
         % (
             c["converged_versions"],
+            c.get("converged_all_boxes"),
             _fmt(c["mean_cross_box_span_seconds"]),
             _fmt(c["max_cross_box_span_seconds"]),
-            c["poll_interval_seconds"],
+            poll_str,
         )
     )
     if m.get("desired_config"):
         dc = m["desired_config"]
-        lines.append("desired_config: %s bytes sha256=%s" % (dc["config_bytes"], dc["sha256"][:12]))
-    rr = ", ".join("%s=%ss" % (b, s) for b, s in sorted(m["router_readiness_seconds"].items()))
+        lines.append(
+            "desired_config: %s bytes sha256=%s"
+            % (dc["config_bytes"], dc["sha256"][:12])
+        )
+    if m.get("hot_reload_latency_seconds"):
+        lt = m["hot_reload_latency_seconds"]
+        lines.append(
+            "hot_reload_latency (write->converge): p50=%.3fs p95=%.3fs mean=%.3fs (n=%d)"
+            % (lt["p50_seconds"], lt["p95_seconds"], lt["mean_seconds"], lt["n"])
+        )
+    rr = ", ".join(
+        "%s=%ss" % (b, s) for b, s in sorted(m["router_readiness_seconds"].items())
+    )
     if rr:
         lines.append("router_readiness: " + rr)
     return "\n".join(lines)
@@ -238,7 +377,11 @@ def _fmt(x):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="fleet_metrics")
     p.add_argument("--bundle", required=True, help="run bundle directory")
-    p.add_argument("--out", default="", help="write metrics.json here (default: <bundle>/metrics.json)")
+    p.add_argument(
+        "--out",
+        default="",
+        help="write metrics.json here (default: <bundle>/metrics.json)",
+    )
     args = p.parse_args(argv)
 
     metrics = build_metrics(args.bundle)

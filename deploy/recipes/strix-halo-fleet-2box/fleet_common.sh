@@ -39,3 +39,23 @@ fleet_stop_pidfile() {
     rm -f "${pf}"
   fi
 }
+
+# --- Remote mTLS/Ed25519 staging convention (single source of truth) ----------
+# run-hardware-validation.sh stage_certs() copies each remote box's material to
+# these HOME-relative locations; deploy-fleet-2box.sh remote_agent_env() forwards
+# the matching paths (plus that box's OWN client cert/key) to the box's agent.
+# Both scripts source THIS file, so the staged locations and the forwarded paths
+# cannot drift. The leading '~' is intentional and must stay UNEXPANDED locally:
+# it is forwarded verbatim and expands to each REMOTE's own $HOME (assignment-
+# position tilde expansion on the remote shell).
+# shellcheck disable=SC2088
+FLEET_REMOTE_KEYS_DIR="${FLEET_REMOTE_KEYS_DIR:-~/keys}"
+# shellcheck disable=SC2088
+FLEET_REMOTE_MTLS_DIR="${FLEET_REMOTE_MTLS_DIR:-~/mtls-certs}"
+
+# Home-relative remote paths for the agent-side path vars, consumed by
+# deploy-fleet-2box.sh remote_agent_env(). The '~' expands on the remote box.
+fleet_remote_ed25519_pub() { printf '%s/ccp_ed25519.pub' "${FLEET_REMOTE_KEYS_DIR}"; }
+fleet_remote_tls_ca()      { printf '%s/ca-cert.pem'      "${FLEET_REMOTE_MTLS_DIR}"; }
+fleet_remote_client_cert() { printf '%s/%s-client-cert.pem' "${FLEET_REMOTE_MTLS_DIR}" "${1:?fleet_remote_client_cert: box id required}"; }
+fleet_remote_client_key()  { printf '%s/%s-client-key.pem'  "${FLEET_REMOTE_MTLS_DIR}" "${1:?fleet_remote_client_key: box id required}"; }
