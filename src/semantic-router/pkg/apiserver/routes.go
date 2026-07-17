@@ -115,6 +115,7 @@ func apiRoutes() []apiRoute {
 		{EndpointMetadata: EndpointMetadata{Path: "/config/router/rollback", Method: "POST", Description: "Rollback to a previous router config version"}, Handler: (*ClassificationAPIServer).handleConfigRollback, RequestBody: jsonBody()},
 		{EndpointMetadata: EndpointMetadata{Path: "/config/router/versions", Method: "GET", Description: "List available router config backup versions"}, Handler: (*ClassificationAPIServer).handleConfigVersions},
 		{EndpointMetadata: EndpointMetadata{Path: "/config/hash", Method: "GET", Description: "Get the active router config hash"}, Handler: (*ClassificationAPIServer).handleConfigHash},
+		{EndpointMetadata: EndpointMetadata{Path: "/config/loaded-hash", Method: "GET", Description: "Get the loaded runtime router config hash"}, Handler: (*ClassificationAPIServer).handleLoadedConfigHash},
 
 		{EndpointMetadata: EndpointMetadata{Path: "/v1/memory", Method: "GET", Description: "List long-term memories"}, Handler: (*ClassificationAPIServer).handleListMemories},
 		{EndpointMetadata: EndpointMetadata{Path: "/v1/memory", Method: "DELETE", Description: "Delete memories by scope"}, Handler: (*ClassificationAPIServer).handleDeleteMemoriesByScope},
