@@ -76,6 +76,10 @@ Every debt entry should include:
 - [TD049 Multi-Candidate Decision Did Not Engage the Selection Algorithm at Runtime](td-049-multi-candidate-selection-not-engaged.md)
 - [TD050 Global model_selection.method Is Silently Ignored Unless a Decision Carries a Per-Decision Algorithm Block](td-050-global-model-selection-method-ignored.md)
 
+### PL0036 Edge Fleet Config Control Plane
+
+- [TD051 Router /config/hash Reflects Config File Bytes, Not the Loaded Config](td-051-router-config-hash-reflects-file-bytes.md)
+
 ## Retired Debt Policy
 
 Retired TD files are removed from this directory. Keep the ID in commit history
