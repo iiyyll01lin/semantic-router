@@ -252,7 +252,7 @@ The knee is now **c8** (120.28 tok/s, TTFT p95 825 ms); pushing to c16 buys only
 throughput (127.76 tok/s) while TTFT p95 blows out to 8.1 s. Same 7B, same silicon — a **higher
 bandwidth plateau, not a different wall** (decode stays bandwidth-bound). So raise
 `OLLAMA_NUM_PARALLEL` 4 → 8 and run concurrency ≈ 8 for the best throughput/TTFT trade-off. Data:
-[`perf/quant-frontier/sweep-concurrency-p8-qwen2_5_7b.json`](../perf/quant-frontier/sweep-concurrency-p8-qwen2_5_7b.json).
+[`perf/quant-frontier/bestcfg-conc-p8-qwen2_5_7b.json`](../perf/quant-frontier/bestcfg-conc-p8-qwen2_5_7b.json).
 
 Reproduce (reuses the *already-running* stack — no cycling — so it is a cheap
 add-on to a Test 1 run):
@@ -1105,8 +1105,7 @@ All rows use
 changes is `--parallel`. Each row is measured at its **slot-matched operating point (client
 concurrency = `--parallel`)** — the realistic fully-loaded point for that slot count — from the
 co-resident interactive-TTFT sweep (raw =
-[`ttft-sweetspot-halo-b.json`](../perf/quant-frontier/ttft-sweetspot-halo-b.json), logs =
-[`ttft-sweetspot-logs/`](../perf/quant-frontier/ttft-sweetspot-logs/); power was not re-sampled at the
+[`ttft-sweetspot-halo-b.json`](../perf/quant-frontier/ttft-sweetspot-halo-b.json); power was not re-sampled at the
 c2 / c4 points):
 
 | Scenario | `--parallel` @ concurrency | per-stream decode | aggregate | TTFT p50 / p95 | tok/s per W | use for |
