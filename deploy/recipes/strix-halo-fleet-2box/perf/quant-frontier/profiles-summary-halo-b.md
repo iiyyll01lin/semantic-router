@@ -54,23 +54,10 @@ Completes the two candidate-sweep rows that timed out under the capped runner. `
 
 ## Provenance
 
-Source JSON (read directly; numbers never hand-edited):
-
-- `agentic-gemma4_26b-a4b-it-q8_0.json` (agentic-toolcall-tasks.json)
-- `agentic-gemma4_31b-it-qat.json` (agentic-toolcall-tasks.json)
-- `agentic-qwen3_coder_30b.json` (agentic-toolcall-tasks.json)
-- `conc-gemma4_26b-a4b-it-q8_0-c1.json`
-- `conc-gemma4_26b-a4b-it-q8_0-c2.json`
-- `conc-gemma4_26b-a4b-it-q8_0-c4.json`
-- `conc-gemma4_26b-a4b-it-q8_0-c8.json`
-- `conc-gemma4_26b-c1.json`
-- `conc-gemma4_26b-c2.json`
-- `conc-gemma4_26b-c4.json`
-- `conc-gemma4_26b-c8.json`
-- `conc-qwen3_coder_30b-c1.json`
-- `conc-qwen3_coder_30b-c2.json`
-- `conc-qwen3_coder_30b-c4.json`
-- `conc-qwen3_coder_30b-c8.json`
-- `quality-candidate-exaone4_0_32b.json` (quant-quality-mmlu.json)
-- `quality-candidate-phi4_reasoning_plus.json` (quant-quality-mmlu.json)
+The per-model source JSON behind these tables — the agentic tool-call runs
+(`agentic-*.json`), the concurrency sweeps (`conc-*.json`), and the
+quality-completion runs (`quality-candidate-*.json`) — is **archive-only and was
+never committed** to the repository, so there is no dangling file reference here.
+The numbers above are transcribed directly from those archived runs and are never
+hand-edited.
 

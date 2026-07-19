@@ -34,7 +34,7 @@ measurement methodology for the third.
 | poc | `cpu-smoke.sh` (85) | Full **CPU-only** end-to-end (llm-katan echo backend, no GPU): classify → decide → route → security |
 | poc | `pii_mask_demo.py` (120) | PII masking via `POST /api/v1/classify/pii` (the data-governance path) |
 | 2box | `smoke_test.py` (382) | **Cross-box routing assertions**: easy request → EDGE model on Halo-A (0 network hops), hard request → DATACENTER model on Halo-B (1 hop), no double-hops |
-| fleet | `verify_local.py` (195) | Offline in-process **8/8**: baseline converge, edit-once via **hot-reload (not restart)**, drift self-heal, rollback, **signed-bundle tamper rejection**, central audit, **inode preservation** |
+| fleet | `verify_local.py` (844) | Offline in-process **20/20**: baseline converge, edit-once via **hot-reload (not restart)**, drift self-heal, rollback, **signed-bundle tamper rejection**, central audit, **inode preservation** |
 | fleet | `verify-fleet.sh` (83) | Headless PASS/FAIL against a live fleet (converge / drift / rollback / audit) |
 | fleet | `perf/verify_perf_local.py` (7/7) | Offline: tok/s probe (Ollama+OpenAI dialects), resource summarize, in-place backend rewrite (**inode preserved**), fleet perf aggregation — no ROCm/Docker |
 
@@ -42,7 +42,7 @@ measurement methodology for the third.
 
 | # | Category | Harness (lines) | Data / metrics | Acceptance |
 | --- | --- | --- | --- | --- |
-| A | Correctness / verification | `smoke_test.py` ×2, `cpu-smoke.sh`, `validate_poc_config.py`+pytest, `verify_local.py`, `verify-fleet.sh` | pass/fail per check; router `x-vsr-*` outcomes | verify_local 8/8; validator PASS/FAIL both proven |
+| A | Correctness / verification | `smoke_test.py` ×2, `cpu-smoke.sh`, `validate_poc_config.py`+pytest, `verify_local.py`, `verify-fleet.sh` | pass/fail per check; router `x-vsr-*` outcomes | verify_local 20/20; validator PASS/FAIL both proven |
 | B | Routing behaviour / decision robustness | `poc-probes.yaml` (303) eval probes; `run-bench.sh` routing step | **probe pass-rate, decision pass-rate** over multiple prompt variants; 13 calibrated balance lanes + security lane | `min_probe_pass_rate: 100`, `min_decision_pass_rate: 100` |
 | C | Performance / overhead / quality | `run-bench.sh` (180) | router-vs-direct A/B: **routing overhead %**, **quality retention**, cached-token reporting, local-served ratio | GA-style evidence |
 | D | Topology / latency / throughput | `topology-bench.sh` (292) | **rps, latency p50/p95, pure network-hop latency (edge vs datacenter), edge/DC request split** → `topology-comparison.md` | side-by-side topology report |
@@ -98,7 +98,7 @@ flowchart LR
   `verify-fleet` + demo passed (edit-once / rollback / audit); metrics captured.
 - **Mixed fleet** (`run-20260701-114428`): first proved real↔mock convergence
   (hash `76c08a3e…`).
-- **Offline CI-grade**: `verify_local.py` 8/8 (incl. tamper rejection + inode
+- **Offline CI-grade**: `verify_local.py` 20/20 (incl. tamper rejection + inode
   preservation), no hardware.
 
 ## 4. Contribution highlights (novelty)
