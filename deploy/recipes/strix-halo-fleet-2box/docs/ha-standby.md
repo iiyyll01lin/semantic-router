@@ -13,7 +13,7 @@ state, and provide a **scripted promotion** that repoints the fleet's agents.
 > state dir and *rewrite `CCP_URL`* in `fleet.env`; they never touch
 > `ccp_server.py`, the agents, or the default single-CCP deploy. No new
 > dependencies: stdlib Python + `ssh`/`rsync` (with an `scp`/`cp` fallback).
-
+>
 > **Out of scope (future work):** automatic failover with a floating/virtual IP,
 > a health-checked witness, or quorum. Promotion here is a deliberate **operator
 > action** (or a thin external health check that calls `promote-standby.sh`). See
@@ -180,25 +180,32 @@ python3 ccp_server.py
 ### A. Planned / graceful drill (zero RPO)
 
 1. **Final sync**, then confirm the stamp:
+
    ```bash
    STANDBY_HOST=ubuntu@10.0.0.3 SYNC_ONCE=1 bash ccp-standby-sync.sh
    cat "${FLEET_STATE_DIR:-/tmp/vllm-sr-fleet}/ccp-standby-sync.status"
    ```
+
 2. **Capture the baseline count** (optional cross-check) and stop the active CCP:
+
    ```bash
    source "${FLEET_STATE_DIR:-/tmp/vllm-sr-fleet}/fleet.env"
    EXPECT=$(python3 fleetctl.py status | sed -n 's/.*audit_count=\([0-9]*\).*/\1/p')
    fleet_stop_pidfile "${FLEET_STATE_DIR:-/tmp/vllm-sr-fleet}/ccp.pid"   # or your stop path
    ```
+
 3. **Start the standby** `ccp_server.py` (see [Standby bring-up](#standby-bring-up-run-the-existing-ccp_serverpy)).
 4. **Promote** (measures recovery + zero audit loss, rewrites `CCP_URL`):
+
    ```bash
    STANDBY_HOST=10.0.0.3 EXPECT_AUDIT_COUNT="${EXPECT}" \
      PROMOTE_SINCE=$(date +%s) bash promote-standby.sh
    ```
+
 5. **Re-broadcast** — restart each agent at the new `CCP_URL` (the command is
    printed by the promote script; `PROMOTE_APPLY=1` also restarts the local
    halo-a agent). Then confirm convergence:
+
    ```bash
    source "${FLEET_STATE_DIR:-/tmp/vllm-sr-fleet}/fleet.env"   # now has the new CCP_URL
    python3 fleetctl.py wait-converged --boxes "${FLEET_BOXES}" --timeout 120

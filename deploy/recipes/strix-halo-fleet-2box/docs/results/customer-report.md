@@ -45,8 +45,6 @@ residency past the 64 GiB ceiling is the point.
 
 ---
 
-
-
 ## 1. Bottom line
 
 - **It runs today:** router + backend share one box; the router costs ~8.5 GiB of memory and near-zero decode throughput.
@@ -57,14 +55,11 @@ residency past the 64 GiB ceiling is the point.
   plus a **70B-Q8 (~70 GiB)** resident rung and a **141B MoE resident at ~94.6 GiB** (largest measured,
   7.80 tok/s — essentially the full carveout), using the `num_gpu`/`use_mmap` override (§2).
 
-
-
 ## 2. Feasibility boundary — largest model each box can serve
 
 **Fleet-safe standard-ladder max (both boxes, safe default):** `qwen3:14b` — the conservative ceiling across the shared tier ladder that every box can serve. This is *distinct* from each box's single-box peak ceiling below, which depends on that box's VRAM carveout and can go much higher.
 
 Measured single-box peak ceilings (full vllm-sr stack co-resident):
-
 
 | box (VRAM carveout)       | largest model               | footprint    | decode tok/s | verdict                                 |
 | ------------------------- | --------------------------- | ------------ | ------------ | --------------------------------------- |
@@ -74,7 +69,6 @@ Measured single-box peak ceilings (full vllm-sr stack co-resident):
 | halo-b (64 GiB, headless) | llama3.1:70b                | 48.2 GiB     | 3.6          | usable (VRAM-fit)                       |
 | halo-b (64 GiB, headless) | **gpt-oss:120b (120B MoE)** | **56.6 GiB** | **30.4**     | **max usable**                          |
 | halo-b (64 GiB, headless) | llama3.1:70b-instruct-q8_0  | ~69 GiB      | 2.1          | unusable (soft CPU-offload)             |
-
 
 *The ceiling is governed by the **BIOS VRAM carveout**, not the OS-visible budget. When a model's weights exceed the carveout the two boxes fail differently: on **Halo-A** the overflow spills to GTT and the load **aborts (HTTP 500)** — a hard fail; on **Halo-B** the overflow is a **soft CPU-offload** (Ollama runs the extra layers on the CPU) that still "runs" but collapses decode below the usable floor. Going **headless** first moved Halo-B's ceiling 32B → 120B; raising the carveout further (below) then makes even a 70B-Q8 VRAM-resident.*
 
@@ -89,13 +83,11 @@ capacity/reference rungs above.*
 
 The largest model is set by the **BIOS VRAM carveout** a model's weights must fit (overflow spills/offloads and becomes unusable), **not** the OS-visible system RAM. For **Halo-B's 96 GiB carveout** (~90 GiB usable for weights after runtime buffers):
 
-
 | quantization | GiB per 1B params | max params in a 96 GiB carveout |
 | ------------ | ----------------- | ------------------------------- |
 | Q4           | ~0.6              | ~150B                           |
 | Q8           | ~1.1              | ~82B                            |
 | fp16         | ~2.2              | ~41B                            |
-
 
 *Q4 roughly **doubles** the largest model vs fp16 on the same carveout — the practical lever for fitting a bigger model. These are weights-fit ceilings: a dense model near the top is VRAM-resident but LPDDR5X-bandwidth-bound, while an MoE (few active params) stays fast at the same size.*
 
@@ -139,7 +131,6 @@ tool-call scoring, per-model multiagent concurrency, EXAONE/Phi-4 quality comple
 
 The router adds ~1.4 s to first-token latency (classification + embedding + routing). A **semantic-cache hit** skips that pipeline and the model call entirely:
 
-
 | threshold | true_hit_rate | false_hit_rate | ttft_miss_ms | ttft_hit_ms |
 | --------- | ------------- | -------------- | ------------ | ----------- |
 | 0.50      | 1.00          | 1.00           | 1467         | 692         |
@@ -148,24 +139,20 @@ The router adds ~1.4 s to first-token latency (classification + embedding + rout
 | 0.92      | 0.83          | 0.00           | 1059         | 729         |
 | 0.95      | 0.67          | 0.00           | 1065         | 703         |
 
-
 *Recommended threshold: **0.92** — the lowest that never serves a wrong cached answer (false-hit = 0), maximising coverage.*
 
 **Two upgrades cut the tax at the source (measured, from-source router build):**
-
 
 | lever                                       | before                                 | after              | how                                                          |
 | ------------------------------------------- | -------------------------------------- | ------------------ | ------------------------------------------------------------ |
 | **Exact-repeat cache**                      | identical prompt still paid ~0.7–0.9 s | **~1–2 ms**        | serve byte-identical repeats *before* classification/routing |
 | **Head-trim** (drop PII+jailbreak ML heads) | classify stage ~0.72 s                 | **~0.31 s (−56%)** | remove the two heaviest signal heads; keyword guards remain  |
 
-
 *Both keep routing accuracy at **88.9%** (unchanged). The **exact-repeat cache is live**; the semantic cache still helps paraphrases and removes the model-call leg. Head-trim is a **safety-vs-latency trade** — it drops ML PII/jailbreak detection — so it is **NOT enabled on the live box** (both safety heads stay on); it is documented here as an optional lever for latency-critical, low-risk deployments only.*
 
 ## 4. Concurrency boundary
 
 Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend configs — Ollama's default (single decode slot) and the same container with `OLLAMA_NUM_PARALLEL=4`:
-
 
 | concurrent streams | serialized agg tok/s | serialized TTFT p95 ms | `OLLAMA_NUM_PARALLEL=4` agg tok/s | p4 TTFT p95 ms |
 | ------------------ | -------------------- | ---------------------- | --------------------------------- | -------------- |
@@ -175,11 +162,9 @@ Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend
 | 8                  | 43                   | 20753                  | 107                               | 4919           |
 | 16                 | 43                   | 41305                  | 107                               | 14452          |
 
-
 *Default Ollama serves one stream at a time: aggregate throughput stays flat (~~43 tok/s) while first-token latency grows with the queue. With*~~ `OLLAMA_NUM_PARALLEL=4` ~~*throughput scales to **~~107 tok/s (~2.5×)**, with the knee at **c=4** (already ~2.3× serialized while TTFT p95 stays low); beyond c=4 you buy little throughput while latency balloons. A **p8 re-test raises the 7B plateau to ~128 tok/s with the knee at c8** (TTFT p95 ~825 ms at c8), so `OLLAMA_NUM_PARALLEL=8` is the recommended 7B-class concurrency operating point; for larger models, size slots to the workload rather than treating p8 as a universal default.*
 
 ## 5. Inference-server options (same base model — note the quantization)
-
 
 | server   | quantization                      | decode tok/s | TTFT ms | status                     |
 | -------- | --------------------------------- | ------------ | ------- | -------------------------- |
@@ -187,7 +172,6 @@ Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend
 | llamacpp | **Q4_K_M**                        | 43.2         | 28      | measured                   |
 | lemonade | **Q4_1 (lemonade Qwen3-8B-GGUF)** | 39.8         | 90      | measured                   |
 | vllm     | **fp16 (or awq)**                 | -            | -       | skip-with-reason (gfx1151) |
-
 
 *Quantization differs per server, so decode-rate deltas are **not** apples-to-apples — compare within the same quantization. Quantization also sets the max model (§2).*
 

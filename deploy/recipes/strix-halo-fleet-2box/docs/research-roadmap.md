@@ -11,6 +11,7 @@ perturbs the working green run.
 ## Theme A — Harden the proof (turn `[SKIP]`/assumptions into data)
 
 ### R1 · Real-gateway drift self-heal on hardware
+
 - **Goal.** Turn the gateway-mode `[SKIP]` into a `[PASS]` with data, without
   risking a live gateway.
 - **Method.** Out-of-band append a *harmless comment line* to the bind-mounted
@@ -22,6 +23,7 @@ perturbs the working green run.
 - **Effort/Risk.** S / low (reversible, non-schema edit).
 
 ### R2 · Fail-fast config × image lint before the 44 GB pull
+
 - **Goal.** Cut a schema-mismatch failure (e.g. the `session_aware` removal) from
   ~9 min (real cold-start) to seconds.
 - **Method.** After render, validate the config against the *pinned router image*
@@ -33,6 +35,7 @@ perturbs the working green run.
 - **Effort/Risk.** M / low. Depends on an image-level validate entrypoint.
 
 ### R3 · Deterministic image pinning + CI parse-against-image
+
 - **Goal.** Kill `:latest` drift (the root cause of this session's outage).
 - **Method.** A committed `versions.env.example` + optional `versions.env`
   (gitignored) that sets `VLLM_SR_ROUTER_IMAGE=...@sha256:...`, sourced by
@@ -44,6 +47,7 @@ perturbs the working green run.
 ## Theme B — Security (demo-grade → production-grade)
 
 ### R4 · Asymmetric signing (Ed25519) + key rotation
+
 - **Goal.** Today's HMAC is a *shared secret* — any box that can verify can also
   forge desired config. Move to CCP-signs-private / agents-verify-public.
 - **Method.** Swap `fleet_lib` sign/verify to Ed25519 (needs `cryptography`/`pynacl`,
@@ -54,6 +58,7 @@ perturbs the working green run.
 - **Effort/Risk.** M / medium (touches the crypto core + a dependency).
 
 ### R5 · TLS for the CCP endpoints
+
 - **Goal.** Config is signed (integrity) but travels in cleartext (no
   confidentiality). Add TLS for sensitive configs.
 - **Method.** Wrap the CCP HTTP server in TLS (self-signed for the PoC; document
@@ -64,6 +69,7 @@ perturbs the working green run.
 ## Theme C — Scale & operations
 
 ### R6 · CCP HA / durable desired+audit store
+
 - **Goal.** The CCP is a single point of failure on Halo-A; the desired+audit store
   is in-process. Persist and/or replicate it.
 - **Method.** Back desired+audit with a durable store (file→sqlite→replicated);
@@ -72,6 +78,7 @@ perturbs the working green run.
 - **Effort/Risk.** L / medium.
 
 ### R7 · N-box scale-out
+
 - **Goal.** The design is N-agent; the recipe is hard-wired to 2. Parameterize and
   measure how convergence scales with fleet size.
 - **Method.** Fleet list from a file; loop provisioning/verify over N boxes.
@@ -79,6 +86,7 @@ perturbs the working green run.
 - **Effort/Risk.** M / low.
 
 ### R8 · Health-gated apply + auto-rollback
+
 - **Goal.** A bad desired config that fails to load should not silently leave a box
   down; the fleet should self-protect.
 - **Method.** Agent reports *unhealthy* if the new config fails to load/serve; CCP
@@ -88,6 +96,7 @@ perturbs the working green run.
 - **Effort/Risk.** M / medium.
 
 ### R9 · Convergence/latency observability (Prometheus)
+
 - **Goal.** Beyond the audit log, expose fleet health as metrics.
 - **Method.** Export per-box version-lag + apply-outcome + convergence span to
   Prometheus; add sub-second write→converge timing in the agent (feeds R1/pipeline
@@ -96,6 +105,7 @@ perturbs the working green run.
 - **Effort/Risk.** M / low.
 
 ### R10 · Key-based SSH + ControlMaster reuse (ops polish)
+
 - **Goal.** Remove the repeated password prompts during log collection.
 - **Method.** Document `ssh-copy-id`; share the deploy's SSH ControlMaster socket
   with `run-all` so the whole run authenticates once.
@@ -105,6 +115,7 @@ perturbs the working green run.
 ## Theme D — Routing features
 
 ### R11 · Restore cross-request learning (`global.router.learning`)
+
 - **Goal.** The migration off `session_aware` dropped session stickiness. Re-add it
   via the new schema and measure routing quality.
 - **Method.** Add `global.router.learning.{adaptation,protection}` to

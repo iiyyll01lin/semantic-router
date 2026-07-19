@@ -15,7 +15,7 @@ drill. It drives the opt-in hardware verifier
 > commands, and the PASS/SKIP lines that mean "green" — see the
 > [hardware re-run checklist](hardware-rerun-checklist.md). This runbook is the
 > full detail behind it.
-
+>
 > **These steps run ON the Strix Halo boxes, not in CI / the authoring
 > environment.** Everything here is **opt-in**; with none of the new env set the
 > default flow is byte-identical to before (HMAC over plain HTTP). The offline,
@@ -49,13 +49,16 @@ evidence to capture. Step 7 is a separate operator drill.
   and at least Halo-B, with **key-based SSH** set up (`ssh-copy-id`) so runs are
   password-free.
 - This recipe directory checked out on Halo-A; commands below run **from it**:
+
   ```bash
   cd deploy/recipes/strix-halo-fleet-2box
   ```
+
 - For gateway-mode steps (2–6), `vllm-sr` must come up on both boxes (see the
   README "Gateway mode" section); `run-all-2box.sh` / `deploy-fleet-2box.sh`
   auto-provision Halo-B when `HALO_B_MODE=gateway`.
 - Pick the fleet-facing addresses once and reuse them:
+
   ```bash
   export HALO_A_IP=192.0.2.10          # Halo-A address reachable FROM Halo-B
   export HALO_B_IP=192.0.2.20
@@ -74,6 +77,7 @@ evidence to capture. Step 7 is a separate operator drill.
   **current shell** by the deploy AND by `verify-hardening.sh` / a CCP restart.
   Export them once (Step 2) and keep using that same shell for Steps 2–7.
 - **Evidence** goes into the run bundle. Save each verifier console log next to it:
+
   ```bash
   RUN=$(ls -dt "${FLEET_STATE_DIR:-/tmp/vllm-sr-fleet}"/run-* | head -1)   # newest bundle
   echo "latest run bundle: ${RUN}"

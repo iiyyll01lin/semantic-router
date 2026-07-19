@@ -214,6 +214,7 @@ P4 - Pull-agent productionization:
   (truncate + write + fsync, same inode), which the container observes and which
   fires the `Write`-event hot-reload; it still writes exact bytes so the on-disk
   `GET /config/hash` matches the bundle hash (`verify_local.py` stays 7/7).
+
 ## Operating Rules
 
 - Reuse, do not reinvent: the per-node hot-reload, validate/backup/write,

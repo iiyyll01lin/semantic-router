@@ -4,6 +4,7 @@ This documents the production-hardening added to the pull-mode control plane cor
 (`fleet_lib.py`, `ccp_server.py`, `fleet_agent.py`, `fleet_metrics.py`, plus the
 vendored `_ed25519.py`). It implements plan todos **R8** (health-gated apply +
 auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downgrade
+
 + constant-time token), **R5** (opt-in TLS) + **C1** (mTLS client certs), and
 **R9** (observability).
 
@@ -17,7 +18,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
 
 ## What changed, per todo
 
-- **R8 — health-gated apply + auto-rollback (`fleet_agent.py`).** After writing a
++ **R8 — health-gated apply + auto-rollback (`fleet_agent.py`).** After writing a
   new config and waiting for hash convergence, the agent now confirms the router
   still *serves* (liveness on `GET /config/hash`, plus an optional stronger probe
   at `ROUTER_HEALTH_PATH`). On an **unhealthy** apply **or** a **non-converged**
@@ -26,7 +27,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
   (exponential, capped) so one bad config cannot thrash the router every cycle. A
   later, different version clears the backoff immediately.
 
-- **R6 — CCP durability (`ccp_server.py`).** On startup the CCP restores the latest
++ **R6 — CCP durability (`ccp_server.py`).** On startup the CCP restores the latest
   persisted `desired/<vN>.yaml` (config + version counter) and the tail of
   `audit.log` (running total + last status per box). A restart no longer forgets
   the desired config (previously it 404'd until someone re-POSTed) nor resets the
@@ -35,7 +36,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
   disk); `audit_count` still reports the true running total, so the HTTP shape is
   unchanged.
 
-- **R4 — asymmetric signing + anti-downgrade + constant-time token.**
++ **R4 — asymmetric signing + anti-downgrade + constant-time token.**
   `fleet_lib` gained an **Ed25519** signing mode (CCP signs with a private seed;
   agents verify with the public key only). HMAC remains the default/fallback. The
   verifier enforces the declared algorithm, so an Ed25519 agent rejects a
@@ -44,7 +45,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
   by timestamp. `ccp_server._authed` now uses `hmac.compare_digest` (no token
   timing side-channel).
 
-- **R5/C1 — opt-in TLS + mTLS (`fleet_lib.py`, `ccp_server.py`).** The CCP serves
++ **R5/C1 — opt-in TLS + mTLS (`fleet_lib.py`, `ccp_server.py`).** The CCP serves
   HTTPS when `CCP_TLS_CERT`/`CCP_TLS_KEY` are set (optional mTLS via
   `CCP_TLS_CLIENT_CA`); the client (agent / `fleetctl` / `fleet_metrics`) uses TLS
   automatically for any `https://` CCP URL, trusting `FLEET_TLS_CA` (or the system
@@ -55,7 +56,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
   `python3 ccp_server.py` **default bind is now `127.0.0.1`** (was `0.0.0.0`); the
   multi-box deploy explicitly opts into a reachable bind.
 
-- **R9 — observability.** The agent times the **write→converge** window and reports
++ **R9 — observability.** The agent times the **write→converge** window and reports
   it (`apply_seconds`); status reports are **buffered locally** across CCP downtime
   and re-sent on recovery (no lost outcomes). The CCP exposes a Prometheus
   `GET /metrics` (per-box version-lag, last apply seconds, apply-outcome counters).
@@ -179,15 +180,15 @@ liveness probe**, so CCP bring-up still succeeds when mTLS is required.
 
 ## Observability (R9)
 
-- **`GET /metrics`** (Prometheus text; behind the bearer token — a scraper sends
++ **`GET /metrics`** (Prometheus text; behind the bearer token — a scraper sends
   `Authorization: Bearer <token>`):
-  - `fleet_desired_version_number` — current desired version.
-  - `fleet_box_version_lag{box_id}` — desired minus the box's applied version.
-  - `fleet_box_last_apply_seconds{box_id}` — last write→converge time reported.
-  - `fleet_apply_outcomes_total{box_id,result}` — counters (`applied`, `in_sync`,
+  + `fleet_desired_version_number` — current desired version.
+  + `fleet_box_version_lag{box_id}` — desired minus the box's applied version.
+  + `fleet_box_last_apply_seconds{box_id}` — last write→converge time reported.
+  + `fleet_apply_outcomes_total{box_id,result}` — counters (`applied`, `in_sync`,
     `rolled_back`, `rejected`, …).
-  - `fleet_audit_records_total`, `fleet_boxes`.
-- **Hot-reload latency**: agents report `apply_seconds` on each apply; the CCP keeps
+  + `fleet_audit_records_total`, `fleet_boxes`.
++ **Hot-reload latency**: agents report `apply_seconds` on each apply; the CCP keeps
   it on each audit record. `fleet_metrics.py` reads a JSON audit source (a bundled
   `audit.log`/`fleet-audit.jsonl`, or `CCP_AUDIT_LOG=`) and emits
   `hot_reload_latency_seconds` (`p50`/`p95`/`mean`/`min`/`max`/`n`) — the sub-second
@@ -210,33 +211,34 @@ FLEET_AGENT_EXTRA_VARS="ROUTER_HEALTH_PATH ROUTER_HEALTH_TIMEOUT APPLY_BACKOFF A
 ```
 
 Notes for the deploy:
-- `FLEET_SIGN_MODE` must reach **both** the CCP and every agent (it is in the agent
+
++ `FLEET_SIGN_MODE` must reach **both** the CCP and every agent (it is in the agent
   list the deploy forwards to remotes, and the deploy also exports both lists
   locally so the Halo-A CCP + agent see it).
-- TLS end-to-end is automatic: when `CCP_TLS_CERT`/`CCP_TLS_KEY` are set the deploy
++ TLS end-to-end is automatic: when `CCP_TLS_CERT`/`CCP_TLS_KEY` are set the deploy
   builds the agent `CCP_URL` as `https://…` (or force it with `FLEET_CCP_SCHEME=https`).
-- Client-cert paths are **per-box**: the deploy forwards the *variable* to each
++ Client-cert paths are **per-box**: the deploy forwards the *variable* to each
   remote, so stage that box's own `FLEET_TLS_CLIENT_CERT`/`_KEY` file at the
   exported path on each box (same convention as `FLEET_TLS_CA` / the `*_FILE` vars).
-- `ccp-bring-up.sh` / `node-bring-up.sh` (owned by the core) pass all of these
++ `ccp-bring-up.sh` / `node-bring-up.sh` (owned by the core) pass all of these
   through to the Python processes when set; unset = unchanged behavior.
 
 ---
 
 ## Limitations / follow-ups
 
-- **Vendored Ed25519 is a reference implementation** (correct — validated against
++ **Vendored Ed25519 is a reference implementation** (correct — validated against
   the RFC 8032 test vectors and byte-for-byte against `libsodium`/`cryptography` —
   but not fast and not side-channel hardened). A production fleet should swap in a
   native library (`cryptography`/PyNaCl); the keys and wire signatures are
   compatible, so no re-keying is needed.
-- **mTLS is now supported end-to-end (C1).** The client presents a cert via
++ **mTLS is now supported end-to-end (C1).** The client presents a cert via
   `FLEET_TLS_CLIENT_CERT`/`FLEET_TLS_CLIENT_KEY`, the deploy forwards those to remote
   agents, and `make-mtls-certs.sh` provisions the CA + server + per-agent client
   certs. What remains is operational, not code: the helper issues **self-signed**
   certs and rotation / expiry / revocation (CRL/OCSP) are manual — for production,
   issue from your own CA/PKI and script renewal before the `--days` window lapses.
-- **Resolved earlier follow-ups.** The deploy now builds `https://` CCP URLs when
++ **Resolved earlier follow-ups.** The deploy now builds `https://` CCP URLs when
   TLS is enabled (force with `FLEET_CCP_SCHEME=https`), and the run bundle captures
   the raw JSON `audit.log` (and points `fleet_metrics.py` at it via `CCP_AUDIT_LOG`),
   so p50/p95 hot-reload latency is computed from real timer samples — both were

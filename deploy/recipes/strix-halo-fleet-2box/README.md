@@ -23,7 +23,7 @@ signing layer.
 > (`fc739baa…`) → central audit → one-edit rollback. Run bundle:
 > `run-20260701-154843`. (An earlier `HALO_B_MODE=mock` run — `run-20260701-114428`,
 > hash `76c08a3e…` — first proved real↔mock convergence.)
-
+>
 > **🔒 Validating the opt-in hardening on hardware.** To take the landed hardening
 > to the fleet — Ed25519 + TLS + **mTLS** end-to-end, induced auto-rollback on a
 > real router, CCP-restart durability, `GET /metrics` + p50/p95 hot-reload

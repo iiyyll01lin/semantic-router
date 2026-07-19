@@ -83,4 +83,4 @@ python deploy/recipes/strix-halo-fleet-2box/perf/verify_perf_local.py
 
 ---
 
-_Footnote — SSH target: `test001@10.96.31.132` is confirmed working this session; the repo's older committed value was `test001@10.96.28.126` (swap it if the box IP changes)._
+*Footnote — SSH target: `test001@10.96.31.132` is confirmed working this session; the repo's older committed value was `test001@10.96.28.126` (swap it if the box IP changes).*

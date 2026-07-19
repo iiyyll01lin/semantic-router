@@ -60,4 +60,3 @@ quality-completion runs (`quality-candidate-*.json`) — is **archive-only and w
 never committed** to the repository, so there is no dangling file reference here.
 The numbers above are transcribed directly from those archived runs and are never
 hand-edited.
-

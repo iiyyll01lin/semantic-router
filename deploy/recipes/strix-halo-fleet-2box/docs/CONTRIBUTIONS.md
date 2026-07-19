@@ -109,7 +109,7 @@ flowchart LR
    **byte-exact hash convergence contract** across a Python control plane and Go
    routers, applied via **in-place single-file hot-reload (no restart)**.
 2. **Measurement methodology** — not just a system but a **reproducible experiment
-   + data pipeline**: decision-level eval probes, topology/WAN benchmarks, a
+   - data pipeline**: decision-level eval probes, topology/WAN benchmarks, a
    real-trace → TCO simulation bridge, and a per-run `metrics.json`. Every
    experiment has an explicit metric and acceptance bar — the "data-backed" basis
    for a paper.

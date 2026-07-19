@@ -31,8 +31,6 @@ family: balanced `gemma4:26b-a4b-it-q8_0` (44.6 tok/s, 25.3 GiB, 71.4%), through
 > re-ran the probe; the result is nuanced enough to headline up front — see
 > [96 GiB VRAM carveout re-test](#96-gib-vram-carveout-re-test) immediately below.
 
-
-
 ## 96 GiB VRAM carveout re-test
 
 **Setup.** BIOS UMA raised **64 → 96 GiB** (`amd-smi` + sysfs confirm `VRAM total = 96.0
@@ -53,26 +51,20 @@ Ollama sizes GPU layers to system memory. So raising the carveout (which *shrink
 RAM 62 → 30 GiB) *lowers* Ollama's default budget and pushes models that were VRAM-resident
 at 64 GiB into CPU-offload:
 
-
 | Model                                  | 64 GiB (auto)                         | **96 GiB (auto / default)**                                  | 96 GiB (forced `num_gpu=999`, `use_mmap=false`)              |
 | -------------------------------------- | ------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | `gpt-oss:120b` (120B MoE)              | vram-fit, 56.6 GiB, **30.4 tok/s**    | **59% CPU-offload, 26.9 GiB VRAM, 5.7 tok/s** ⟵ *regression* | **100% GPU, 60.5 GiB VRAM, 36.8 tok/s**                      |
 | `llama3.1:70b-instruct-q8_0` (~69 GiB) | CPU-offload, **2.1 tok/s** (unusable) | ~63% CPU-offload, 27.6 GiB VRAM, CPU-bound (<3 tok/s)        | **100% GPU, 70.7 GiB VRAM, 3.0 tok/s** ⟵ *now VRAM-resident* |
-
-
-
 
 ### Forcing full VRAM residency (exploits the 96 GiB carveout)
 
 Overriding Ollama's estimate with `num_gpu=999` **+** `use_mmap=false` (options on
 `/api/generate`) makes both models load **100% on GPU**, using the carveout as intended:
 
-
 | Model                        | ollama split | VRAM used    | GTT | decode tok/s | prefill tok/s |
 | ---------------------------- | ------------ | ------------ | --- | ------------ | ------------- |
 | `gpt-oss:120b`               | **100% GPU** | **60.5 GiB** | ~0  | **36.8**     | 274           |
 | `llama3.1:70b-instruct-q8_0` | **100% GPU** | **70.7 GiB** | ~0  | **3.0**      | 45            |
-
 
 - `gpt-oss:120b` **is now *faster* than at 64 GiB** — 36.8 vs 30.4 tok/s — fully
   VRAM-resident at 60.5 GiB. (Its ~5.1B active params/token keep the MoE fast.)
@@ -82,8 +74,6 @@ Overriding Ollama's estimate with `num_gpu=999` **+** `use_mmap=false` (options 
   *hard* CPU-offload penalty but not the intrinsic bandwidth ceiling. It clears the 3 tok/s
   usable floor — just barely.
 
-
-
 ### New ceiling at 96 GiB (forced-residency sweep)
 
 To find where 100% residency *actually* tops out, a dedicated forced sweep
@@ -91,13 +81,11 @@ To find where 100% residency *actually* tops out, a dedicated forced sweep
 **bigger** dense rung — `qwen2.5:72b-instruct-q8_0` (~72 GiB) — beyond the Q8-70B
 ([`maxmodel-sweep-halo-b-96g-forced.json`](../perf/maxmodel-sweep-halo-b-96g-forced.json)):
 
-
 | Rung                         | Type                   | Sweep verdict              | Decode tok/s | Peak VRAM | Peak GTT | Peak sys RAM |
 | ---------------------------- | ---------------------- | -------------------------- | ------------ | --------- | -------- | ------------ |
 | `gpt-oss:120b`               | 120B MoE MXFP4         | **usable** / vram-fit      | **36.7**     | 60.5 GiB  | ~0       | 12.1 GiB     |
 | `llama3.1:70b-instruct-q8_0` | 70B dense Q8           | **usable** / vram-fit      | **3.04**     | 70.7 GiB  | ~0       | 12.1 GiB     |
 | `qwen2.5:72b-instruct-q8_0`  | 72B dense Q8 (~72 GiB) | **unusable(slow-spill)** * | **2.94**     | 72.6 GiB  | ~0       | 12.2 GiB     |
-
 
 - **At 96 GiB, residency is *not* the ceiling — dense-Q8 decode bandwidth is.** All three
   rungs stayed **VRAM-resident**: GTT ~0 **and** system RAM flat at ~12 GiB (identical to the
@@ -126,8 +114,6 @@ Q5 rung set the 94.59 GiB resident record cited above.)
 system RAM **31 GiB**. GTT stayed ~0 throughout (ROCm/llama.cpp does not use GTT for weight
 overflow — consistent with the 64 GiB findings).
 
-
-
 ### Decision: 96 GiB capacity mode; 64 GiB Gemma-default mode
 
 **Use Halo-B's 96 GiB VRAM carveout for capacity/reference and frontier tests, but prefer 64 GiB
@@ -148,8 +134,6 @@ for day-to-day Gemma 4 26B default serving.** Rationale and trade-off:
   120B/capacity story. At 96 GiB you **must** override Ollama's auto layer estimate (it sizes to
   the 30 GiB system RAM, not the carveout).
 
-
-
 ### Full-residency usage — capacity/reference `-vram` variants
 
 Make full residency the **default for a capacity/reference tag** with the helper
@@ -168,8 +152,6 @@ request). The **original tags are left untouched**, so the auto behavior stays a
 A/Bs. (The helper derives via `FROM <tag>` — deriving from the raw blob path makes 0.30.10
 re-validate the GGUF and fail for MXFP4/Q8, and `-f -`/stdin is not accepted.)
 - Ad-hoc sweeps can force it fleet-wide via the harness knobs: `NUM_GPU=999 USE_MMAP=false NUM_CTX=4096 bash perf/maxmodel-sweep.sh` (default behavior is unchanged when they are unset).
-
-
 
 ### Switch to the 64 GiB Gemma-default carveout (documented, not executed)
 
@@ -202,8 +184,6 @@ curl -s http://localhost:11434/api/generate -d \
     "options":{"num_gpu":999,"use_mmap":false,"num_ctx":4096}}'
 ```
 
-
-
 ## Tuning applied (OS-only, needs sudo + one reboot; BIOS stays at 64 GiB VRAM)
 
 ```bash
@@ -223,13 +203,11 @@ so they cannot prevent boot. `ttm.pages_limit=12582912` pages × 4 KiB = **48 Gi
 
 ## Memory map — before vs after (idle)
 
-
 | Phase                                    | GUI              | VRAM total / used | GTT total / used     | System RAM used    |
 | ---------------------------------------- | ---------------- | ----------------- | -------------------- | ------------------ |
 | **Before** (graphical.target, pre-tune)  | on (gnome-shell) | 64.00 / 0.16 GiB  | **31.22** / 0.03 GiB | ~13 GiB (w/ stack) |
 | **After** (headless, stack **down**)     | off              | 64.00 / 0.14 GiB  | **48.00** / 0.02 GiB | **4.7 GiB**        |
 | **After** (headless, stack **up**, idle) | off              | 64.00 / 0.14 GiB  | **48.00** / 0.02 GiB | ~12 GiB            |
-
 
 - The tuning **enlarges GTT 31.2 → 48.0 GiB** and confirms the **64 GiB VRAM carveout is
 ~fully free** headless (0.14 GiB used). On this box the GUI at the gdm login screen was
@@ -240,20 +218,16 @@ overflow pool and the CPU-pinned router stack both live.
 **62.4 GiB OS-visible system RAM**; **GTT is carved out of system RAM** on demand, so
 the GTT ceiling (48 GiB) competes with the OS + the router stack for those 62.4 GiB.
 
-
-
 ## vllm-sr stack footprint (co-resident, CPU-pinned classifiers)
 
 Full stack UP = 9 containers (router, Envoy, dashboard, sim, Grafana, Prometheus,
 Jaeger, Postgres, Redis) + Ollama. Idle container RAM (`docker stats`):
-
 
 | Component                                                                  | Unified RAM             |
 | -------------------------------------------------------------------------- | ----------------------- |
 | Router (Go + CPU-pinned ONNX classifiers)                                  | **7.9 GiB**             |
 | Envoy / dashboard / sim / Grafana / Prometheus / Jaeger / Postgres / Redis | ~0.6 GiB                |
 | **Total stack footprint**                                                  | **≈8.5 GiB** system RAM |
-
 
 Because `VLLM_SR_AMD_PRESERVE_CPU=1` pins the classifiers to CPU, the stack lands in
 **system RAM**, not VRAM — so it does **not** shrink the 64 GiB VRAM carveout the models
@@ -265,7 +239,6 @@ load into; it taxes the system-RAM budget that also backs GTT.
 runs → classify. `usable` = decode ≥ `OOM_MIN_TPS` (3); `gtt-spill` = peak GTT above 2
 GiB (weights spilled past the carveout). All rungs run with the router **UP**.
 
-
 | Rung                              | Type                       | Verdict                  | Mem mode          | Decode tok/s | Peak VRAM    | Peak GTT | TTFT   |
 | --------------------------------- | -------------------------- | ------------------------ | ----------------- | ------------ | ------------ | -------- | ------ |
 | `qwen2.5:32b`                     | 32B dense Q4               | **usable**               | vram-fit          | **10.9**     | 26.7 GiB     | ~0       | 231 ms |
@@ -273,7 +246,6 @@ GiB (weights spilled past the carveout). All rungs run with the router **UP**.
 | `llama3.1:70b` @ `num_ctx=131072` | 70B + max KV               | **usable**               | vram-fit          | **3.9**      | 55.9 GiB     | ~0       | —      |
 | `gpt-oss:120b`                    | **120B MoE MXFP4**         | **usable**               | vram-fit          | **30.4**     | **56.6 GiB** | ~0       | 4.3 s  |
 | `llama3.1:70b-instruct-q8_0`      | **70B dense Q8 (~69 GiB)** | **unusable(slow-spill)** | **vram-exceeded** | **2.1**      | 56.4 GiB     | ~0       | —      |
-
 
 Notes:
 
@@ -283,8 +255,6 @@ being far larger — 30 tok/s vs 3.6 tok/s. Its 56.6 GiB footprint sits inside t
 - `num_ctx` is **not** a reliable lever to force a spill here: Ollama **caps the KV-cache
 allocation**, so even `num_ctx=131072` leaves the 70B at ~56 GiB (vram-fit). Forcing a
 spill therefore requires a model whose **weights alone** exceed the carveout.
-
-
 
 ## Ceiling + failure mode
 
@@ -312,19 +282,13 @@ stayed ~0: Ollama/llama.cpp on ROCm 7.2 does **not** use GTT for weight overflow
   max-model reference under the full co-resident topology is `gpt-oss:120b`; the current
   local/default model family is Gemma 4 26B MoE.
 
-
-
 ## Contrast with Halo-A (perf-report §3)
-
 
 |                 | Halo-A (94 GiB unified, GUI up)                  | Halo-B (headless, 64 GiB VRAM + 48 GiB GTT)               |
 | --------------- | ------------------------------------------------ | --------------------------------------------------------- |
 | Max usable      | `qwen2.5:32b` (~10.7 tok/s)                      | `gpt-oss:120b` (~30 tok/s)                                |
 | 70B             | **fails to load** (GTT spill 48.9 GB → HTTP 500) | **usable, vram-fit** (48.2 GiB, 3.6 tok/s)                |
 | Governing limit | unified budget − stack; GTT spill aborts (hard)  | 64 GiB VRAM carveout; overflow → CPU offload (soft, slow) |
-
-
-
 
 ## Reproduce
 
@@ -334,8 +298,6 @@ SWEEP_TAGS="qwen2.5:32b llama3.1:70b gpt-oss:120b" bash perf/maxmodel-sweep.sh
 # Force a footprint past the VRAM carveout to characterize the overflow (CPU offload):
 SWEEP_TAGS="llama3.1:70b-instruct-q8_0" bash perf/maxmodel-sweep.sh   # ~69 GiB weights
 ```
-
-
 
 ## Quantization frontier (96 GiB, forced-resident)
 
@@ -347,7 +309,6 @@ dense, each Q4_K_M / Q8_0 / int4-QAT) added later under the same forced-resident
 scored for both decode speed (`maxmodel-sweep.sh`) and MCQ accuracy (`quant-quality.py`, 42
 stratified MMLU-Pro questions). **All rungs were 100% VRAM-resident** (`vram-fit`,
 `size_vram/size`=1.0):
-
 
 | Model (quant)                                   | Peak VRAM     | Decode tok/s | MMLU-Pro (42Q)    | Verdict           |
 | ----------------------------------------------- | ------------- | ------------ | ----------------- | ----------------- |
@@ -365,7 +326,6 @@ stratified MMLU-Pro questions). **All rungs were 100% VRAM-resident** (`vram-fit
 | `gemma4:31b` (31B dense, Q4_K_M) [M]            | 19.4 GiB      | 11.3         | 73.8% (31/42)     | usable / vram-fit |
 | `gemma4:31b-it-q8_0` (31B dense) [M]            | 32.4 GiB      | 7.1          | 76.2% (32/42)     | usable / vram-fit |
 | `gemma4:31b-it-qat` (31B dense) [M]             | 18.5 GiB      | **12.3**     | **78.6% (33/42)** | usable / vram-fit |
-
 
 Per-rung data: [`perf/quant-frontier/`](../perf/quant-frontier/) (`sweep-*.json` + `quality-*.json`).
 

@@ -55,7 +55,7 @@ Per the "definition of done" in section 1 of [02-poc-plan.md](02-poc-plan.md), b
 
 > 本節只深入「demo 會實際點到」的畫面；其餘導覽項目仍維持下方各節的精簡參考。設定事實來源為 [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)，探測題庫為 [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml)。
 > This section drills into only the screens the demo actually clicks; the remaining nav items stay as the concise reference in the sections below. The source of truth for config facts is [poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml), and the probe bank is [poc-probes.yaml](../../deploy/recipes/strix-halo-poc/poc-probes.yaml).
-
+>
 > PoC 的 5 個 tier 與其 `name`（決策引用的邏輯名稱）/ 本地 Ollama 模型 / 每百萬 completion token 的 `pricing` 對照（成本差距是成本節省故事的基礎）/ The 5 PoC tiers, mapped as `name` (the logical name decisions reference) / local Ollama model / `pricing` completion-per-1M (the cost spread underpins the savings story):
 >
 > - SIMPLE：`qwen/qwen3.5-rocm` / `llama3.2:3b` / `$0`

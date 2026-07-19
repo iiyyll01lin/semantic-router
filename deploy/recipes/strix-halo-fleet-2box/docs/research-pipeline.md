@@ -16,22 +16,22 @@ so the claims below are backed by data, not assertion.
 
 1. **A pull-mode, signed, centrally-audited config control plane for _bare_ edge
    AIPC gateways** — not Kubernetes-managed nodes. It reuses the router's existing
-   per-node primitives (fsnotify hot-reload + `GET /config/hash`) and adds *only*
+   per-node primitives (fsnotify hot-reload + `GET /config/hash`) and adds _only_
    the central distribution + signing + audit layer. Prior art (the operator)
-   centralizes config *inside a K8s cluster*; a fleet of bare ROCm gateways had no
+   centralizes config _inside a K8s cluster_; a fleet of bare ROCm gateways had no
    central, audited way to receive one rule change.
 2. **A hash-equality convergence contract that holds across _heterogeneous_
    implementations** — a Python control plane signs `sha256(config_bytes)`, and an
    independent Go router returns the identical value from `GET /config/hash` over
    its bind-mounted source file. Proven both mock↔real and **real↔real** on ROCm
-   hardware. Correctness is a *byte-exact hash equality*, not a fuzzy diff.
+   hardware. Correctness is a _byte-exact hash equality_, not a fuzzy diff.
 3. **In-place single-file hot-reload as the apply primitive.** The router
    bind-mounts config as one file and watches it with fsnotify; the agent
    truncate-writes the new bytes **in place (same inode)**, so a real router
    hot-reloads with no restart and no atomic-rename inode swap.
 4. **Zero-touch onboarding** of a bare box (no `vllm-sr`, no models, stale schema)
    to a real gateway in one command.
-5. **NAT-friendly by construction** — agents only dial *outbound* (to the CCP and
+5. **NAT-friendly by construction** — agents only dial _outbound_ (to the CCP and
    to localhost), so a firewalled edge box needs no inbound exposure.
 
 ## 2. The pipeline
@@ -94,8 +94,8 @@ Captured automatically per run by [`fleet_metrics.py`](../fleet_metrics.py) into
 | network per poll | bytes moved per agent poll (pull-only) | bytes | payload = config size | one config / poll |
 | audit growth | audit records per fleet edit | records | audit | 2 / edit (1 per box) |
 
-**Metrics that need finer instrumentation** (roadmap R1/R9): true *hot-reload
-latency* (config-write → router serving new config) is currently bounded by the
+**Metrics that need finer instrumentation** (roadmap R1/R9): true _hot-reload
+latency_ (config-write → router serving new config) is currently bounded by the
 1 s audit-timestamp granularity + the 3 s poll interval; sub-second measurement
 needs the agent to emit a write→converge timer. See
 [research-roadmap.md](research-roadmap.md).
@@ -103,7 +103,7 @@ needs the agent to emit a write→converge timer. See
 ### 4a. Co-location overhead & inference-server metrics (perf harnesses)
 
 Beyond the control-plane metrics above, the [`perf/`](../perf/README.md) harnesses
-quantify what it *costs* to run vllm-sr on a Strix Halo box and how backends
+quantify what it _costs_ to run vllm-sr on a Strix Halo box and how backends
 compare. Each gateway box emits `overhead-<box>.json` (Test 1) and
 `server-<box>.json` (Test 2); [`perf_metrics.py`](../perf/perf_metrics.py) rolls
 them fleet-wide into `perf-metrics.json` + `perf-summary.md` (same run bundle as
@@ -134,7 +134,7 @@ numbers**: report them with the box + quant + load shape they were measured unde
   edit-once via hot-reload (not restart), drift self-heal, rollback, **signed-bundle
   tamper rejection**, and central audit — **8/8**, no hardware.
 - **Perf harness offline proof.** [`perf/verify_perf_local.py`](../perf/verify_perf_local.py)
-  stands up mock backends and exercises the *real* tok/s probe (Ollama + OpenAI
+  stands up mock backends and exercises the _real_ tok/s probe (Ollama + OpenAI
   dialects), the in-place backend rewrite, and the fleet perf aggregation —
   **7/7**, no ROCm/Docker. So the overhead/server harnesses are validated before a
   hardware run supplies the actual numbers.

@@ -213,9 +213,9 @@ container with **`OLLAMA_NUM_PARALLEL=4`**.
 | 8 | 43.3 | 20753 ms | 107.3 | 4919 ms | 2.48× | 4.2× |
 | 16 | 43.4 | 41305 ms | 107.2 | 14452 ms | 2.47× | 2.9× |
 
-_Per-stream decode under parallelism falls as slots fill (memory-bandwidth
+*Per-stream decode under parallelism falls as slots fill (memory-bandwidth
 contention on the unified-memory APU): 43.9 (c1) → 36.1 (c2) → 27.1 (c4) → ~27.5
-(c8/16) tok/s._
+(c8/16) tok/s.*
 
 **Story — two completely different curves from the same box.**
 
@@ -369,7 +369,7 @@ stage is essentially the whole tax:
 | Model selection (ML selectors) | Prom `…model_selection_duration` | **0** — rule-based decision-engine path taken | 0% |
 | Semantic-cache lookup | Prom `…cache_operation{find_similar}`; Jaeger `plugin.execution` (`cache.hit`) | **0** on the original run (cache gated off); **now live: ~46 ms avg** after enabling the plugin | small — a *hit* skips the **upstream** leg, not embed/classify (box below) |
 | **Total router processing** | Prom `…model_routing_latency` | **~1030 ms mean** | 100% |
-| _Upstream first token — **not** router tax_ | Jaeger `upstream.request`; Prom `…model_ttft` | _~165 ms warm (local qwen); seconds when the routed model cold-loads or is remote_ | — |
+| *Upstream first token — **not** router tax* | Jaeger `upstream.request`; Prom `…model_ttft` | *~165 ms warm (local qwen); seconds when the routed model cold-loads or is remote* | — |
 
 **Inside the dominant stage.** The signal heads run **concurrently** (goroutine
 fan-out), so the `signal.evaluation` wall-clock (~0.8–1.0 s) is the **critical path
@@ -399,11 +399,11 @@ is scoped *per routing decision*, so the router must embed + classify to pick th
 decision before it can consult that decision's cache), and dropping unused
 classifier heads pulls the critical path down toward the next-slowest head. This is the measured backing for the §7 levers above, and it
 confirms the warning in the table: **layer truncation would only shave the embedding
-leg (~0.48 s) while collapsing accuracy — not worth it.** _(Measured on the current
+leg (~0.48 s) while collapsing accuracy — not worth it.** *(Measured on the current
 live stack, whose routed models — `qwen/qwen3.5-rocm` plus cloud tiers — differ from
 the Ollama tiers timed in §2b; the **decomposition/shape** is the result here, and
 it matches §2b's embed-dominated ~1.4 s tax. Reproduce: send a few `:8899` requests,
-then `GET :16686/api/traces?service=vllm-sr` + diff `:9190/metrics`.)_
+then `GET :16686/api/traces?service=vllm-sr` + diff `:9190/metrics`.)*
 
 **Cache hit vs miss — live span decomposition (0.92, now enabled). [M]** With the
 `semantic-cache` plugin live on the 14 decisions, a HIT and a MISS were traced
@@ -465,10 +465,10 @@ Decision mix (all 261): `simple_general` 62, `medium_explainer` 40, `casual_chat
 `google/gemini-2.5-flash-lite` 19. Full per-case records:
 [`perf/route-accuracy-halo-a.json`](../perf/route-accuracy-halo-a.json).
 
-_Note: **3 legit science questions** (a plant-genetics, a heat-of-combustion, and
+*Note: **3 legit science questions** (a plant-genetics, a heat-of-combustion, and
 a nozzle-shock problem) route to `security_guard` — i.e. the jailbreak/PII guard
 false-positives on them. That is a real (small) accuracy cost of keeping those
-safety heads, and a data point for the §7-head-trim trade-off below._
+safety heads, and a data point for the §7-head-trim trade-off below.*
 
 ```bash
 BOX=halo-a python3 perf/route-accuracy.py baseline        # writes route-accuracy-halo-a.json
@@ -584,6 +584,7 @@ reverted and the deploy rolled back to the CPU image. This **empirically confirm
 (with a live crash trace) the inspection-based conclusion below.
 
 **Why the GPU path crashes (concrete, current code):**
+
 1. The GPU flip is **all-or-nothing**. `--platform amd` with
    `VLLM_SR_AMD_FORCE_GPU` (or simply unsetting `VLLM_SR_AMD_PRESERVE_CPU`) runs
    `apply_platform_gpu_defaults` → `_set_use_cpu_false_for_amd`
@@ -620,7 +621,7 @@ registered function/op`, seen every reload — it silently falls back), and GPU
 classifiers would then fight the Ollama LLM **decode** for the shared unified
 memory (§9). Low reward, real crash/contention risk.
 
-**Verdict: stays CPU (gfx1151 ROCm-EP, then TD-046).** We *did* land TD-046's exit
+**Verdict: stays CPU (gfx1151 ROCm-EP, then [TD-046]).** We *did* land TD-046's exit
 criteria (serialize ROCm session creation) on a rebuilt image and flip
 `use_cpu:false` — and the router still crashed, now in the **embedding** ROCm-EP
 build (above), i.e. gfx1151's shaky ROCm is the first wall and TD-046 the second.
@@ -802,7 +803,7 @@ sweep ([`perf/maxmodel-sweep.sh`](../perf/maxmodel-sweep.sh)):
   **Halo-A**, where the 70B spilled to **GTT and the load aborted (HTTP 500)** — a
   *harder* failure.
 - **`use_mmap=false` is required on Halo-B** for the 120B: with mmap the ~68 GB load
-  + CPU tensor overrides never finished inside client timeouts ("aborting load");
+  - CPU tensor overrides never finished inside client timeouts ("aborting load");
   no-mmap loads in ~31 s and decodes at ~31 tok/s. Pinning `num_ctx` also stalled the
   load — the model's **default ctx** works.
 - **The enlarged GTT (48 GiB) is *not* what raised the ceiling** — GTT stayed ~0 on
@@ -1040,7 +1041,7 @@ Rollup (per-cell raw + 120B winner + matrix-local recommended config):
 | llamacpp · auto · 8 | loaded³ | 28.3 | — (c8 fail)⁴ | — | — | 32.4 GiB (+31.0 sys) |
 | ollama · auto · 1 | load-fail⁵ | — (0 tok) | — | — | — | 27.1 GiB |
 | ollama · auto · 8 | load-fail⁶ | — | — | — | — | — |
-| **cache overlay** (ollama winner `ollama-resident-p8`) | — | repeat TTFT miss **1,041 ms** → exact-hit **689 ms** (saved **351 ms**, ~34%) · semantic-0.92 hit **659 ms** (exact/semantic hit-rate 2/3 each)⁷ |
+| **cache overlay** (ollama winner `ollama-resident-p8`) | — | repeat TTFT miss **1,041 ms** → exact-hit **689 ms** (saved **351 ms**, ~34%) · semantic-0.92 hit **659 ms** (exact/semantic hit-rate 2/3 each)⁷ | | | | |
 
 ¹ ollama's `/api/generate` per-request TTFT was not captured for the 120B reference this run (a known
 streaming quirk of gpt-oss through ollama; llama.cpp's OpenAI/SSE path *does* record it, so the winner
@@ -1149,7 +1150,7 @@ c2 / c4 points):
   VRAM footprint than ollama's `-vram` variant. This **extends the §10 "llama.cpp is the fastest
   server" finding to the 120B itself** — the previous "cannot load on gfx1151" was a disk/download
   artifact (see Risks), not a kernel gap.
-- **120B resident config vs naive plain tag is _usable vs unusable_, not a tidy multiple.** The winner
+- **120B resident config vs naive plain tag is *usable vs unusable*, not a tidy multiple.** The winner
   serves the 120B at 95.2 tok/s aggregate, VRAM-resident; the naive baseline (plain `gpt-oss:120b`, ollama auto
   estimate, `NUM_PARALLEL=1`) **produced zero decode tokens** — auto sizing placed only 33.9% on GPU
   and CPU-offloaded the rest, which cannot fit ~30 GiB system RAM. The fix (resident placement:
@@ -1293,7 +1294,8 @@ bash perf/collect-report-data.sh
 ```
 
 That script runs, in order: [1] offline verifier → [2] install Lemonade → [3] Test 1
-+ Test 2 (fleet) → [4] ensure stack up → [5] concurrency sweep → [6] cache sweep →
+
+- Test 2 (fleet) → [4] ensure stack up → [5] concurrency sweep → [6] cache sweep →
 [7] stitch `report-data.md`. Or run the pieces by hand:
 
 ```bash

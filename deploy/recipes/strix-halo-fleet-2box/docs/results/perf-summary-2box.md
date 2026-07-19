@@ -56,4 +56,3 @@ from-source router image) and `docs/perf-report.md` §7.5 for detail.
   88.9%. Reverted to keep full safety on the live router — kept as an opt-in lever.
 - **INT8/OpenVINO (C) and GPU-offload (D):** documented blockers, not landed
   (OpenVINO not integrated; GPU flip SIGSEGVs on gfx1151). Router stays CPU.
-
