@@ -18,7 +18,7 @@ markdown-lint: ## Lint all markdown files in the project
 		--ignore bench \
 		--ignore e2e/config/models \
 		--ignore website/docs/api/crd-reference.md \
-		--ignore models \
+		--ignore "**/models/**" \
 		--ignore vsr
 
 markdown-lint-fix: ## Auto-fix markdown lint issues
@@ -30,7 +30,7 @@ markdown-lint-fix: ## Auto-fix markdown lint issues
 		--ignore dashboard/wizmap/node_modules \
 		--ignore bench \
 		--ignore e2e/config/models \
-		--ignore models \
+		--ignore "**/models/**" \
 		--ignore vsr \
 		--fix
 
