@@ -2,7 +2,12 @@
 
 ## Status
 
-Open
+Mitigated - the `warnGlobalModelSelectionMethodIgnored` startup validator ships
+in `src/semantic-router/pkg/config/validator_model_selection.go` and is wired
+into `validator.go`, so the silent dead-config case now surfaces as a boot
+warning (the Part 1 remediation). The underlying single-candidate short-circuit
+and global-method-not-consulted routing behavior are unchanged, so this remains
+open as a warning-only mitigation rather than a full routing fix.
 
 ## Owner Plan
 

@@ -10,7 +10,7 @@ auto-rollback), **R6** (CCP durability), **R4** (asymmetric signing + anti-downg
 
 > **Everything here is OPT-IN with a safe fallback.** With no new env set, the
 > recipe behaves exactly as before (HMAC-signed bundles over plain HTTP), and the
-> offline proof `python3 verify_local.py` stays green (now **16/16**). The stdlib-
+> offline proof `python3 verify_local.py` stays green (now **20/20**). The stdlib-
 > only / importable-on-a-bare-box property is preserved: Ed25519 is a vendored
 > pure-Python reference implementation, TLS uses stdlib `ssl`.
 
