@@ -395,9 +395,14 @@ func validateSpecializedAlgorithmConfig(decisionName string, modelRefs []ModelRe
 			return fmt.Errorf("decision '%s', algorithm.workflows: %w", decisionName, err)
 		}
 	case "failover":
-		if err := validateFailoverAlgorithmConfig(algorithm.Failover); err != nil {
-			return fmt.Errorf("decision '%s', algorithm.failover: %w", decisionName, err)
-		}
+		return validateDecisionFailoverAlgorithmConfig(decisionName, algorithm.Failover)
+	}
+	return nil
+}
+
+func validateDecisionFailoverAlgorithmConfig(decisionName string, cfg *FailoverAlgorithmConfig) error {
+	if err := validateFailoverAlgorithmConfig(cfg); err != nil {
+		return fmt.Errorf("decision '%s', algorithm.failover: %w", decisionName, err)
 	}
 	return nil
 }
