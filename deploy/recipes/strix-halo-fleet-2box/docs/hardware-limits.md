@@ -31,9 +31,10 @@ covered 16K/32K observed input, reuse 0/90%, concurrency 4/8, and output 64.
   native tools scored **21/22** correct arguments/steps; the real-agent smoke
   returned **16/16 HTTP 200** but only **1/4** exact task passes.
 - BF16 vLLM measurements are not directly comparable with the Q4/Q8 GGUF
-  Ollama/llama.cpp frontier below. The planned three-repetition replay and a new
-  same-host `demo-002` llama.cpp validation were explicitly deferred on
-  2026-07-23 and are not represented as passed.
+  Ollama/llama.cpp frontier below. Full replay acceptance was not obtained: v1
+  failed payload calibration, while v2/v3 passed fixed+branch semantics but were
+  stopped before quality. The same-host `demo-002` llama.cpp comparison remained
+  deferred. See the [campaign ledger](results/agentic-prefill-campaign-20260722.md).
 
 The same selected scope also completed a direct Ollama capacity profile for the
 Q8 Gemma default at a 65,536-token allocation: **17/17 cells checkpointed,

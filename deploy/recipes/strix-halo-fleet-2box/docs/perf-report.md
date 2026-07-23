@@ -742,10 +742,13 @@ BF16 vLLM rows directly comparable to the Q4/Q8 GGUF Ollama/llama.cpp rows in
 this report. The original Test 2 parity row therefore remains historical rather
 than being backfilled with an unlike workload.
 
-The planned three-repetition long-horizon replay and a new same-host
-`demo-002` llama.cpp validation were explicitly deferred by user scope on
-2026-07-23; they are not represented as passed. Existing llama.cpp measurements
-elsewhere in this report remain unchanged.
+Full replay acceptance was not obtained. Three v1 repetitions ran and failed
+payload calibration with HTTP 400/missing authoritative usage. Later v2/v3
+attempts passed fixed+branch replay semantics but were stopped before quality
+under the explicit 2026-07-23 scope decision. The new same-host `demo-002`
+llama.cpp comparison remained deferred. The complete qualification, acceptance,
+partial, blocked, and superseded run inventory is in the
+[campaign ledger](results/agentic-prefill-campaign-20260722.md).
 
 **Selected-scope Ollama capacity completion (2026-07-23, `demo-002`).** The
 persistent digest-pinned Ollama 0.32.1 service loaded

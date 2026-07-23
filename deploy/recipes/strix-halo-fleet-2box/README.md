@@ -451,10 +451,11 @@ Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
   exact final-answer contract on **1/4** tasks. See §9 of
   [`docs/perf-report.md`](docs/perf-report.md) for the separated interpretation
   and BF16-vs-GGUF caveat.
-- The three-repetition long-horizon replay and a new same-host `demo-002`
-  llama.cpp validation were explicitly deferred on 2026-07-23. Existing
-  llama.cpp evidence remains valid; the deferred runs are not represented as
-  completed or passed.
+- Replay did not reach full acceptance: three v1 repetitions failed payload
+  calibration with HTTP 400; later v2/v3 attempts passed fixed+branch semantics
+  but were stopped before quality under the explicit scope decision. A new
+  same-host `demo-002` llama.cpp validation remained deferred. See the complete
+  [campaign ledger](docs/results/agentic-prefill-campaign-20260722.md).
 - The approved direct Ollama capacity scope then finished **17/17 cells** at
   contexts through 65,152 tokens: **174/174 HTTP successes, 150/174 exact
   markers, and 7/17 cells passing every gate**. The ten failed cells are
