@@ -8,8 +8,8 @@ _2× Ryzen AI Max+ 395 fleet (halo-a + halo-b) · core figures measured 2026-07-
 pinned official vLLM v0.25.1 BF16 stack measured working on gfx1151. Direct
 Ollama Gemma Q8 was configured/loaded at 65,536 tokens and tested inputs through
 65,152: **17 cells / 174 requests, 174/174 HTTP and exact prompt usage, 150/174
-markers, 7/17 fully green**. Capacity is **PARTIAL PASS**, quality **NOT
-ACHIEVED**, and reliability **NOT RUN**. See the
+markers, 7/17 fully green**. Capacity is **PARTIAL PASS**, performance
+**MEASURED**, quality **NOT ACHIEVED**, and reliability **NOT RUN**. See the
 [focused agentic brief](agentic-context-customer-onepager-20260722.md); these
 figures do not replace the dated Halo-A/B baseline below.
 
