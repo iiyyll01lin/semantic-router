@@ -15,6 +15,9 @@ BASE = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = Path.home() / "vllm-sr-evidence/agentic-context-customer-20260722"
 MILESTONE_ROOT = Path.home() / "vllm-sr-evidence/demo-002-capacity-matrix"
 PREFILL_ROOT = Path.home() / "vllm-sr-evidence/agentic-prefill-20260722"
+BACKUP_ARCHIVE = (
+    Path.home() / "vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz"
+)
 
 
 def load_sources():
@@ -127,6 +130,31 @@ class ReportConsistencyTests(unittest.TestCase):
             any("interim_demo_manifest entries" in error for error in errors)
         )
 
+    def test_backup_generation_drift_fails(self):
+        four, evidence = load_sources()
+        mutations = [
+            ("entries", 184),
+            ("archive_sha256", "0" * 64),
+            ("manifest_sha256", "0" * 64),
+        ]
+        for key, value in mutations:
+            with self.subTest(key=key, value=value):
+                mutated = copy.deepcopy(four)
+                mutated["evidence_integrity"]["milestone_capacity_backup"][key] = value
+                errors = validator.validate_structured(mutated, evidence)
+                self.assertTrue(any("backup" in error for error in errors))
+
+    def test_backup_missing_independent_replica_fails(self):
+        four, evidence = load_sources()
+        mutated = copy.deepcopy(evidence)
+        mutated["evidence_generations"]["milestone_capacity_backup"][
+            "independent_replica_verified"
+        ] = False
+        errors = validator.validate_structured(four, mutated)
+        self.assertTrue(
+            any("verified independent replica" in error for error in errors)
+        )
+
     def test_milestone_or_nested_request_drift_fails(self):
         four, evidence = load_sources()
         mutations = [
@@ -189,6 +217,12 @@ class ReportConsistencyTests(unittest.TestCase):
     )
     def test_preserved_llamacpp_out256_evidence_passes(self):
         self.assertEqual(validator.validate_llamacpp_out256(PREFILL_ROOT), [])
+
+    @unittest.skipUnless(
+        BACKUP_ARCHIVE.exists(), "immutable evidence backup archive unavailable"
+    )
+    def test_preserved_backup_archive_passes(self):
+        self.assertEqual(validator.validate_backup_archive(BACKUP_ARCHIVE), [])
 
     @unittest.skipUnless(
         EVIDENCE_ROOT.exists(), "preserved evidence mirror unavailable"

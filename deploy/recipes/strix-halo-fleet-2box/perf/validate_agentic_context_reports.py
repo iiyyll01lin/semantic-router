@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import sys
+import tarfile
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -96,6 +97,16 @@ EXPECTED_ARCHIVE_HASHES = {
     ),
     "agentic_prefill_tar_sha256": (
         "68e9811ca088a93c0683804f40b7c5d529967ea828277901fa3f618126d45b73"
+    ),
+}
+EXPECTED_BACKUP = {
+    "archive": "demo-002-evidence-backup-20260723.tar.gz",
+    "entries": 185,
+    "archive_sha256": (
+        "9ab55b53e4639beb0ca7d7787137722125ad56b64cc7839dff9bbde8a290d81e"
+    ),
+    "manifest_sha256": (
+        "67fe363e3f8f60ce9579b15a206b927ec644280c8ff4567a06d0087acd0be7f4"
     ),
 }
 CAPACITY_SUMMARIES = (
@@ -405,6 +416,32 @@ def _validate_evidence_generations(
             generations.get("milestone_capacity_mirror", {}).get("content_verification")
             == mirror_verification,
             f"{label} milestone mirror verification drifted",
+        )
+
+    for label, generations in (
+        ("four-proof", four_generations),
+        ("evidence-index", index_generations),
+    ):
+        backup = generations.get("milestone_capacity_backup", {})
+        _expect(
+            errors,
+            backup.get("entries") == EXPECTED_BACKUP["entries"],
+            f"{label} backup entries must be {EXPECTED_BACKUP['entries']}",
+        )
+        _expect(
+            errors,
+            backup.get("archive_sha256") == EXPECTED_BACKUP["archive_sha256"],
+            f"{label} backup archive hash drifted",
+        )
+        _expect(
+            errors,
+            backup.get("manifest_sha256") == EXPECTED_BACKUP["manifest_sha256"],
+            f"{label} backup manifest hash drifted",
+        )
+        _expect(
+            errors,
+            backup.get("independent_replica_verified") is True,
+            f"{label} backup must record a verified independent replica",
         )
 
     crosschecks = evidence.get("campaign_crosschecks", {})
@@ -730,6 +767,56 @@ def validate_llamacpp_out256(prefill_root: Path) -> list[str]:
     return errors
 
 
+def validate_backup_archive(archive_path: Path) -> list[str]:
+    """Re-derive the immutable evidence backup archive hash and per-file manifest.
+
+    The archive is a deterministic ``tar --sort=name ... | gzip -n`` of the four
+    demo-002 mirror members.  This re-hashes the archive bytes and rebuilds the
+    ``sha256sum``-style manifest (path-sorted under byte/``LC_ALL=C`` order) from
+    the archive contents, matching how the recorded manifest hash was produced.
+    """
+    errors: list[str] = []
+    try:
+        archive_bytes = archive_path.read_bytes()
+    except OSError as exc:
+        return [str(exc)]
+    archive_digest = hashlib.sha256(archive_bytes).hexdigest()
+    _expect(
+        errors,
+        archive_digest == EXPECTED_BACKUP["archive_sha256"],
+        f"backup archive sha256 drifted: {archive_digest}",
+    )
+    rows: list[tuple[str, str]] = []
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:
+                    errors.append(f"backup archive member unreadable: {member.name}")
+                    continue
+                digest = hashlib.sha256(handle.read()).hexdigest()
+                rows.append((member.name, digest))
+    except (OSError, tarfile.TarError) as exc:
+        errors.append(str(exc))
+        return errors
+    _expect(
+        errors,
+        len(rows) == EXPECTED_BACKUP["entries"],
+        f"backup archive files: {len(rows)} != {EXPECTED_BACKUP['entries']}",
+    )
+    rows.sort(key=lambda row: row[0])
+    manifest = ("\n".join(f"{digest}  {name}" for name, digest in rows) + "\n").encode()
+    manifest_digest = hashlib.sha256(manifest).hexdigest()
+    _expect(
+        errors,
+        manifest_digest == EXPECTED_BACKUP["manifest_sha256"],
+        f"backup archive manifest hash drifted: {manifest_digest}",
+    )
+    return errors
+
+
 def validate_markdown(texts: dict[str, str]) -> list[str]:
     """Return reader-facing report consistency errors."""
     errors: list[str] = []
@@ -893,6 +980,11 @@ def main() -> int:
         type=Path,
         help="optional Halo-A agentic-prefill evidence root",
     )
+    parser.add_argument(
+        "--backup-archive",
+        type=Path,
+        help="optional immutable demo-002 evidence backup tar.gz to re-derive",
+    )
     args = parser.parse_args()
     errors = validate_report_set(args.base.resolve())
     if args.selected_summary:
@@ -906,6 +998,8 @@ def main() -> int:
         errors.extend(validate_milestone_evidence(args.milestone_mirror_root.resolve()))
     if args.prefill_evidence_root:
         errors.extend(validate_llamacpp_out256(args.prefill_evidence_root.resolve()))
+    if args.backup_archive:
+        errors.extend(validate_backup_archive(args.backup_archive.resolve()))
     if errors:
         print(
             f"FAIL: {len(errors)} agentic-context report consistency error(s)",

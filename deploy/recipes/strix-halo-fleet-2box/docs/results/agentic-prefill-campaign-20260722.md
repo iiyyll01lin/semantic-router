@@ -101,6 +101,19 @@ prompts or responses into git.
   `d86f9cf206b83a908a2d1eaf11e2047747cbaf89401e2033220979e7d5138a7c`
   and prefill
   `68e9811ca088a93c0683804f40b7c5d529967ea828277901fa3f618126d45b73`.
+- The controller-only `demo-002-capacity-matrix` mirror (plus its host-prep,
+  clone-uncommitted, and provenance siblings) is now captured in a **deterministic
+  immutable backup**, `demo-002-evidence-backup-20260723.tar.gz` (**185 files**),
+  built with `tar --sort=name --owner=0 --group=0 --numeric-owner
+  --mtime=2026-07-23T00:00:00Z | gzip -n` and byte-identical across two rebuilds.
+  Its archive hash is
+  `9ab55b53e4639beb0ca7d7787137722125ad56b64cc7839dff9bbde8a290d81e` and its
+  per-file SHA-256 manifest hashes to
+  `67fe363e3f8f60ce9579b15a206b927ec644280c8ff4567a06d0087acd0be7f4`. It lives on
+  the controller at `/home/aup/vllm-sr-evidence/archives/` with an independent,
+  hash-verified replica on a separate host/filesystem so the new mirror is no
+  longer single-copy. `perf/validate_agentic_context_reports.py --backup-archive`
+  re-derives both hashes from the archive contents.
 - Large raw JSONL/request evidence remains outside git; this ledger records the
   result families and canonical evidence paths.
 
