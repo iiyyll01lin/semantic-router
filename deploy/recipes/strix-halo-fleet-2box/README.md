@@ -436,6 +436,31 @@ Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
 
 ## Honest boundaries
 
+### 2026-07-22/23 gfx1151 serving addendum
+
+- A pinned official vLLM v0.25.1 image was measured on `demo-002` with BF16
+  `Qwen/Qwen2.5-7B-Instruct`, `ROCM_ATTN`, chunked prefill, and localhost-only
+  isolation. All **48/48** planned 16K/32K batching/APC cells produced valid
+  checkpoints; **435/448** measured requests completed successfully, with no OOM
+  or container restart. This supersedes the blanket statement that vLLM cannot
+  execute on gfx1151 for that exact stack, but it is not a claim about arbitrary
+  images, models, attention backends, or ROCm releases.
+- Long-context transport success was not agentic correctness: the repetitive
+  matrix produced zero required `MATRIX_OK` markers. Native short-context tools
+  scored **21/22** correct arguments/steps, while the real-agent smoke met the
+  exact final-answer contract on **1/4** tasks. See §9 of
+  [`docs/perf-report.md`](docs/perf-report.md) for the separated interpretation
+  and BF16-vs-GGUF caveat.
+- The three-repetition long-horizon replay and a new same-host `demo-002`
+  llama.cpp validation were explicitly deferred on 2026-07-23. Existing
+  llama.cpp evidence remains valid; the deferred runs are not represented as
+  completed or passed.
+- The approved direct Ollama capacity scope then finished **17/17 cells** at
+  contexts through 65,152 tokens: **174/174 HTTP successes, 150/174 exact
+  markers, and 7/17 cells passing every gate**. The ten failed cells are
+  instruction-marker failures rather than infrastructure failures; both 65,152
+  concurrency cells (c2/c4) passed completely.
+
 - The router's own `/config/*` API has **no native authentication** today, so the
   agent calls it on **localhost only**; the cross-box trust boundary is the
   **signed CCP bundle** (HMAC) plus the shared CCP token. mTLS / native API auth

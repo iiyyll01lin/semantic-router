@@ -70,20 +70,20 @@ export HF_TOKEN=hf_xxx
 > 重要 / Important：ROCm router 透過 ONNX Runtime 載入 token 分類器，但 HF 上的
 > `pii_classifier_modernbert-base_presidio_token_model` 只發佈 safetensors，需要先匯出成
 > `models/.../onnx/model.onnx`（mmBERT 模型自帶 `onnx/`，此模型沒有）。**此步驟已自動化**：
-> [bring-up.sh](bring-up.sh) 的步驟 `[4/5]` 會在 `onnx/model.onnx` 不存在時，用 optimum 由
+> [bring-up.sh](bring-up.sh) 的步驟 `[2/3]` 會在 `onnx/model.onnx` 不存在時，用 optimum 由
 > safetensors 匯出（自建一次性 venv 安裝 `transformers>=4.48`、`optimum[onnxruntime]`、
 > `onnx`、`torch`）；若已存在則略過，因此可重複執行而不會重做匯出。
 > The ROCm router loads token classifiers via ONNX Runtime, but
 > `pii_classifier_modernbert-base_presidio_token_model` on HF ships safetensors only and
 > must first be exported to `models/.../onnx/model.onnx` (the mmBERT models bundle their
-> own `onnx/`; this one does not). **This is now automated**: step `[4/5]` of
+> own `onnx/`; this one does not). **This is now automated**: step `[2/3]` of
 > [bring-up.sh](bring-up.sh) exports it from the safetensors via optimum (in a one-time
 > venv that installs `transformers>=4.48`, `optimum[onnxruntime]`, `onnx`, `torch`) when
 > `onnx/model.onnx` is missing, and skips when it already exists — so bring-up is
 > idempotent and re-running it never re-exports.
 
 ```bash
-# bring-up.sh 步驟 [4/5] 已自動處理；若要手動驗證匯出結果 / bring-up.sh step [4/5]
+# bring-up.sh 步驟 [2/3] 已自動處理；若要手動驗證匯出結果 / bring-up.sh step [2/3]
 # handles this automatically; to verify the exported artifact manually:
 ls models/pii_classifier_modernbert-base_presidio_token_model/onnx/model.onnx
 ```
@@ -101,8 +101,8 @@ ls models/pii_classifier_modernbert-base_presidio_token_model/onnx/model.onnx
 > producing `PII classifier 'pii' not found` at request time.
 
 - [ ] B 通過 / Gate B passes
-  - 通過條件 / Pass: 兩個模型目錄已存在，且 PII 模型含 `onnx/model.onnx`（由 [bring-up.sh](bring-up.sh) 步驟 `[4/5]` 自動匯出，已存在則略過）；或具備網路與（必要時）`HF_TOKEN` 可下載，後續 bring-up 會自動完成 ONNX 匯出。/ both model directories exist and the PII model has `onnx/model.onnx` (auto-exported by [bring-up.sh](bring-up.sh) step `[4/5]`, skipped when already present); or network plus (if needed) `HF_TOKEN` is in place to download, after which bring-up performs the ONNX export automatically.
-  - 證據 / Evidence: `ls` 列出兩個目錄與 PII `onnx/model.onnx`，或 bring-up 步驟 `[4/5]` 的匯出／略過日誌。/ `ls` listing both directories and the PII `onnx/model.onnx`, or the bring-up step `[4/5]` export/skip log.
+  - 通過條件 / Pass: 兩個模型目錄已存在，且 PII 模型含 `onnx/model.onnx`（由 [bring-up.sh](bring-up.sh) 步驟 `[2/3]` 自動匯出，已存在則略過）；或具備網路與（必要時）`HF_TOKEN` 可下載，後續 bring-up 會自動完成 ONNX 匯出。/ both model directories exist and the PII model has `onnx/model.onnx` (auto-exported by [bring-up.sh](bring-up.sh) step `[2/3]`, skipped when already present); or network plus (if needed) `HF_TOKEN` is in place to download, after which bring-up performs the ONNX export automatically.
+  - 證據 / Evidence: `ls` 列出兩個目錄與 PII `onnx/model.onnx`，或 bring-up 步驟 `[2/3]` 的匯出／略過日誌。/ `ls` listing both directories and the PII `onnx/model.onnx`, or the bring-up step `[2/3]` export/skip log.
 
 ### 關卡 C：DSL 產生並驗證通過 / Gate C: DSL generated and validated
 
@@ -128,13 +128,15 @@ make vllm-sr-dev VLLM_SR_PLATFORM=amd
 ### 關卡 E：bring-up 與健康狀態 / Gate E: bring-up and health
 
 ```bash
+bash deploy/recipes/strix-halo-poc/bring-up.sh --runtime-preflight
 bash deploy/recipes/strix-halo-poc/bring-up.sh
+bash deploy/recipes/strix-halo-poc/bring-up.sh --runtime-proof
 vllm-sr status
 ```
 
 - [ ] E 通過 / Gate E passes
-  - 通過條件 / Pass: [bring-up.sh](bring-up.sh) 完成（Ollama + 5 個 tier 模型 + router `--platform amd`），且 `vllm-sr status` 顯示各容器健康。/ [bring-up.sh](bring-up.sh) completes (Ollama + 5 tier models + router `--platform amd`) and `vllm-sr status` shows the containers healthy.
-  - 證據 / Evidence: `vllm-sr status` 輸出；listener `:8899` 有回應。/ the `vllm-sr status` output; the `:8899` listener responds.
+  - 通過條件 / Pass: 唯讀 preflight 未發現使用中／不相符 stack；[bring-up.sh](bring-up.sh) 完成（digest-pinned Ollama + 目前 auto-routed 5 models + router `--platform amd`）；runtime proof 的 `ollama ps` 顯示 Gemma Q8 `CONTEXT 65536` 並保存 processor/offload provenance；`vllm-sr status` 顯示各容器健康。/ read-only preflight finds no in-use/mismatched stack; [bring-up.sh](bring-up.sh) completes (digest-pinned Ollama + the current 5 auto-routed models + router `--platform amd`); runtime proof shows Gemma Q8 at `CONTEXT 65536` in `ollama ps` and saves processor/offload provenance; `vllm-sr status` reports healthy containers.
+  - 證據 / Evidence: `.agent-harness/experiments/runtime-context-proof/` 的 provenance JSON、`vllm-sr status` 輸出，以及 listener `:8899` 回應。此 gate 只證明 allocation，不代表 exact 64K prompt capacity。/ provenance JSON under `.agent-harness/experiments/runtime-context-proof/`, `vllm-sr status`, and a response from listener `:8899`. This gate proves allocation only, not exact 64K prompt capacity.
 
 ### 關卡 F：煙霧測試證據 / Gate F: smoke-test evidence
 

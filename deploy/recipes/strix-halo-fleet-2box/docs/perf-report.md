@@ -13,8 +13,11 @@ qwen2.5:32b` (+ `llama3.1:70b` / `gpt-oss:120b` on Halo-B) · **Harness:**
 > (`report-run-20260712-123240`, `report-run-2box-20260712-153904`), the Halo-B
 > symmetric Test 2 + perf-per-watt bundle, and the Halo-B max-model sweep
 > ([`halo-b-maxmodel.md`](halo-b-maxmodel.md)). The lone non-measured row is the
-> **vLLM** leg of Test 2, kept as an explicit **skip-with-reason** (gfx1151, §9),
-> not a gap. The whole harness is offline-verifiable first (`python3
+> original **vLLM** leg of Test 2 remains an explicit historical
+> **skip-with-reason** because that short-prompt, quant-parity row was not rerun.
+> A separate pinned BF16 run on `demo-002` now proves that official vLLM v0.25.1
+> executes on gfx1151; §9 keeps those unlike workloads separate. The whole
+> harness is offline-verifiable first (`python3
 > perf/verify_perf_local.py` → **7/7**), and every number is reproducible from the
 > committed code via the exact command given inline in each section.
 >
@@ -44,7 +47,7 @@ below is that sentence, with the numbers.
 | **Routing accuracy** (guardrail)? | **88.9%** domain over 261 MMLU cases; **unchanged** by both the cache reorder and the head-trim | §7.2 **[M]** |
 | **mmBERT embedding** slow — fix? | Cache first (live now). Head-trim **measured −56% signal-eval (0.72→0.31 s)** by dropping the **pii+jailbreak safety heads** (accuracy unchanged) — but **reverted on the live box to keep full safety; kept as an optional config**. GPU offload **empirically crashes on gfx1151** (SIGSEGV in embedding ROCm-EP init, even with the TD-046 fix). **Do not** truncate layers | §7.3–7.5 **[M]** |
 | **Lemonade** auto-install? both boxes? | Yes — `install-lemonade.sh`; now **installed + measured on both boxes** | §8, §10 **[M]** |
-| **vLLM on gfx1151** SOTA / workaround? | Officially **unsupported** (kernel gap); installed **Lemonade 9.1.4 ships no vLLM backend** either — practical path is **llama.cpp(rocm)** | §9 |
+| **vLLM on gfx1151** support boundary? | **Measured working** with pinned official vLLM v0.25.1, BF16 Qwen2.5-7B, and `ROCM_ATTN`; 48/48 long-context cells checkpointed with no OOM/restart. This is a pinned experimental path, not a blanket architecture-support claim, and BF16 results are not directly comparable to GGUF rows. | §9 **[M]** |
 | **Max model / local default?** | Halo-B capacity is characterized to the edge: at **96 GiB** the largest real model measured is **`mixtral:8x22b-q5_K_M` (141B MoE) VRAM-resident at 94.59 GiB / 7.80 tok/s** (~1.4 GiB shy of the carveout), and `gpt-oss:120b` remains the **120B capacity/reference** rung (**60.5 GiB**, **~36.5 tok/s**, **64.3%**, **0.382 tok/s/W**). The local/default recommendation is now **Gemma 4 26B MoE**: balanced `gemma4:26b-a4b-it-q8_0` (**44.6 tok/s**, **71.4%**), throughput/demo `gemma4:26b` Q4 (**58.4 tok/s**, **69.0%**), compact/fast `gemma4:26b-a4b-it-qat` (**65.0 tok/s**, **64.3%**). `gemma4:31b-it-qat` is best local quality (**78.6%**) but too slow for default. | §11–§11.2 **[M]** |
 | **Perf-per-watt**? | idle ~12–14 W; 7B **0.41**, 32B **0.093** tok/s/W. At 96 GiB forced-resident the 120B MoE is **0.382** vs dense-70B-Q4 **0.0381** (~10×), and dense-70B-Q4 pulls **~133 W** (near TDP) — the MoE is bigger *and* far more efficient/token | §12 **[M]** |
 
@@ -703,27 +706,62 @@ port 13305 `/api/v1`** — which is also the port `server-bench.sh` now points a
 
 ---
 
-## 9. vLLM on gfx1151 — is it really unsupported? workaround?
+## 9. vLLM on gfx1151 — measured support boundary **[M]**
 
 | Source | gfx1151 status |
 | --- | --- |
-| **Official ROCm / vLLM supported-arch list** | **Not listed — unsupported.** Stock `rocm/vllm-dev` serves fail on Strix Halo with `HIP error: invalid device function` (kernels not built for gfx1151) — exactly the Test 2 vLLM skip. |
+| **Historical `rocm/vllm-dev` Test 2 image** | **Failed** with `HIP error: invalid device function`; this remains the reason for the historical short-prompt parity-row skip in §10. |
+| **Official vLLM v0.25.1 image, pinned digest** | **Measured working.** `vllm/vllm-openai-rocm@sha256:84459732ca98b40fe2f5338a3f050be6d522504e47a484a5180d58fb75956f86` served BF16 `Qwen/Qwen2.5-7B-Instruct` on `demo-002` with `ROCM_ATTN`, chunked prefill, and OpenAI-compatible chat/tool APIs. |
 | **AMD "TheRock" nightly** | Lists **gfx1151 as Release-Ready ✅** — the toolchain *can* target it. |
 | **Lemonade SDK 9.1.4 (installed, Linux)** | **No vLLM backend.** Verified on the box: `serve` exposes only `--llamacpp {vulkan,rocm,metal,cpu}`; the recipe registry (`server_models.json`) has `llamacpp` / `oga-cpu·igpu·npu·hybrid` / `flm` / `whispercpp` — **no `vllm` recipe** — and no `vllm`/`torch`/`rocm` in the venv. vLLM appears only as a **roadmap "Under Consideration"** item in the package METADATA, not as a shipped backend. |
 
-**Story / workaround.** There is **no official SOTA vLLM for gfx1151** — the stock
-container aborts on an invalid device function — **and, contrary to the earlier
-assumption in this section, the installed Lemonade 9.1.4 provides no vLLM+rocm path
-either.** A time-boxed check of the installed SDK (no from-source build attempted)
-found its serving backends are **llama.cpp(rocm) + OnnxRuntime-GenAI (OGA) +
-FastFlowLM + whisper.cpp**, with **vLLM only listed "Under Consideration" on the
-project roadmap** — there is no `vllm` recipe and no `vllm`/`torch` in the venv. So
-vLLM on this box is a **skip-with-reason on two independent grounds**: stock vLLM's
-gfx1151 kernel gap, *and* the absence of any shipped vLLM backend in the installed
-Lemonade. The practical vLLM-*class* serving path on gfx1151 today is therefore
-**llama.cpp(rocm)** (the fastest server in §10) — *not* stock vLLM and *not*
-Lemonade-vLLM. Revisit if AMD's TheRock ROCm plus a future Lemonade vLLM recipe
-land; until then it is a substantiated skip, not a data gap.
+**Dedicated long-context run (2026-07-22, `demo-002`).** The pinned image ran six
+server configurations: `max_num_batched_tokens={2048,8192,16384}` × APC
+`{on,off}`, all with chunked prefill, `max_model_len=32768`, `max_num_seqs=8`,
+and `gpu_memory_utilization=0.75`. Each configuration covered 16K/32K observed
+input, reuse 0/90%, concurrency 4/8, and output 64:
+
+- **48/48 cells checkpointed**, with **435/448 measured requests returning HTTP
+  success (97.1%)**. Eight cells reached their bounded timeout; no OOM or
+  container restart was observed. Peak sampled VRAM was **52,693,225,472 bytes
+  (49.1 GiB)**.
+- The transport/prefill result is not an agent-quality pass: the repetitive
+  long-context workload produced **0/435 correct `MATRIX_OK` markers**. The
+  model served the requests but did not reliably follow the terminal instruction.
+- The representative output-256 slice checkpointed **4/4 cells**; **40/48
+  requests** completed successfully, again with zero correct markers.
+- Native structured tools were much stronger at short context: **22/22 valid
+  JSON and tool names**, **21/22 correct arguments/steps (95.45%)**, and no
+  transport failures. The real-agent smoke returned **16/16 HTTP 200**, but only
+  **1/4 tasks** met the exact final-answer contract.
+
+**Interpretation.** The old statement "vLLM cannot run on gfx1151" is superseded
+for this exact pinned stack. It does **not** establish support for arbitrary vLLM
+images, attention backends, models, or ROCm releases. It also does not make the
+BF16 vLLM rows directly comparable to the Q4/Q8 GGUF Ollama/llama.cpp rows in
+this report. The original Test 2 parity row therefore remains historical rather
+than being backfilled with an unlike workload.
+
+The planned three-repetition long-horizon replay and a new same-host
+`demo-002` llama.cpp validation were explicitly deferred by user scope on
+2026-07-23; they are not represented as passed. Existing llama.cpp measurements
+elsewhere in this report remain unchanged.
+
+**Selected-scope Ollama capacity completion (2026-07-23, `demo-002`).** The
+persistent digest-pinned Ollama 0.32.1 service loaded
+`gemma4:26b-a4b-it-q8_0` Q8 at an explicit 65,536-token allocation
+(`OLLAMA_NUM_PARALLEL=1`). The checkpointed OpenAI-compatible profile covered
+17 cells: a 2K/8K/16K/32K/65,152 spine, 50/90% reuse at 8K/32K/65,152, and
+concurrency 2/4 at 8K/32K/65,152; every cell used output 256 and three cold +
+three warm requests. **17/17 cells checkpointed with 174/174 HTTP successes and
+150/174 correct markers.** Seven cells passed every gate; ten are correctness
+failures because one or more otherwise-successful responses missed the exact
+marker. No transport failure, invalid JSONL line, OOM, or runtime restart was
+observed. Per phase: spine **4/5** cells fully passed (29/30 markers), reuse
+**1/6** (29/36), concurrency **2/6** (92/108). Both 65,152-token concurrency
+cells passed completely, including c4 at 24/24 markers; this should be read as
+evidence that the serving allocation can execute the workload, not as a broad
+quality claim.
 
 ---
 
@@ -732,7 +770,9 @@ land; until then it is a substantiated skip, not a data gap.
 Same box, same base model (`qwen2.5-7b` class), different servers
 (`max_tokens=128`, `prompt_tokens=256`, `runs=3`, direct path). Measured on
 **both** boxes — the three server skips from the first pass are now fixed in code,
-so ollama / llama.cpp / Lemonade all measure cleanly; vLLM stays skip-with-reason.
+so ollama / llama.cpp / Lemonade all measure cleanly. The vLLM row remains the
+historical parity-run skip; §9 separately records the newer pinned BF16 support
+proof without pretending it is quant/model parity.
 
 ### Halo-A (fastest: llama.cpp)
 
@@ -741,7 +781,7 @@ so ollama / llama.cpp / Lemonade all measure cleanly; vLLM stays skip-with-reaso
 | **Ollama** | **measured** | **43.0** | 142 | +0.0% | Q4_0 (ollama default) |
 | **llama.cpp** (rocm) | **measured** | **43.2** | **28** | +0.4% | Q4_K_M |
 | **Lemonade** | **measured** | **39.8** | 90 | −7.3% | Q4_1 (Qwen3-8B-GGUF) |
-| vLLM (rocm) | **skip-with-reason** | — | — | — | fp16/awq — gfx1151 `invalid device function` (§9) |
+| vLLM (rocm) | **historical parity row not rerun** | — | — | — | pinned BF16 support measured separately (§9) |
 
 ### Halo-B (fastest: llama.cpp)
 
@@ -750,7 +790,7 @@ so ollama / llama.cpp / Lemonade all measure cleanly; vLLM stays skip-with-reaso
 | **Ollama** | **measured** | **44.7** | 139 | +0.0% | Q4_0 (ollama default) |
 | **llama.cpp** (rocm) | **measured** | **46.0** | **28** | +3.1% | Q4_K_M |
 | **Lemonade** | **measured** | **39.7** | 96 | −11.1% | Q4_1 (Qwen3-8B-GGUF) |
-| vLLM (rocm) | **skip-with-reason** | — | — | — | fp16/awq — gfx1151 `invalid device function` (§9) |
+| vLLM (rocm) | **historical parity row not rerun** | — | — | — | pinned BF16 support measured separately (§9) |
 
 **Story.** On the first pass only Ollama measured cleanly; the other three skips
 were **three different classes of bug** — a stale `/llama-server` container-name
@@ -760,10 +800,9 @@ code (`62834f56`) and confirmed on **both** boxes: llama.cpp is the fastest serv
 on each (lowest TTFT ~28 ms, and it edges ollama on decode), while Lemonade is a
 touch slower **because it serves a different artifact** — `Qwen3-8B-GGUF` (an 8B
 reasoning model), not `qwen2.5-7b` — so its −7 to −11% is a quant/model-parity
-gap, not a server deficiency (see the caveat in §14). vLLM remains the third class:
-a documented skip-with-reason, not a failure — and the practical vLLM-class serving
-path on gfx1151 is **llama.cpp(rocm)**, since the installed Lemonade 9.1.4 ships no
-vLLM backend either (§9, verified on-box).
+gap, not a server deficiency (see the caveat in §14). The historical vLLM row
+remains unfilled because the newer BF16 long-context run is not a like-for-like
+replacement. Section 9 records what the pinned v0.25.1 run does prove.
 
 ```bash
 bash perf/install-lemonade.sh                        # once per box
@@ -1183,9 +1222,10 @@ c2 / c4 points):
   (winner = `llamacpp-resident-p8`). The earlier all-four **skip-with-reason was NOT an MXFP4/gfx1151
   kernel gap**: that probe log held only two early startup lines and **no GPU error** before timing out
   mid-download on the ~98%-full disk (each `docker run` re-pulled the 60 GiB into a container with no
-  cache volume, which could never finish). This is categorically different from **vLLM**, which still
-  aborts with a genuine `invalid device function` kernel gap on gfx1151 (§9) — so llama.cpp(rocm) is the
-  working 120B reference path, stock vLLM is not. (Note: OpenAI/Ollama's MXFP4 packing
+  cache volume, which could never finish). This differs from the **historical vLLM Test 2 image**,
+  which aborted with `invalid device function`; the later pinned v0.25.1 proof in §9 covers only
+  BF16 Qwen2.5-7B and does not establish a 120B vLLM path. llama.cpp(rocm) therefore remains the
+  measured working 120B reference path. (Note: OpenAI/Ollama's MXFP4 packing
   [differs from llama.cpp's](https://github.com/ggml-org/llama.cpp/issues/15597), so the `ggml-org` GGUF
   — not the ollama blob — is the correct source; it loads cleanly here.)
 - **Harness robustness (added this run).** The disk fix ironically turned the CPU-offload `auto` cells
@@ -1322,9 +1362,11 @@ HALO_A_MODE=gateway HALO_B_MODE=gateway PERF_BENCH=1 bash run-all-2box.sh
   base; each row records its `quant`. Treat cross-server deltas as
   "this server + this quant on this box" — Lemonade's −7…−11% is mostly that it
   serves `Qwen3-8B-GGUF`, not `qwen2.5-7b`.
-- **vLLM is a documented skip, not a data gap.** It is intentionally
-  skip-with-reason on gfx1151 (`invalid device function`, §9); every other data row
-  in this report is measured **[M]**.
+- **vLLM support is pinned and workload-specific.** The old Test 2 image failed
+  with `invalid device function`; pinned official v0.25.1 later ran BF16
+  Qwen2.5-7B successfully on the same architecture (§9). Do not generalize that
+  result to arbitrary images or compare its BF16 long-context numbers directly
+  with the GGUF parity table.
 - **The 120B on Halo-B needs headless + `use_mmap=false`.** ~30 tok/s is only
   reachable VRAM-resident on the freed 64 GiB carveout; with mmap the load never
   finished inside client timeouts (§11).

@@ -6,11 +6,10 @@
 # sections 3, 5, and 7.
 #
 # What it does:
-#   1. Creates the shared Docker network `vllm-sr-network` (router default).
-#   2. Starts `ollama/ollama:rocm` with AMD GPU passthrough, named `ollama`.
-#   3. Pulls the five tier models into the container.
-#   4. Exports the ModernBERT PII detector to ONNX (one-time) when it is missing.
-#   5. Serves the router with poc-strix.yaml on the amd platform, keeping the
+#   1. Safely provisions the digest-pinned Ollama ROCm runtime with an explicit
+#      64K serving context and the five models used by auto-routed decisions.
+#   2. Exports the ModernBERT PII detector to ONNX (one-time) when it is missing.
+#   3. Serves the router with poc-strix.yaml on the amd platform, keeping the
 #      built-in classifiers on CPU (VLLM_SR_AMD_PRESERVE_CPU=1).
 #
 # Prerequisites (see runbook section 1): Ubuntu x86_64, ROCm for gfx1151,
@@ -22,23 +21,29 @@ set -euo pipefail
 # Resolve this script's directory so the config path works from anywhere.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${SCRIPT_DIR}/poc-strix.yaml"
+OLLAMA_RUNTIME="${SCRIPT_DIR}/ollama-runtime.sh"
 
-NETWORK="vllm-sr-network"
-OLLAMA_CONTAINER="ollama"
-OLLAMA_PORT="11434"
-OLLAMA_VOLUME="ollama"
-OLLAMA_IMAGE="ollama/ollama:rocm"
 ROUTER_IMAGE="${VLLM_SR_ROUTER_IMAGE:-ghcr.io/vllm-project/semantic-router/vllm-sr-rocm:latest}"
 IMAGE_PULL_POLICY="${VLLM_SR_IMAGE_PULL_POLICY:-always}"
 
-# One genuinely different model per tier (runbook section 2.2 / 5.1).
-TIER_TAGS=(
-  "llama3.2:3b"   # SIMPLE  / default model
-  "qwen2.5:7b"    # MEDIUM
-  "qwen2.5:14b"   # COMPLEX
-  "qwen3:14b"     # REASONING
-  "qwen2.5:32b"   # PREMIUM (offline, largest local model)
-)
+case "${1:-}" in
+  "")
+    ;;
+  --runtime-preflight)
+    exec bash "${OLLAMA_RUNTIME}" preflight
+    ;;
+  --runtime-only)
+    exec bash "${OLLAMA_RUNTIME}" provision
+    ;;
+  --runtime-proof)
+    exec bash "${OLLAMA_RUNTIME}" prove
+    ;;
+  *)
+    echo "ERROR: unknown argument '$1'." >&2
+    echo "       Expected no argument, --runtime-preflight, --runtime-only, or --runtime-proof." >&2
+    exit 2
+    ;;
+esac
 
 # Local HF security model that needs an ONNX export (runbook section 6 / Gate B).
 # The ROCm router loads token classifiers via ONNX Runtime, but the published
@@ -105,39 +110,14 @@ preflight_router_image() {
   fi
 }
 
-echo "==> [0/5] Preflighting the vllm-sr ROCm router image"
+echo "==> [0/3] Preflighting the existing runtime and vllm-sr router image"
+bash "${OLLAMA_RUNTIME}" preflight
 preflight_router_image
 
-echo "==> [1/5] Ensuring Docker network '${NETWORK}' exists"
-docker network create "${NETWORK}" 2>/dev/null || true
+echo "==> [1/3] Provisioning context-pinned Ollama runtime"
+bash "${OLLAMA_RUNTIME}" provision
 
-echo "==> [2/5] Starting Ollama (ROCm) container '${OLLAMA_CONTAINER}' on ${NETWORK}"
-if docker ps -a --format '{{.Names}}' | grep -qx "${OLLAMA_CONTAINER}"; then
-  echo "    container '${OLLAMA_CONTAINER}' already exists; (re)starting it"
-  docker start "${OLLAMA_CONTAINER}"
-else
-  docker run -d \
-    --name "${OLLAMA_CONTAINER}" \
-    --network="${NETWORK}" \
-    --restart unless-stopped \
-    -p "${OLLAMA_PORT}:${OLLAMA_PORT}" \
-    -v "${OLLAMA_VOLUME}:/root/.ollama" \
-    --device=/dev/kfd \
-    --device=/dev/dri \
-    --group-add=video \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
-    -e HSA_OVERRIDE_GFX_VERSION=11.5.1 \
-    "${OLLAMA_IMAGE}"
-fi
-
-echo "==> [3/5] Pulling tier models into the '${OLLAMA_CONTAINER}' container"
-for tag in "${TIER_TAGS[@]}"; do
-  echo "    pulling ${tag}"
-  docker exec "${OLLAMA_CONTAINER}" ollama pull "${tag}"
-done
-
-echo "==> [4/5] Ensuring the ModernBERT PII detector has an exported ONNX model"
+echo "==> [2/3] Ensuring the ModernBERT PII detector has an exported ONNX model"
 # Idempotent: skip when model.onnx already exists; export it once otherwise. We
 # call the venv binaries directly (no `source activate`) so the step is safe
 # under `set -euo pipefail`.
@@ -176,7 +156,7 @@ PY
   echo "    onnx/model.onnx exported successfully"
 fi
 
-echo "==> [5/5] Serving the router with $(basename "${CONFIG_PATH}") (platform amd)"
+echo "==> [3/3] Serving the router with $(basename "${CONFIG_PATH}") (platform amd)"
 # Provision the demo UI credentials consistently across vLLM-SR Dashboard and
 # Grafana. Override these envs before running for non-demo use.
 export DASHBOARD_ADMIN_EMAIL="${DASHBOARD_ADMIN_EMAIL:-yingylin@amd.com}"

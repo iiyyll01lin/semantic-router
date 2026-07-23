@@ -6,6 +6,43 @@
 > [`perf/quant-frontier/`](../perf/quant-frontier/). Companion analysis in
 > [`perf-report.md` §11.2](perf-report.md) and [`halo-b-maxmodel.md`](halo-b-maxmodel.md),
 > and the interactive canvas `strix-halo-hardware-limits`.
+>
+> **Scope exception.** Section 0 below is a separate 2026-07-22/23 acceptance
+> addendum measured on `demo-002` with a **64 GiB** VRAM carveout. It is not
+> merged into the Halo-B 96 GiB capacity frontier or used to change its model
+> recommendations.
+
+## 0. Separate `demo-002` gfx1151 acceptance boundary [M]
+
+A pinned official vLLM v0.25.1 image served BF16
+`Qwen/Qwen2.5-7B-Instruct` with `ROCM_ATTN`, chunked prefill,
+`max_model_len=32768`, and `gpu_memory_utilization=0.75`. Six server
+configurations (`max_num_batched_tokens={2048,8192,16384}` × APC `{on,off}`)
+covered 16K/32K observed input, reuse 0/90%, concurrency 4/8, and output 64.
+
+- **48/48 cells checkpointed** and **435/448 measured requests completed
+  successfully (97.1%)**. Eight cells hit their bounded timeout; no OOM or
+  container restart was observed.
+- Peak sampled VRAM was **52,693,225,472 bytes (49.1 GiB)**, inside the 64 GiB
+  carveout. This is a measured fit for this exact 7B BF16 stack, not a general
+  vLLM or model-capacity ceiling.
+- Agentic correctness did not follow transport success: the repetitive
+  long-context matrix produced zero required `MATRIX_OK` markers. Short-context
+  native tools scored **21/22** correct arguments/steps; the real-agent smoke
+  returned **16/16 HTTP 200** but only **1/4** exact task passes.
+- BF16 vLLM measurements are not directly comparable with the Q4/Q8 GGUF
+  Ollama/llama.cpp frontier below. The planned three-repetition replay and a new
+  same-host `demo-002` llama.cpp validation were explicitly deferred on
+  2026-07-23 and are not represented as passed.
+
+The same selected scope also completed a direct Ollama capacity profile for the
+Q8 Gemma default at a 65,536-token allocation: **17/17 cells checkpointed,
+174/174 HTTP successes, 150/174 exact markers, and 7/17 cells passing every
+gate**. The ten failed cells are response-marker correctness failures, not
+transport failures. The 65,152-token c2 and c4 cells both passed completely.
+This validates the configured serving window for the measured workload while
+showing that instruction adherence is workload-dependent. It does not alter the
+96 GiB capacity frontier below.
 
 The box is bounded by three walls. This page pushes each one with a real experiment and
 reports where it *actually* sits — not where we previously guessed:

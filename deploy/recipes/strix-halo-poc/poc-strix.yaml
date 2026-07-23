@@ -138,8 +138,12 @@ providers:
             vllm: gpt-oss:120b-vram
 routing:
     modelCards:
+        # Serving limit, not architecture metadata: keep this aligned with the
+        # default OLLAMA_CONTEXT_LENGTH in ollama-runtime.sh. The 64K allocation
+        # is the phase-1 target; 128K remains experimental until separately
+        # configured and accepted by the later exact-token capacity phase.
         - name: anthropic/claude-opus-4.6
-          context_window_size: 262144
+          context_window_size: 65536
           description: PREMIUM tier alias reserved for legal and high-risk analysis.
           capabilities:
             - legal_analysis
@@ -152,7 +156,7 @@ routing:
             - cost:highest
             - specialty:legal
         - name: google/gemini-2.5-flash-lite
-          context_window_size: 262144
+          context_window_size: 65536
           description: MEDIUM tier alias for low-cost verified explanation and correction tasks.
           capabilities:
             - verified_explanation
@@ -165,7 +169,7 @@ routing:
             - cost:low
             - specialty:verified
         - name: google/gemini-3.1-pro
-          context_window_size: 262144
+          context_window_size: 65536
           description: COMPLEX tier alias for systems design, hard STEM, health guidance, and deep general reasoning.
           capabilities:
             - architecture
@@ -179,7 +183,7 @@ routing:
             - cost:upper_mid
             - specialty:complex_generalist
         - name: openai/gpt5.4
-          context_window_size: 262144
+          context_window_size: 65536
           description: REASONING tier alias for narrow formal math proofs and derivations.
           capabilities:
             - reasoning
@@ -194,7 +198,7 @@ routing:
         # Local Strix Halo operating-profile rungs (measured Halo-B, 96 GiB carveout).
         # quality_score = measured 42Q MMLU-Pro fraction (indicative, +/-~7 pp).
         - name: local/gemma4-26b-q8
-          context_window_size: 131072
+          context_window_size: 65536
           description: Balanced local DEFAULT (auto-routed) - Gemma 4 26B MoE Q8_0. Measured Halo-B 44.6 tok/s, 71.4% (30/42) MMLU-Pro, 25.3 GiB, 0.418 tok/s/W. The general/everyday self-hosted default.
           capabilities:
             - fast_qa
@@ -212,7 +216,7 @@ routing:
             - deployment:self_hosted
             - traffic:default
         - name: local/gemma4-26b-q4
-          context_window_size: 131072
+          context_window_size: 65536
           description: Fast/demo local route (auto-routed short-QA fast lane) - Gemma 4 26B MoE Q4_K_M. Measured 58.4 tok/s, 69.0% (29/42), 21.6 GiB, 0.481 tok/s/W; the best-feeling interactive throughput.
           capabilities:
             - fast_qa
@@ -227,7 +231,7 @@ routing:
             - cost:free
             - deployment:self_hosted
         - name: local/gemma4-26b-qat
-          context_window_size: 131072
+          context_window_size: 65536
           description: Compact/edge profile (explicit by-name) - Gemma 4 26B MoE QAT. Measured 65.0 tok/s, 64.3% (27/42), 13.8 GiB, 0.400 tok/s/W; smallest footprint and fastest, but lower quality so not the balanced default.
           capabilities:
             - self_hosted
@@ -241,7 +245,7 @@ routing:
             - cost:free
             - deployment:self_hosted
         - name: local/gemma4-31b-qat
-          context_window_size: 131072
+          context_window_size: 65536
           description: Quality-only local profile (explicit by-name) - Gemma 4 31B dense QAT. Best measured local quality 78.6% (33/42) at 18.5 GiB, but 12.3 tok/s / 0.090 tok/s/W - too slow to be the default unless the deployment is explicitly quality-first.
           capabilities:
             - self_hosted
@@ -255,7 +259,7 @@ routing:
             - cost:free
             - deployment:self_hosted
         - name: gpt-oss:120b-vram
-          context_window_size: 131072
+          context_window_size: 65536
           description: VRAM-resident gpt-oss 120b (num_gpu/use_mmap baked in via the -vram variant); explicit by-name selection only, not auto-routed.
           modality: text
           tags:

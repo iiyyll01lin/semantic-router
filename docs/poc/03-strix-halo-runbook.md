@@ -96,24 +96,24 @@ Ollama 官方網站 / official site: https://ollama.com 。在支援 ROCm 的主
 
 Ollama official site: https://ollama.com . On a ROCm-capable host Ollama auto-detects the AMD GPU; this runbook runs it as a container (see section 3) so it shares the Docker network with the router.
 
-### 2.2 提案的各 tier 預設模型（可替換）/ Proposed default models per tier (swappable)
+### 2.2 目前自動路由的 provisioning set / Current auto-routed provisioning set
 
-下列模型為合理起點，請依品質需求與記憶體預算替換。`Ollama 標籤` 為下載與在設定中引用所用的名稱。
+下列模型與目前 [`poc-strix.yaml`](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) 的自動路由決策一致。`local/gemma4-26b-q8` 是一般／agentic 預設，`local/gemma4-26b-q4` 是 fast lane；QAT、31B 與 120B profile 僅供 explicit-by-name 使用，不由預設 bring-up 意外下載。
 
-The models below are reasonable starting points; swap them to match quality needs and the memory budget. The `Ollama tag` is the name used to pull and to reference in config.
+The models below match the auto-routed decisions in the current [`poc-strix.yaml`](../../deploy/recipes/strix-halo-poc/poc-strix.yaml). `local/gemma4-26b-q8` is the general/agentic default and `local/gemma4-26b-q4` is the fast lane. QAT, 31B, and 120B profiles are explicit-by-name only and are not unexpectedly downloaded by default bring-up.
 
-| Tier | 角色 / Role | 提案模型 / Proposed model | Ollama 標籤 / Ollama tag |
+| Route | 角色 / Role | Router model name | Ollama 標籤 / Ollama tag |
 | --- | --- | --- | --- |
-| SIMPLE | 常規流量、預設模型 / routine traffic, default model | 小型 instruct / small instruct | `llama3.2:3b`（或 `qwen2.5:3b`）|
-| MEDIUM | 低成本驗證／解釋 / low-cost verified/explainer | 中型 instruct / mid instruct | `qwen2.5:7b` |
-| COMPLEX | 系統設計、硬 STEM、健康 / systems design, hard STEM, health | 中大型 instruct / mid-large instruct | `qwen2.5:14b` |
-| REASONING | 形式化推理、證明 / formal reasoning, proofs | 具推理能力模型 / reasoning-capable model | `qwen3:14b`（或重用 COMPLEX 並開啟 reasoning）|
-| PREMIUM | 法遵、高風險分析 / legal, high-risk analysis | 本地最大可放入的模型，或選配真實雲端 / largest local model that fits, or optionally real cloud | `qwen2.5:32b` |
+| DEFAULT | 一般與 agentic 流量 / general and agentic traffic | `local/gemma4-26b-q8` | `gemma4:26b-a4b-it-q8_0` |
+| FAST | 短問答 throughput lane / short-QA throughput lane | `local/gemma4-26b-q4` | `gemma4:26b` |
+| MEDIUM | 低成本驗證／解釋 / low-cost verified/explainer | `google/gemini-2.5-flash-lite` | `qwen2.5:7b` |
+| COMPLEX | 系統設計、硬 STEM、健康 / systems design, hard STEM, health | `google/gemini-3.1-pro` | `qwen2.5:14b` |
+| REASONING | 形式化推理、證明 / formal reasoning, proofs | `openai/gpt5.4` | `qwen3:14b` |
 
 下載模型 / Pull the models：
 
 ```bash
-for tag in llama3.2:3b qwen2.5:7b qwen2.5:14b qwen3:14b qwen2.5:32b; do
+for tag in gemma4:26b-a4b-it-q8_0 gemma4:26b qwen2.5:7b qwen2.5:14b qwen3:14b; do
   ollama pull "$tag"
 done
 ```
@@ -147,7 +147,11 @@ sudo docker run -d \
   --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
   -e HSA_OVERRIDE_GFX_VERSION=11.5.1 \
-  ollama/ollama:rocm
+  -e OLLAMA_CONTEXT_LENGTH=65536 \
+  -e OLLAMA_NUM_PARALLEL=1 \
+  -e OLLAMA_MAX_LOADED_MODELS=1 \
+  -e OLLAMA_KEEP_ALIVE=10m \
+  ollama/ollama:rocm@sha256:4a22dbbce24e7425861020987adb99851282b5af8e433028d1c72c453eed8f75
 ```
 
 備註 / Notes：
@@ -160,10 +164,18 @@ sudo docker run -d \
 在容器內下載（若使用 named volume）/ Pull inside the container (if using the named volume)：
 
 ```bash
-for tag in llama3.2:3b qwen2.5:7b qwen2.5:14b qwen3:14b qwen2.5:32b; do
+for tag in gemma4:26b-a4b-it-q8_0 gemma4:26b qwen2.5:7b qwen2.5:14b qwen3:14b; do
   sudo docker exec ollama ollama pull "$tag"
 done
 ```
+
+實際操作請優先使用 fail-closed wrapper：先跑 `bash deploy/recipes/strix-halo-poc/bring-up.sh --runtime-preflight` 做唯讀檢查，再用 `--runtime-only` provisioning；它不會自動重啟／重建不相符或使用中的 container。完成後跑 `--runtime-proof`，以一個不傳 `num_ctx` 的 1-token request 載入 Gemma，要求 `ollama ps` 實際顯示 `CONTEXT 65536`，並把 image/model hash、quant、ROCm、processor/offload 與 runtime version 寫入 gitignored provenance JSON。
+
+Prefer the fail-closed wrapper in actual operation: run `bash deploy/recipes/strix-halo-poc/bring-up.sh --runtime-preflight` for read-only inspection, then `--runtime-only` for provisioning. It never automatically restarts or recreates a mismatched/in-use container. Afterwards, `--runtime-proof` loads Gemma with one 1-token request that omits `num_ctx`, requires `ollama ps` to actually report `CONTEXT 65536`, and writes image/model hash, quant, ROCm, processor/offload, and runtime version to a gitignored provenance JSON.
+
+64K 是此階段的**顯式 serving allocation**，不是 exact-token capacity 或品質證明。128K（131,072）在完成後續 capacity/quality/reliability acceptance 前維持 experimental，不得用模型架構 metadata 當成已驗證服務能力。
+
+64K is this phase's **explicit serving allocation**, not exact-token capacity or quality proof. 128K (131,072) remains experimental until later capacity/quality/reliability acceptance passes; architecture metadata must not be presented as verified serving capability.
 
 驗證每個模型都能在 OpenAI 相容 endpoint 回應 / Verify each model answers on the OpenAI-compatible endpoint：
 
@@ -171,14 +183,14 @@ done
 curl -s http://localhost:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-        "model": "llama3.2:3b",
+        "model": "gemma4:26b-a4b-it-q8_0",
         "messages": [{"role": "user", "content": "ping"}]
       }' | head
 ```
 
-方法 C 的關鍵 / The key to approach C：一個 Ollama server 同時提供多個模型，但每個 tier 用**真正不同**的模型名稱（`llama3.2:3b`、`qwen2.5:14b`…），因此分層路由展示的是真實的模型差異，而非單一模型的別名。
+方法 C 的關鍵 / The key to approach C：一個 Ollama server 同時提供多個模型，但每個 route 用**真正不同**的模型名稱（`gemma4:26b-a4b-it-q8_0`、`gemma4:26b`、`qwen2.5:14b`…），因此分層路由展示的是真實模型差異，而非單一模型的別名。
 
-The key to approach C: one Ollama server serves multiple models, but each tier uses a genuinely different model name (`llama3.2:3b`, `qwen2.5:14b`, ...), so the tiered routing demonstrates real model differentiation rather than aliases over a single model.
+The key to approach C: one Ollama server serves multiple models, but each route uses a genuinely different model name (`gemma4:26b-a4b-it-q8_0`, `gemma4:26b`, `qwen2.5:14b`, ...), so tiered routing demonstrates real model differentiation rather than aliases over one model.
 
 ### 3.2 替代方案 A：AMD Lemonade Server / Alternative A: AMD Lemonade Server
 
@@ -251,9 +263,9 @@ The CLI entry is [main.py](../../src/vllm-sr/cli/main.py) and the serve implemen
 
 ## 5. 撰寫 PoC config / Author the PoC Config
 
-本 repo 已提供改寫好的設定：[deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)（由參考設定 [balance.yaml](../../deploy/recipes/balance.yaml)（v0.3）改寫）。最小改動原則：**保留** 既有的 5 個模型 `name`（13 條決策仍引用它們）與每 tier `pricing`（這樣 dashboard 的成本節省才會顯示），只把每個模型的 `backend_refs.endpoint` 與 `provider_model_id` 改成本地 Ollama endpoint 與該 tier 的真實模型名稱。
+本 repo 已提供改寫好的設定：[deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)（由參考設定 [balance.yaml](../../deploy/recipes/balance.yaml)（v0.3）改寫）。目前設定保留 balance tier aliases 與 pricing，並加入 Gemma local operating profiles；一般流量預設為 `local/gemma4-26b-q8`，fast lane 為 `local/gemma4-26b-q4`。
 
-The adapted config already lives in this repo: [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) (adapted from the reference profile [balance.yaml](../../deploy/recipes/balance.yaml), v0.3). Minimal-change principle: keep the existing 5 model `name`s (the 13 decisions still reference them) and the per-tier `pricing` (so the dashboard still shows cost savings), and only change each model's `backend_refs.endpoint` and `provider_model_id` to the local Ollama endpoint and that tier's real model name.
+The adapted config already lives in this repo: [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml) (adapted from the reference profile [balance.yaml](../../deploy/recipes/balance.yaml), v0.3). It retains the balance tier aliases and pricing while adding Gemma local operating profiles. General traffic defaults to `local/gemma4-26b-q8`, with `local/gemma4-26b-q4` as the fast lane.
 
 設定 schema 見 [models.py](../../src/vllm-sr/cli/models.py)（`BackendRef.endpoint` 用於本地 OpenAI 相容後端；`base_url` + `provider` + `api_key_env` 用於遠端 frontier）；完整對照範例見 [config/config.yaml](../../config/config.yaml)。
 
@@ -261,23 +273,22 @@ The config schema is in [models.py](../../src/vllm-sr/cli/models.py) (`BackendRe
 
 ### 5.1 `providers.models[]` 的 backend_refs 片段 / The `providers.models[]` backend_refs snippet
 
-下列片段示範把 balance.yaml 的 5 個模型重新指向本地 Ollama（方法 C，全 tier 共用 `ollama:11434`，模型名稱不同）。`name` 維持不變，`provider_model_id` 改為 Ollama 標籤，`pricing` 保留誇大值供 Insights demo。
+下列片段顯示目前的 default 與 tier aliases。Ollama-backed routes 共用 `ollama:11434`，但使用不同 `provider_model_id`；offline PREMIUM stand-in 仍使用 `llm-katan`。
 
-The snippet below repoints balance.yaml's 5 models at local Ollama (approach C, all tiers share `ollama:11434` with different model names). The `name` stays the same, `provider_model_id` becomes the Ollama tag, and `pricing` keeps the exaggerated values for Insights demos.
+The snippet below shows the current default and tier aliases. Ollama-backed routes share `ollama:11434` but use different `provider_model_id` values; the offline PREMIUM stand-in still uses `llm-katan`.
 
 ```yaml
 providers:
   defaults:
-    default_model: qwen/qwen3.5-rocm   # SIMPLE tier stays the default model
+    default_model: local/gemma4-26b-q8
     default_reasoning_effort: low
     reasoning_families:
       qwen3:
         parameter: enable_thinking
         type: chat_template_kwargs
   models:
-    - name: qwen/qwen3.5-rocm          # SIMPLE
-      provider_model_id: llama3.2:3b   # real local model served by Ollama
-      reasoning_family: qwen3
+    - name: local/gemma4-26b-q8        # DEFAULT
+      provider_model_id: gemma4:26b-a4b-it-q8_0
       backend_refs:
         - endpoint: ollama:11434       # named container on vllm-sr-network
           name: ollama_local
@@ -327,11 +338,11 @@ providers:
         prompt_per_1m: 1.2
         cached_input_per_1m: 0.3
         completion_per_1m: 4.8
-    - name: anthropic/claude-opus-4.6       # PREMIUM
-      provider_model_id: qwen2.5:32b        # largest local model that fits
+    - name: anthropic/claude-opus-4.6       # offline PREMIUM stand-in
+      provider_model_id: test-model
       reasoning_family: qwen3
       backend_refs:
-        - endpoint: ollama:11434
+        - endpoint: llm-katan:8000
           name: ollama_local
           protocol: http
           weight: 1
@@ -344,8 +355,8 @@ providers:
 
 備註 / Notes：
 
-- `provider_model_id` 是真正送給後端 `model` 欄位的值，必須等於 Ollama 標籤（例如 `qwen2.5:14b`）。`name` 是路由內部的邏輯名稱，決策的 `modelRefs[].model` 引用它。
-  `provider_model_id` is the value actually sent in the backend `model` field and must equal the Ollama tag (e.g. `qwen2.5:14b`). `name` is the routing-internal logical name that decisions reference via `modelRefs[].model`.
+- `provider_model_id` 是真正送給後端 `model` 欄位的值；對 Ollama-backed route，它必須等於已 provisioning 的 Ollama tag（例如 `gemma4:26b-a4b-it-q8_0`）。`name` 是路由內部的邏輯名稱，決策的 `modelRefs[].model` 引用它。
+  `provider_model_id` is the value actually sent in the backend `model` field. For an Ollama-backed route it must equal a provisioned Ollama tag (for example `gemma4:26b-a4b-it-q8_0`). `name` is the routing-internal logical name that decisions reference via `modelRefs[].model`.
 - `endpoint` 用「容器名稱:埠號」`ollama:11434`，因為後端與 router 同在 `vllm-sr-network`。預設 `chat_path` 為 `/v1/chat/completions`，與 Ollama 的 `/v1` 相容，無需覆寫。
   `endpoint` uses `container-name:port` `ollama:11434` because the backend and router share `vllm-sr-network`. The default `chat_path` (`/v1/chat/completions`) is compatible with Ollama's `/v1`, so no override is needed.
 - `reasoning_family: qwen3` 透過 `enable_thinking` chat-template 參數控制思考開關（見 [01-tech-study.md](01-tech-study.md) 4.4 節）。若某 tier 改用非 qwen 模型，請相應調整或移除 reasoning family。
@@ -357,9 +368,9 @@ providers:
 
 ### 5.2 一條決策範例 / One decision example
 
-`routing.decisions[]` 與 `modelCards` 直接沿用 balance.yaml（不需改動，因為它們引用的是 `name` 而非後端）。下例為 SIMPLE 的 fallback 決策，引用 `qwen/qwen3.5-rocm`（已在 5.1 重新指向 `llama3.2:3b`）。
+`routing.decisions[]` 透過 routing name 引用 model。`modelCards[].context_window_size` 則明確設為 65,536，與 backend serving context 一致；不再把 131K／262K architecture metadata 當成 runtime 能力。下例為 SIMPLE fallback，引用 Gemma Q8 default。
 
-`routing.decisions[]` and `modelCards` carry over from balance.yaml unchanged (they reference `name`, not the backend). The example below is the SIMPLE fallback decision referencing `qwen/qwen3.5-rocm` (repointed to `llama3.2:3b` in 5.1).
+`routing.decisions[]` references models by routing name. `modelCards[].context_window_size` is explicitly 65,536 to match the backend serving context; 131K/262K architecture metadata is no longer presented as runtime capability. The example below is the SIMPLE fallback referencing the Gemma Q8 default.
 
 ```yaml
 routing:
@@ -369,7 +380,7 @@ routing:
       priority: 170
       tier: 13
       modelRefs:
-        - model: qwen/qwen3.5-rocm     # -> provider_model_id llama3.2:3b on Ollama
+        - model: local/gemma4-26b-q8   # -> gemma4:26b-a4b-it-q8_0 on Ollama
           use_reasoning: false
       rules:
         operator: OR
@@ -386,8 +397,8 @@ routing:
                     name: balance_medium
 ```
 
-> 上述調整已套用於 [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)：完整的 13 條決策、signals、projections 與 modelCards 皆從 [balance.yaml](../../deploy/recipes/balance.yaml) 複製，僅依第 5.1 節調整 `providers.models[]`，並依第 6 節加入安全 lane。
-> These changes are already applied in [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml): the full 13 decisions, signals, projections, and modelCards are copied from [balance.yaml](../../deploy/recipes/balance.yaml), only `providers.models[]` is changed per section 5.1, and the security lane from section 6 is added.
+> 上述調整已套用於 [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml)：保留 balance signals/projections 與 tier aliases，加入 local Gemma profiles、安全 lane，並把 provider model cards 限制在已配置的 64K serving window。
+> These changes are already applied in [deploy/recipes/strix-halo-poc/poc-strix.yaml](../../deploy/recipes/strix-halo-poc/poc-strix.yaml): it retains the balance signals/projections and tier aliases, adds the local Gemma profiles and security lane, and limits provider model cards to the configured 64K serving window.
 
 ---
 
