@@ -46,13 +46,20 @@ python3 perf/validate_agentic_context_reports.py \
   --selected-summary ~/vllm-sr-evidence/agentic-context-customer-20260722/analysis/final-selected-scope-summary.json \
   --capacity-summary-dir ~/vllm-sr-evidence/agentic-context-customer-20260722/capacity-direct-openai/summary \
   --milestone-mirror-root ~/vllm-sr-evidence/demo-002-capacity-matrix \
-  --prefill-evidence-root ~/vllm-sr-evidence/agentic-prefill-20260722
-python3 perf/test_validate_agentic_context_reports.py -q
+  --prefill-evidence-root ~/vllm-sr-evidence/agentic-prefill-20260722 \
+  --backup-archive ~/vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz
+python3 perf/test_validate_agentic_context_reports.py
 ```
 
 Without the optional external paths, the gate still checks the tracked report
 set. With them, it also re-derives request, marker, and usage totals from the
 preserved source summaries, including the 8-cell/24-request milestone and the
-six-checkpoint/20-request llama.cpp output-256 run. It rejects context-window,
-cell/request/marker, proof-status, cache-attribution, stale-vLLM, evidence-path,
-and evidence-generation drift.
+six-checkpoint/20-request llama.cpp output-256 run, and re-hashes the immutable
+demo-002 evidence backup archive plus its per-file manifest. It rejects
+context-window, cell/request/marker, proof-status, cache-attribution,
+stale-vLLM, evidence-path, evidence-generation, and immutable-backup drift.
+
+The tracked-only path (no `~/vllm-sr-evidence`) and the CI-safe unit tests also
+run automatically in the **Strix Fleet Config Lint** GitHub workflow
+(`.github/workflows/strix-fleet-config-lint.yml`), so committed report drift
+fails in CI without needing any controller evidence mounted.
