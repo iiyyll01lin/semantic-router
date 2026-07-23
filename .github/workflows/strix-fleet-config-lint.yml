@@ -59,14 +59,11 @@ jobs:
       - name: Run the structural validator test
         run: python deploy/recipes/strix-halo-poc/test_validate_poc_config.py
 
-      # Keep the agentic-context report set self-consistent. This runs the
-      # tracked-only path (no ~/vllm-sr-evidence dependency), so it re-checks the
-      # committed four-proof/evidence-index JSON arithmetic, reader-facing report
-      # snippets, evidence-generation hashes, and the immutable-backup metadata.
+      # Keep the agentic-context report set self-consistent via the shared
+      # `validate-agentic-context-reports` Make target (single source of truth,
+      # also used by the local pre-commit hook and the agent task-matrix). Runs
+      # the tracked-only path (no ~/vllm-sr-evidence dependency): JSON arithmetic,
+      # reader-facing report snippets, evidence-generation hashes, immutable-backup
+      # metadata, plus the validator unit tests.
       - name: Validate agentic-context report set (tracked-only)
-        working-directory: deploy/recipes/strix-halo-fleet-2box
-        run: python3 perf/validate_agentic_context_reports.py
-
-      - name: Run the agentic-context report validator unit tests
-        working-directory: deploy/recipes/strix-halo-fleet-2box
-        run: python3 perf/test_validate_agentic_context_reports.py
+        run: make validate-agentic-context-reports
