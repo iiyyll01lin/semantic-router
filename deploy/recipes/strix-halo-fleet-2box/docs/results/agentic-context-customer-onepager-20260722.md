@@ -1,35 +1,72 @@
-# Agentic Context Window - Customer Evidence Brief (one page)
+# Agentic Context Window — Customer Evidence Brief
 
-Host: HP Z2 Mini G1a, AMD Ryzen AI MAX+ PRO 395 / Radeon 8060S (gfx1151), 64 GiB VRAM carveout, ROCm 7.0.
-Backend: Ollama 0.32.1 ROCm, model gemma4:26b-a4b-it-q8_0 (Q8_0). Serving window configured AND verified-loaded at 65,536 tokens, parallel=1, 0 restarts / 0 OOM.
+_Measured 2026-07-22/23 on `demo-002`: HP Z2 Mini G1a, AMD Ryzen AI
+MAX+ PRO 395 / Radeon 8060S (gfx1151), 64 GiB VRAM carveout, ROCm 7.0._
 
-## What how-much-context means here (three numbers)
-- Router-declared metadata: 131,072 / 262,144 (model card / router advertisement).
-- Backend-configured: 65,536 (OLLAMA_CONTEXT_LENGTH).
-- Test-proven serving window: 65,536, verified by live ollama ps (100 percent GPU, CONTEXT=65536) and exercised end-to-end below.
+Backend: Ollama 0.32.1 ROCm, `gemma4:26b-a4b-it-q8_0` (Q8_0),
+`OLLAMA_NUM_PARALLEL=1`. The backend was configured and verified loaded at
+**65,536 tokens**, with **0 restarts / 0 OOM** during the campaign.
+
+## Context ladder — do not collapse these values
+
+- **Declared metadata:** 131,072 / 262,144. This was not proven on this backend.
+- **Backend configured and loaded-verified:** 65,536 (`OLLAMA_CONTEXT_LENGTH`
+  and live `ollama ps`, 100% GPU).
+- **Maximum tested input:** 65,152 tokens. With 256 output tokens and 128
+  reserved headroom, the required total was exactly **65,536 tokens**.
 
 ## Four proofs (honest status)
 
-### 1. Capacity - PARTIAL PASS
-- 64K serving allocation verified (loaded-context provenance, 0 restart / 0 OOM, peak VRAM about 30.7 GB).
-- Exact-token capacity spine at 2K / 8K / 16K / 32K / 64K: transport success and prompt-token accounting healthy on all 17 of 17 cells.
-- 7 of 17 cells fully green across every gate. The other 10 fail ONLY the marker-accuracy gate under synthetic-filler stress (higher concurrency / prefix reuse) - a probe-construction artifact, not a serving failure.
+### 1. Capacity — PARTIAL PASS
 
-### 2. Performance - MEASURED (no customer SLO agreed yet)
-- Time-to-first-token (prefill-bound), p50: 2K about 3.8s, 8K about 5.9s, 16K about 12.6s, 32K about 30.4s, 64K about 83s.
-- Prefix / APC reuse cross-checked on the VLLM sibling run: 32K c4 cold 144.3s to warm 30.8s.
+- **17 cells / 174 measured requests:** 174/174 HTTP successes, backend-reported
+  prompt usage exactly matched each target for every cold/warm cohort, and
+  150/174 responses returned the required marker.
+- **7/17 cells passed every gate.** The other 10 failed only the response-marker
+  correctness gate for this synthetic-filler probe; they were not transport,
+  token-accounting, JSON, OOM, or restart failures.
+- The tested input spine was 2,048 / 8,192 / 16,384 / 32,768 / 65,152. The
+  65,152-token c1/c2/c4 paths passed transport and exact usage; c2/c4 also
+  passed every marker gate.
 
-### 3. Quality - NOT ACHIEVED
-- Tool-call schema fidelity strong (native tool test: JSON 100, function-name 100, arguments 95.45).
-- Long-horizon replay integrity passed (fixed checkpoints 8K/16K/32K/64K marker-preserved, 32 tool turns; branch-replay pass).
-- BUT end-to-end agent task success was only 25 percent (VLLM smoke) and the 44-trial long-horizon quality suite never completed (background runner stopped when its SSH session ended; demo-002 lacks linger). No accepted quality result.
+### 2. Performance — MEASURED (no agreed customer SLO)
 
-### 4. Reliability - NOT RUN
-- No soak, no fault-injection/recovery, no side-effect idempotency test. Ollama 0 restart / 0 OOM is an incidental stability signal only.
+- Direct Ollama cold TTFT p50: 2,048 **3.8s**; 8,192 **5.9s**; 16,384
+  **12.6s**; 32,768 **30.4s**; 65,152 **83.2s**.
+- Direct Ollama prefix-reuse cells showed **no measured TTFT acceleration**:
+  warm was approximately cold and `cached_prompt_ratio` was not reported.
+- A separate sibling **VLLM APC** run improved 32K c4 from 144.3s cold to
+  30.8s warm. Do not attribute that VLLM result to Ollama.
+
+### 3. Quality — NOT ACHIEVED
+
+- Native tools: 22/22 valid JSON and names; 21/22 correct arguments/steps
+  (**95.45%**).
+- Real-agent smoke: 16/16 transport successes, but only 1/4 tasks (**25%**)
+  met the exact final-answer contract.
+- Replay v2/v3 fixed+branch integrity passed with 28 regular + 4
+  checkpoint/padding tool turns (**32 total**), but the quality phase produced
+  **0 rows**. The runners were stopped to enforce the user's explicit decision
+  to skip the remaining replay; repetitions 2/3 were not run. Missing login
+  linger remains a future unattended-rerun risk, not the recorded abort reason.
+  No long-horizon quality pass is claimed.
+
+### 4. Reliability — NOT RUN
+
+- No soak, fault-injection/recovery, or side-effect idempotency test ran.
+  Ollama's 0 restart / 0 OOM observation is incidental stability evidence only.
 
 ## Bottom line
-- Proven: the box serves a real 64K context window and accounts for tokens exactly from 2K to 64K, on GPU, with zero restarts/OOM.
-- Not proven yet: matched router-vs-direct A/B, long-horizon multi-turn agent QUALITY (three reps), and reliability (soak + fault recovery).
-- Fastest path to close the gap: enable linger (or a detached container) on demo-002 and re-run the three-rep quality suite with the applied Ollama-argument fix; stand up the router on demo-002 for the A/B; add one 32K/64K soak + fault-recovery run.
 
-Artifacts: four-proof-status.json, evidence-index.json, capacity-direct-openai/, replay-direct-v3-rep1/, runtime/, blockers/, plus sibling bundle agentic-prefill-20260722/.
+- **Proven:** 65,536 configured/loaded allocation; exact tested inputs through
+  65,152; 174/174 transport success and exact backend usage on the selected
+  direct workload.
+- **Not proven:** declared 131K/262K operation, matched router/direct A/B,
+  three-repetition long-horizon quality, or reliability soak/recovery.
+- **Next:** use linger or a detached container for quality replay; install the
+  router for matched A/B; then run a representative 32K/65,152 soak and recovery
+  test.
+
+Canonical structured facts: [four-proof status](agentic-context-customer-20260722-four-proof-status.json)
+and [evidence index](agentic-context-customer-20260722-evidence-index.json).
+Technical interpretation: [`../perf-report.md` §9](../perf-report.md).

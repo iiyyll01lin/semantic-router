@@ -37,9 +37,20 @@ residency past the 64 GiB ceiling is the point.
 
 **Candidate sweep confirmation (2026-07-15):** the broad Halo-B P0 + capped P1/P2 sweep did not find a replacement. `qwen3-coder:30b` is the speed standout (**71.0 tok/s**) but only **54.8%** on the 42Q quality slice; `qwen3-next:80b` is **49.6 tok/s / 61.9%**; `qwen3.6:27b` matches Gemma Q4 quality (**69.0%**) but is much slower (**13.5 tok/s**) and inefficient (**0.082 tok/s/W**). See `perf/quant-frontier/candidate-summary-halo-b.md` for measured rows and skips.
 
+**Separate agentic-context addendum (2026-07-22/23, `demo-002`).** A pinned
+official vLLM v0.25.1 BF16 stack measured working on gfx1151; the historical
+parity image still failed and was not backfilled with an unlike workload. A
+direct Ollama Gemma Q8 profile verified a 65,536-token configured/loaded budget
+and tested inputs through 65,152: **17 cells / 174 requests, 174/174 HTTP and
+exact prompt usage, 150/174 required markers, 7/17 fully green**. Final proof
+states are capacity **PARTIAL PASS**, performance **MEASURED**, quality **NOT
+ACHIEVED**, reliability **NOT RUN**. See the
+[focused brief](agentic-context-customer-onepager-20260722.md); these numbers do
+not replace the dated Halo-A/B fleet baseline in this report.
+
 **Why it's cheaper:** ~~$0 marginal cost per token after **~~$2,500/box** (payback ~~4.2B output tokens vs cloud) · routing to small tiers is **~~4.1×** faster than the 32B · unified memory replaces a **>40 GB GPU card**, Gemma 4 26B MoE reaches **0.40–0.48 tok/s/W**, and the 120B MoE capacity reference is still more power-efficient per token than a dense 32B (**0.382 vs 0.093 tok/s/W**; 7B is 0.41).
 
-**Caveats:** the two boxes have **asymmetric BIOS carveouts** (32 vs 96 GiB) → different model ceilings but **identical router overhead**; **vLLM is skip-with-reason on gfx1151**; on the 96 GiB carveout Ollama sizes GPU layers to the (now smaller ~30 GiB) system RAM, so big models need the `num_gpu=999` **+** `use_mmap=false` override (the `-vram` variants) to stay VRAM-resident — headless alone is not enough.
+**Caveats:** the two boxes have **asymmetric BIOS carveouts** (32 vs 96 GiB) → different model ceilings but **identical router overhead**. The historical `rocm/vllm-dev` parity image failed on gfx1151, while a separately pinned official vLLM v0.25.1 BF16 stack later measured working; that is exact-stack evidence, not blanket vLLM support or GGUF parity. On the 96 GiB carveout Ollama sizes GPU layers to the (now smaller ~30 GiB) system RAM, so big models need the `num_gpu=999` **+** `use_mmap=false` override (the `-vram` variants) to stay VRAM-resident — headless alone is not enough.
 
 > **Companion artifact (same numbers, same recommendations):** the sendable executive [one-pager](customer-onepager.md). Sections **§1–§6 below are the technical body** — full measurements, methods, and reproduction commands.
 
@@ -171,9 +182,9 @@ Measured on Halo-A (`qwen2.5:7b`), sweeping concurrent streams under two backend
 | ollama   | **Q4_0 (ollama default)**         | 43.0         | 142     | measured                   |
 | llamacpp | **Q4_K_M**                        | 43.2         | 28      | measured                   |
 | lemonade | **Q4_1 (lemonade Qwen3-8B-GGUF)** | 39.8         | 90      | measured                   |
-| vllm     | **fp16 (or awq)**                 | -            | -       | skip-with-reason (gfx1151) |
+| vllm     | **fp16 (or awq)**                 | -            | -       | historical parity row not rerun; pinned BF16 support measured separately |
 
-*Quantization differs per server, so decode-rate deltas are **not** apples-to-apples — compare within the same quantization. Quantization also sets the max model (§2).*
+*Quantization differs per server, so decode-rate deltas are **not** apples-to-apples — compare within the same quantization. Quantization also sets the max model (§2). The pinned vLLM proof uses a different BF16 model/workload and is documented in [`../perf-report.md` §9](../perf-report.md), not inserted into this parity table.*
 
 ## 6. Cost — can it really be cheaper?
 

@@ -32,18 +32,27 @@ covered 16K/32K observed input, reuse 0/90%, concurrency 4/8, and output 64.
   returned **16/16 HTTP 200** but only **1/4** exact task passes.
 - BF16 vLLM measurements are not directly comparable with the Q4/Q8 GGUF
   Ollama/llama.cpp frontier below. Full replay acceptance was not obtained: v1
-  failed payload calibration, while v2/v3 passed fixed+branch semantics but were
-  stopped before quality. The same-host `demo-002` llama.cpp comparison remained
-  deferred. See the [campaign ledger](results/agentic-prefill-campaign-20260722.md).
+  failed payload calibration, while v2/v3 passed fixed+branch semantics before
+  being stopped to enforce the user's explicit decision to skip the remaining
+  replay. Quality rows remained zero and repetitions 2/3 were not run; the
+  scope-abort records do not attribute the stop to a model/OOM failure. Missing
+  login linger remains a future unattended-rerun risk. The same-host `demo-002`
+  llama.cpp comparison remained deferred. See the
+  [campaign ledger](results/agentic-prefill-campaign-20260722.md).
 
 The same selected scope also completed a direct Ollama capacity profile for the
-Q8 Gemma default at a 65,536-token allocation: **17/17 cells checkpointed,
-174/174 HTTP successes, 150/174 exact markers, and 7/17 cells passing every
-gate**. The ten failed cells are response-marker correctness failures, not
-transport failures. The 65,152-token c2 and c4 cells both passed completely.
-This validates the configured serving window for the measured workload while
-showing that instruction adherence is workload-dependent. It does not alter the
-96 GiB capacity frontier below.
+Q8 Gemma default. The backend was configured and loaded-verified at **65,536
+tokens**; the maximum tested input was **65,152**, with 256 output + 128 reserved
+headroom completing the 65,536-token budget. Across **17 cells / 174 measured
+requests**, the run recorded **174/174 HTTP successes**, exact backend-reported
+prompt usage, **150/174 markers**, and **7/17 cells passing every gate**. The ten
+failed cells missed only the response-marker gate for this probe. The
+65,152-token c1/c2/c4 paths passed transport and exact usage; c2/c4 passed every
+marker gate. Direct Ollama reuse showed no TTFT acceleration (warm approximately
+equalled cold; no cached ratio was reported); the 144.3s→30.8s APC result in
+[`perf-report.md` §9](perf-report.md) belongs to a separate vLLM run. Capacity is
+**PARTIAL PASS**, quality **NOT ACHIEVED**, and reliability **NOT RUN**. This
+separate acceptance result does not alter the 96 GiB capacity frontier below.
 
 The box is bounded by three walls. This page pushes each one with a real experiment and
 reports where it *actually* sits — not where we previously guessed:

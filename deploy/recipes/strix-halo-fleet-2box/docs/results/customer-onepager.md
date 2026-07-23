@@ -1,8 +1,17 @@
 # vllm-sr on Strix Halo — executive one-pager
 
-_2× Ryzen AI Max+ 395 fleet (halo-a + halo-b) · core figures measured 2026-07-12; Halo-B 96 GiB carveout re-test 2026-07-13; best-config matrix (disk-fixed) re-test 2026-07-14; interactive TTFT sweet-spot sweep 2026-07-14 · companion to the [full technical report](customer-report.md)_
+_2× Ryzen AI Max+ 395 fleet (halo-a + halo-b) · core figures measured 2026-07-12; Halo-B 96 GiB carveout re-test 2026-07-13; best-config matrix (disk-fixed) re-test 2026-07-14; interactive TTFT sweet-spot sweep 2026-07-14; separate `demo-002` agentic-context addendum 2026-07-22/23 · companion to the [full technical report](customer-report.md)_
 
 **Bottom line: an intelligent LLM router runs on commodity Strix Halo mini-PCs today — Gemma 4 26B MoE is now the best local/default family, while `gpt-oss:120b` remains the 120B capacity/reference story.**
+
+**2026-07-22/23 agentic-context addendum (`demo-002`, separate scope):** a
+pinned official vLLM v0.25.1 BF16 stack measured working on gfx1151. Direct
+Ollama Gemma Q8 was configured/loaded at 65,536 tokens and tested inputs through
+65,152: **17 cells / 174 requests, 174/174 HTTP and exact prompt usage, 150/174
+markers, 7/17 fully green**. Capacity is **PARTIAL PASS**, quality **NOT
+ACHIEVED**, and reliability **NOT RUN**. See the
+[focused agentic brief](agentic-context-customer-onepager-20260722.md); these
+figures do not replace the dated Halo-A/B baseline below.
 
 ## The three things to know
 
@@ -84,7 +93,7 @@ story below (`gpt-oss:120b`, 70B-Q8, mixtral-q5), where models exceed the 64 GiB
 ## Honest caveats
 
 - **Asymmetric BIOS carveout** (Halo-A 32 GiB vs Halo-B 96 GiB) gives the two boxes **different model ceilings** — but **router overhead is identical** on both.
-- **vLLM is skip-with-reason on gfx1151** (a genuine kernel gap, `invalid device function`); the practical path is **llama.cpp (ROCm)**, which serves everything measured **including the MXFP4 `gpt-oss:120b`**. The disk-fixed 2026-07-14 re-test confirmed llama.cpp loads and is the _fastest_ server for the 120B reference — an earlier "won't load on gfx1151" result was a **disk/download artifact (since corrected), not a hardware limitation**.
+- The historical `rocm/vllm-dev` parity image failed on gfx1151 with `invalid device function`, but a separately pinned official vLLM v0.25.1 BF16 stack later measured working. This is exact-stack evidence, not blanket support or parity with the GGUF rows. **llama.cpp (ROCm)** remains the measured practical path for the MXFP4 `gpt-oss:120b`; the disk-fixed 2026-07-14 re-test confirmed it is the fastest server for that reference model.
 - **`--parallel 8` maximizes aggregate throughput, not latency:** at 8 concurrent streams the 120B's first-token time rises to **~3.7 s (p95)** (vs ~85 ms for a lone user) as prompts queue for prefill, and per-stream decode drops to ~12 tok/s. Prefer **`--parallel 1`** for a single latency-critical user, **`--parallel 2`** for a few concurrent interactive users (the sweet spot — first token still ~1 s at p95), and **`--parallel 8`** only for batch / many-user throughput (where it is also the most power-efficient).
 - On Halo-B's **96 GiB carveout**, servers size GPU layers to the (now ~30 GiB) system RAM by default, so big models need explicit full-resident placement — llama.cpp **`-ngl 999`** or ollama **`num_gpu=999` + `use_mmap=false`** (the `-vram` variants) — to stay VRAM-resident; headless alone is not enough.
 

@@ -744,10 +744,15 @@ than being backfilled with an unlike workload.
 
 Full replay acceptance was not obtained. Three v1 repetitions ran and failed
 payload calibration with HTTP 400/missing authoritative usage. Later v2/v3
-attempts passed fixed+branch replay semantics but were stopped before quality
-under the explicit 2026-07-23 scope decision. The new same-host `demo-002`
-llama.cpp comparison remained deferred. The complete qualification, acceptance,
-partial, blocked, and superseded run inventory is in the
+attempts passed fixed+branch replay semantics (28 regular + 4 checkpoint/padding
+tool turns = 32 total) before being stopped to enforce the user's explicit
+scope decision to skip the remaining replay. **Quality rows = 0** and repetitions
+2/3 were not run. The scope-abort records do not attribute the stop to a model,
+OOM, or quality-code failure. Missing login linger remains a future unattended-
+rerun durability risk, not the recorded abort reason. The new same-host
+`demo-002` llama.cpp comparison remained deferred. The complete qualification,
+acceptance, partial, blocked, and
+superseded run inventory is in the
 [campaign ledger](results/agentic-prefill-campaign-20260722.md).
 
 **Selected-scope Ollama capacity completion (2026-07-23, `demo-002`).** The
@@ -756,15 +761,41 @@ persistent digest-pinned Ollama 0.32.1 service loaded
 (`OLLAMA_NUM_PARALLEL=1`). The checkpointed OpenAI-compatible profile covered
 17 cells: a 2K/8K/16K/32K/65,152 spine, 50/90% reuse at 8K/32K/65,152, and
 concurrency 2/4 at 8K/32K/65,152; every cell used output 256 and three cold +
-three warm requests. **17/17 cells checkpointed with 174/174 HTTP successes and
-150/174 correct markers.** Seven cells passed every gate; ten are correctness
-failures because one or more otherwise-successful responses missed the exact
-marker. No transport failure, invalid JSONL line, OOM, or runtime restart was
-observed. Per phase: spine **4/5** cells fully passed (29/30 markers), reuse
-**1/6** (29/36), concurrency **2/6** (92/108). Both 65,152-token concurrency
-cells passed completely, including c4 at 24/24 markers; this should be read as
-evidence that the serving allocation can execute the workload, not as a broad
-quality claim.
+three warm requests. The maximum cell used **65,152 input + 256 output + 128
+reserved headroom = 65,536 total tokens**; 65,152 is therefore the maximum
+tested input, not a second configured-window value.
+
+**17 cells / 174 measured requests** checkpointed with **174/174 HTTP successes**
+and exact backend-reported prompt usage for every cold/warm cohort; **150/174
+responses returned the required marker**. Seven cells passed every gate; ten
+failed only because one or more otherwise-successful responses missed that
+marker. No transport failure, usage mismatch, invalid JSONL line, OOM, or runtime
+restart was observed. Per phase: spine **4/5** cells fully passed (29/30 markers),
+reuse **1/6** (29/36), concurrency **2/6** (92/108). The 65,152-token c1/c2/c4
+paths passed transport and exact usage; c2/c4 also passed every marker gate,
+including c4 at 24/24 markers. This proves the measured serving workload, not
+broad agent quality or operation at the declared 131K/262K metadata limits.
+
+| direct Ollama input target | cold TTFT p50 |
+| ---: | ---: |
+| 2,048 | 3.8 s |
+| 8,192 | 5.9 s |
+| 16,384 | 12.6 s |
+| 32,768 | 30.4 s |
+| 65,152 | 83.2 s |
+
+The dedicated direct-Ollama reuse cells showed **no measured prefix-cache TTFT
+acceleration**: warm was approximately cold and `cached_prompt_ratio` was not
+reported. A separate sibling **vLLM APC** output-256 run improved 32K c4 from
+144.3 s cold to 30.8 s warm; that result is vLLM-specific and must not be
+attributed to Ollama.
+
+**Final four-proof status:** capacity **PARTIAL PASS** (transport/usage pass,
+marker correctness mixed); performance **MEASURED, no agreed SLO**; quality
+**NOT ACHIEVED** (native tools 21/22 arguments/steps, real-agent tasks 1/4,
+long-horizon quality unrun); reliability **NOT RUN**. The structured source is
+the [four-proof status](results/agentic-context-customer-20260722-four-proof-status.json),
+with a sendable [focused brief](results/agentic-context-customer-onepager-20260722.md).
 
 ---
 

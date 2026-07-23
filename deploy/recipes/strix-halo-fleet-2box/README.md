@@ -453,14 +453,22 @@ Strix Halo recipes is in [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
   and BF16-vs-GGUF caveat.
 - Replay did not reach full acceptance: three v1 repetitions failed payload
   calibration with HTTP 400; later v2/v3 attempts passed fixed+branch semantics
-  but were stopped before quality under the explicit scope decision. A new
-  same-host `demo-002` llama.cpp validation remained deferred. See the complete
+  before being stopped to enforce the user's explicit decision to skip the
+  remaining replay. **Quality rows = 0** and repetitions 2/3 were not run. The
+  scope-abort records do not attribute the stop to a model/OOM failure. Missing
+  login linger remains a future unattended-rerun durability risk, not the
+  recorded abort reason. A new same-host `demo-002` llama.cpp validation remained
+  deferred. See the complete
   [campaign ledger](docs/results/agentic-prefill-campaign-20260722.md).
-- The approved direct Ollama capacity scope then finished **17/17 cells** at
-  contexts through 65,152 tokens: **174/174 HTTP successes, 150/174 exact
-  markers, and 7/17 cells passing every gate**. The ten failed cells are
-  instruction-marker failures rather than infrastructure failures; both 65,152
-  concurrency cells (c2/c4) passed completely.
+- The direct Ollama service was configured and verified loaded at **65,536
+  tokens**. Its largest tested input was **65,152 tokens**; adding output 256 and
+  reserved headroom 128 gives the exact 65,536-token budget. The selected scope
+  finished **17 cells / 174 measured requests** with **174/174 HTTP successes**
+  and exact backend-reported prompt usage, **150/174 required markers**, and
+  **7/17 cells passing every gate**. The ten failed cells missed only the
+  response-marker gate for this probe; the 65,152-token c2/c4 cells passed every
+  gate. See the focused [customer brief](docs/results/agentic-context-customer-onepager-20260722.md)
+  and [structured proof](docs/results/agentic-context-customer-20260722-four-proof-status.json).
 
 - The router's own `/config/*` API has **no native authentication** today, so the
   agent calls it on **localhost only**; the cross-box trust boundary is the
