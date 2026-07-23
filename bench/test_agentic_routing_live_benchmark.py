@@ -13,6 +13,8 @@ EXPECTED_THROUGHPUT_RATIO = 0.8
 EXPECTED_SESSIONS_WITH_ERRORS = 2
 EXPECTED_RECOVERY_RATE = 0.5
 HTTP_OK = 200
+EXPECTED_WARM_REQUESTS = 3
+MIN_ACCUMULATED_HISTORY = 2
 
 
 def load_live_module():
@@ -80,6 +82,9 @@ def make_args(base_url, tmp_path, **overrides):
         "turn_delay_seconds": 0.0,
         "idle_pause_seconds": 0.0,
         "include_previous_response_id": False,
+        "execution_mode": "scripted",
+        "stream": False,
+        "tool_retry_limit": 1,
         "metrics_url": "",
         "baseline_base_url": "",
         "baseline_model": "",
@@ -93,6 +98,8 @@ def make_args(base_url, tmp_path, **overrides):
         "max_p95_latency_ms": 0.0,
         "max_tool_loop_violations": -1,
         "max_context_portability_violations": -1,
+        "max_router_phase_mismatches": -1,
+        "require_router_phase_match": False,
         "max_overhead_p95_ms": 0.0,
         "min_sessions_with_errors": 0,
         "min_session_recovery_rate": 0.0,
@@ -127,6 +134,8 @@ def test_live_benchmark_records_router_headers_and_violations(tmp_path):
     assert summary["model_switches"] == 1
     assert summary["tool_loop_switch_violations"] == 1
     assert summary["cached_prompt_ratio"] is not None
+    assert summary["cache_state_metrics"]["cold"]["requests"] == 1
+    assert summary["cache_state_metrics"]["warm"]["requests"] == EXPECTED_WARM_REQUESTS
     assert summary["missing_router_header_counts"]["x-vsr-selected-model"] == 0
     assert summary["missing_router_header_counts"]["x-vsr-selected-decision"] == 0
     assert summary["missing_router_header_counts"]["x-vsr-replay-id"] == len(rows)
@@ -211,7 +220,11 @@ def test_router_diagnostics_validate_header_values(tmp_path):
 def test_previous_response_id_marks_context_portability_violation(tmp_path):
     live = load_live_module()
     args = make_args(
-        "http://unused/v1", tmp_path, scenario="stateful-heavy", dry_run=True
+        "http://unused/v1",
+        tmp_path,
+        scenario="stateful-heavy",
+        dry_run=True,
+        include_previous_response_id=True,
     )
     rows = [
         {
@@ -248,6 +261,80 @@ def test_previous_response_id_marks_context_portability_violation(tmp_path):
     assert rows[1]["previous_response_id_sent"]
     assert rows[1]["context_portability_violation"]
     assert summary["context_portability_violations"] == 1
+
+
+def test_unsent_previous_response_id_is_not_a_portability_violation(tmp_path):
+    live = load_live_module()
+    args = make_args("http://unused/v1", tmp_path)
+    row = live.row_from_result(
+        args,
+        live.TurnPlan("s", 1, "provider_state", "b", "resp_0"),
+        {
+            "status": 200,
+            "latency_ms": 1,
+            "headers": {"x-vsr-selected-model": "frontier"},
+            "json": {"id": "resp_1", "model": "frontier", "usage": {}},
+            "error": "",
+        },
+        "small",
+    )
+
+    assert row["previous_response_id_sent"] is False
+    assert row["context_portability_violation"] is False
+
+
+def test_router_phase_must_match_intended_workload_phase(tmp_path):
+    live = load_live_module()
+    args = make_args(
+        "http://unused/v1",
+        tmp_path,
+        require_router_phase_match=True,
+    )
+    row = live.row_from_result(
+        args,
+        live.TurnPlan("s", 1, "tool_loop", "prompt", ""),
+        {
+            "status": 200,
+            "latency_ms": 1,
+            "headers": {
+                "x-vsr-selected-model": "small",
+                "x-vsr-session-phase": "user_turn",
+            },
+            "json": {"id": "resp_1", "model": "small", "usage": {}},
+            "error": "",
+        },
+        "small",
+    )
+    summary = live.summarize([row])
+
+    assert row["router_phase_mismatch"]
+    assert summary["router_phase_mismatches"] == 1
+    assert live.validate_summary(args, summary, None) == [
+        "router_phase_mismatches 1 > 0"
+    ]
+
+
+def test_agent_loop_dry_run_retains_history_and_executes_native_tools(tmp_path):
+    live = load_live_module()
+    args = make_args(
+        "http://unused/v1",
+        tmp_path,
+        dry_run=True,
+        execution_mode="agent-loop",
+        require_router_phase_match=True,
+    )
+
+    rows = live.run_benchmark(args)
+    summary = live.summarize(rows)
+
+    assert len(rows) > args.turns
+    assert summary["router_phase_mismatches"] == 0
+    assert max(row["history_message_count"] for row in rows) > MIN_ACCUMULATED_HISTORY
+    assert any(row["tool_executions"] for row in rows)
+    assert {row["attempt_kind"] for row in rows} >= {
+        "tool_request",
+        "tool_followup",
+    }
 
 
 def test_router_vs_baseline_comparison_and_thresholds(tmp_path):

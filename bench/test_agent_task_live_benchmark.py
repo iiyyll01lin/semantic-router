@@ -8,6 +8,7 @@ MEAN_SCORE = 0.75
 MISSING_HEADER_COUNT = 2
 MIN_LONG_HORIZON_TASKS = 28
 MIN_LONG_HORIZON_TURNS = 163
+MIN_ACCUMULATED_HISTORY = 2
 
 
 def load_benchmark_module():
@@ -70,6 +71,9 @@ def test_dry_run_completes_all_tasks(tmp_path):
     assert summary["task_success_rate"] == 1.0
     assert summary["task_instances"] == len(bench.task_specs())
     assert summary["task_exact_success_rate"] == 1.0
+    assert summary["cache_state_metrics"]["cold"]["requests"] == len(bench.task_specs())
+    assert summary["ttft_ms"]["mean"] is not None
+    assert summary["prefill_duration_ms"]["mean"] is not None
     assert summary["missing_router_header_counts"]["x-vsr-replay-id"] == 0
     assert summary["missing_router_header_counts"]["x-vsr-session-phase"] == 0
     assert summary["missing_router_header_counts"]["x-vsr-selected-confidence"] == 0
@@ -254,3 +258,84 @@ def test_router_diagnostics_validate_header_values():
         "invalid_router_header x-vsr-selected-confidence: 1 successful requests",
         "invalid_router_header x-vsr-context-token-count: 1 successful requests",
     ]
+
+
+def test_real_agent_loop_accumulates_history_and_retries_tool_errors():
+    bench = load_benchmark_module()
+    task = bench.TaskSpec(
+        name="retry-task",
+        turns=(
+            bench.TaskTurn(
+                phase="tool_loop",
+                prompt="Inspect deterministic evidence.",
+                tool_name="inspect_evidence",
+                tool_result="evidence ready",
+                tool_failures_before_success=1,
+            ),
+            bench.TaskTurn(
+                phase="final",
+                prompt="Return RESULT=ready.",
+                expected_terms=("RESULT=ready",),
+            ),
+        ),
+    )
+    args = bench.parse_args(["--execution-mode", "agent-loop"])
+    args.dry_run = True
+
+    rows = bench.run_agent_task_instance(args, task, 0, 0)
+    summary = bench.summarize(rows, elapsed_seconds=1.0, label="dry")
+
+    assert [row["attempt_kind"] for row in rows[:3]] == [
+        "tool_request",
+        "tool_retry",
+        "tool_followup",
+    ]
+    assert summary["tool_execution_errors"] == 1
+    assert summary["tool_retry_requests"] == 1
+    assert summary["task_exact_success_rate"] == 1.0
+    assert summary["router_phase_mismatches"] == 0
+    assert summary["max_history_message_count"] > MIN_ACCUMULATED_HISTORY
+    assert rows[0]["tool_executions"][0]["is_error"]
+    assert not rows[1]["tool_executions"][0]["is_error"]
+
+
+def test_native_task_tools_expose_deterministic_argument_schema():
+    bench = load_benchmark_module()
+    task = bench.smoke_task_specs()[0]
+
+    tools = bench.native_tools_for_task(task)
+    schema = tools[0].as_openai_tool()["function"]["parameters"]
+
+    assert schema["required"] == ["task", "turn"]
+    assert schema["additionalProperties"] is False
+
+
+def test_task_phase_validation_compares_intended_and_reported_phase():
+    bench = load_benchmark_module()
+    args = bench.parse_args(["--require-router-phase-match"])
+    task = bench.smoke_task_specs()[0]
+    row = bench.row_from_result(
+        args,
+        task,
+        0,
+        0,
+        1,
+        task.turns[1],
+        "session",
+        {
+            "status": 200,
+            "latency_ms": 1.0,
+            "headers": {
+                "x-vsr-selected-model": "model",
+                "x-vsr-session-phase": "user_turn",
+            },
+            "json": {"id": "response", "model": "model", "usage": {}},
+            "error": "",
+        },
+        "model",
+        "",
+    )
+    summary = bench.summarize([row], elapsed_seconds=1.0, label="router")
+
+    assert row["router_phase_mismatch"]
+    assert bench.validate_summary(args, summary) == ["router_phase_mismatches 1 > 0"]

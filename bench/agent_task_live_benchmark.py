@@ -16,6 +16,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_benchmark_observability import (
+    observation_from_result,
+    parse_openai_stream,
+    summarize_observability,
+)
+from agent_task_loop_runner import (
+    TaskLoopHooks,
+    native_tools_for_task,
+)
+from agent_task_loop_runner import (
+    run_agent_task_instance as run_real_agent_task_instance,
+)
+from agent_task_loop_runner import (
+    run_agent_tasks as run_real_agent_tasks,
+)
+
+__all__ = ["native_tools_for_task"]
+
 HTTP_OK = 200
 HTTP_REDIRECT_START = 300
 VSR_HEADERS = (
@@ -47,6 +65,7 @@ class TaskTurn:
     tool_name: str = ""
     tool_result: str = ""
     expected_terms: tuple[str, ...] = ()
+    tool_failures_before_success: int = 0
 
 
 @dataclass(frozen=True)
@@ -74,6 +93,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--evidence-ref", default="")
     parser.add_argument("--evidence-image-tag", default="")
     parser.add_argument("--include-previous-response-id", action="store_true")
+    parser.add_argument(
+        "--execution-mode",
+        choices=("scripted", "agent-loop"),
+        default="scripted",
+        help=(
+            "scripted preserves synthetic history; agent-loop retains actual "
+            "assistant/tool messages and executes deterministic native tools"
+        ),
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="stream OpenAI responses to measure client-side TTFT",
+    )
+    parser.add_argument("--tool-retry-limit", type=int, default=1)
     parser.add_argument("--baseline-base-url", default="")
     parser.add_argument("--baseline-model", default="")
     parser.add_argument("--baseline-label", default="direct-backend")
@@ -102,6 +136,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-task-score", type=float, default=0.0)
     parser.add_argument("--max-tool-loop-violations", type=int, default=-1)
     parser.add_argument("--max-context-portability-violations", type=int, default=-1)
+    parser.add_argument("--max-router-phase-mismatches", type=int, default=-1)
+    parser.add_argument("--require-router-phase-match", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=None)
     return parser.parse_args(argv)
@@ -1735,6 +1771,7 @@ def long_horizon_task_specs() -> tuple[TaskSpec, ...]:
                         "task repetition 2. Prior turns emitted replay ids and "
                         "session-phase headers."
                     ),
+                    tool_failures_before_success=1,
                 ),
                 TaskTurn(
                     phase="tool_loop",
@@ -1997,12 +2034,33 @@ def build_body(
     turn_index: int,
     previous_response_id: str,
 ) -> dict[str, Any]:
+    return build_request_body(
+        args,
+        build_messages(task, turn_index),
+        previous_response_id,
+    )
+
+
+def build_request_body(
+    args: argparse.Namespace,
+    messages: list[dict[str, Any]],
+    previous_response_id: str,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: Any = None,
+) -> dict[str, Any]:
     body = {
         "model": args.model,
-        "messages": build_messages(task, turn_index),
+        "messages": messages,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
     }
+    if getattr(args, "stream", False):
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+    if tools is not None:
+        body["tools"] = tools
+    if tool_choice is not None:
+        body["tool_choice"] = tool_choice
     if args.include_previous_response_id and previous_response_id:
         body["previous_response_id"] = previous_response_id
     return body
@@ -2017,10 +2075,31 @@ def send_chat(
 ) -> dict[str, Any]:
     if args.dry_run:
         return dry_response(task, turn_index)
-    url = args.base_url.rstrip("/") + "/chat/completions"
-    body = json.dumps(build_body(args, task, turn_index, previous_response_id)).encode(
-        "utf-8"
+    return send_chat_messages(
+        args,
+        build_messages(task, turn_index),
+        session_id,
+        previous_response_id,
     )
+
+
+def send_chat_messages(
+    args: argparse.Namespace,
+    messages: list[dict[str, Any]],
+    session_id: str,
+    previous_response_id: str,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: Any = None,
+) -> dict[str, Any]:
+    url = args.base_url.rstrip("/") + "/chat/completions"
+    request_body = build_request_body(
+        args,
+        messages,
+        previous_response_id,
+        tools=tools,
+        tool_choice=tool_choice,
+    )
+    body = json.dumps(request_body).encode("utf-8")
     started = time.perf_counter()
     request = urllib.request.Request(
         url,
@@ -2030,6 +2109,15 @@ def send_chat(
     )
     try:
         with urllib.request.urlopen(request, timeout=args.timeout) as response:
+            if getattr(args, "stream", False):
+                parsed, ttft_ms = parse_openai_stream(response, started)
+                return stream_response_record(
+                    response.status,
+                    dict(response.headers),
+                    parsed,
+                    started,
+                    ttft_ms,
+                )
             payload = response.read().decode("utf-8", errors="replace")
             return response_record(
                 response.status, dict(response.headers), payload, started
@@ -2044,6 +2132,7 @@ def send_chat(
             "json": {},
             "payload": "",
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+            "ttft_ms": None,
             "error": str(exc),
         }
 
@@ -2061,6 +2150,28 @@ def response_record(
         "json": parsed if isinstance(parsed, dict) else {},
         "payload": payload,
         "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+        "ttft_ms": None,
+        "error": (
+            error_message(parsed, payload) if status >= HTTP_REDIRECT_START else ""
+        ),
+    }
+
+
+def stream_response_record(
+    status: int,
+    headers: dict[str, str],
+    parsed: dict[str, Any],
+    started: float,
+    ttft_ms: float | None,
+) -> dict[str, Any]:
+    payload = json.dumps(parsed)
+    return {
+        "status": status,
+        "headers": {key.lower(): value for key, value in headers.items()},
+        "json": parsed,
+        "payload": payload,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+        "ttft_ms": ttft_ms,
         "error": (
             error_message(parsed, payload) if status >= HTTP_REDIRECT_START else ""
         ),
@@ -2083,11 +2194,17 @@ def dry_response(task: TaskSpec, turn_index: int) -> dict[str, Any]:
         "json": {
             "id": f"dry_{task.name}_{turn_index}",
             "model": "dry-model",
-            "choices": [{"message": {"content": content}}],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 10},
+            "choices": [{"message": {"role": "assistant", "content": content}}],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "prompt_tokens_details": {"cached_tokens": 0},
+                "prefill_duration_ms": 2.0,
+            },
         },
         "payload": "",
         "latency_ms": 1.0,
+        "ttft_ms": 0.5,
         "error": "",
     }
 
@@ -2102,6 +2219,9 @@ def error_message(parsed: Any, payload: str) -> str:
 
 
 def run_tasks(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if getattr(args, "execution_mode", "scripted") == "agent-loop":
+        return run_agent_tasks(args)
+
     rows: list[dict[str, Any]] = []
     started = time.perf_counter()
     for repetition in range(max(1, args.task_repetitions)):
@@ -2113,6 +2233,15 @@ def run_tasks(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str,
                 result = send_chat(
                     args, task, turn_index, session_id, previous_response_id
                 )
+                result["_previous_response_id_sent"] = bool(
+                    args.include_previous_response_id and previous_response_id
+                )
+                result["_cache_state"] = "cold" if turn_index == 0 else "warm"
+                result["_turn_attempt"] = 0
+                result["_attempt_kind"] = "scripted"
+                result["_final_response"] = True
+                result["_expected_phase"] = turn.phase
+                result["_history_message_count"] = len(build_messages(task, turn_index))
                 row = row_from_result(
                     args,
                     task,
@@ -2131,6 +2260,43 @@ def run_tasks(args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str,
                     previous_selected_model = row["selected_model"]
     elapsed = time.perf_counter() - started
     return rows, summarize(rows, elapsed, args.label)
+
+
+def run_agent_tasks(
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    return run_real_agent_tasks(
+        args,
+        task_specs(args.suite),
+        task_loop_hooks(),
+    )
+
+
+def run_agent_task_instance(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    task_index: int,
+    repetition: int,
+) -> list[dict[str, Any]]:
+    return run_real_agent_task_instance(
+        args,
+        task,
+        task_index,
+        repetition,
+        task_loop_hooks(),
+    )
+
+
+def task_loop_hooks() -> TaskLoopHooks:
+    return TaskLoopHooks(
+        session_id_for=session_id_for,
+        send_chat_messages=send_chat_messages,
+        response_id=response_id,
+        row_from_result=row_from_result,
+        summarize=summarize,
+        scoring_instruction=scoring_instruction,
+        dry_response=dry_response,
+    )
 
 
 def session_id_for(
@@ -2154,18 +2320,31 @@ def row_from_result(
     previous_response_id: str,
 ) -> dict[str, Any]:
     response_json = result.get("json") or {}
+    headers = result.get("headers") or {}
     selected_model = selected_model_from(result)
     status = int(result.get("status") or 0)
-    previous_response_id_sent = bool(
-        args.include_previous_response_id and previous_response_id
-    )
+    success = HTTP_OK <= status < HTTP_REDIRECT_START
+    previous_response_id_sent = result.get("_previous_response_id_sent")
+    if previous_response_id_sent is None:
+        previous_response_id_sent = bool(
+            args.include_previous_response_id and previous_response_id
+        )
     switched = bool(
         previous_selected_model
         and selected_model
         and selected_model != previous_selected_model
     )
+    expected_phase = str(result.get("_expected_phase") or turn.phase)
+    reported_phase = str(headers.get("x-vsr-session-phase") or "")
+    router_phase_matches = (
+        reported_phase == expected_phase if success and reported_phase else None
+    )
     content = response_content(response_json)
-    score, missing = score_answer(content, turn.expected_terms)
+    final_response = bool(result.get("_final_response", True))
+    scoring_terms = turn.expected_terms if final_response else ()
+    score, missing = score_answer(content, scoring_terms)
+    tool_executions = result.get("_tool_executions") or []
+    observability = observation_from_result(result)
     return {
         "label": args.label,
         "task_index": task_index,
@@ -2175,29 +2354,38 @@ def row_from_result(
         "task_instance": f"r{task_repetition:02d}:{task.name}",
         "session_id": session_id,
         "turn": turn_index,
-        "phase": turn.phase,
+        "turn_attempt": int(result.get("_turn_attempt") or 0),
+        "attempt_kind": str(result.get("_attempt_kind") or "scripted"),
+        "final_response": final_response,
+        "phase": expected_phase,
+        "router_phase": reported_phase,
+        "router_phase_matches": router_phase_matches,
+        "router_phase_mismatch": router_phase_matches is False,
         "status": status,
-        "success": HTTP_OK <= status < HTTP_REDIRECT_START,
+        "success": success,
         "latency_ms": round(float(result.get("latency_ms") or 0), 3),
         "selected_model": selected_model,
         "response_model": response_json.get("model", ""),
         "model_switched": switched,
-        "tool_loop_switch_violation": turn.phase == "tool_loop" and switched,
+        "tool_loop_switch_violation": expected_phase == "tool_loop" and switched,
         "context_portability_violation": previous_response_id_sent and switched,
         "previous_response_id_sent": previous_response_id_sent,
         "response_id": response_json.get("id", ""),
-        "prompt_tokens": usage_value(response_json, "prompt_tokens"),
-        "completion_tokens": usage_value(response_json, "completion_tokens"),
-        "cached_tokens": cached_tokens(response_json),
+        "cache_state": str(result.get("_cache_state") or ""),
+        "history_message_count": int(result.get("_history_message_count") or 0),
+        "tool_executions": tool_executions,
+        "tool_execution_errors": sum(
+            bool(execution.get("is_error"))
+            for execution in tool_executions
+            if isinstance(execution, dict)
+        ),
         "answer_score": score,
         "missing_terms": ",".join(missing),
         "answer_excerpt": answer_excerpt(content),
-        "scored_turn": bool(turn.expected_terms),
+        "scored_turn": bool(scoring_terms),
         "error": result.get("error", ""),
-        **{
-            header: (result.get("headers") or {}).get(header, "")
-            for header in VSR_HEADERS
-        },
+        **observability,
+        **{header: headers.get(header, "") for header in VSR_HEADERS},
     }
 
 
@@ -2263,8 +2451,7 @@ def summarize(
         float(row["answer_score"]) for row in scored if row["answer_score"] is not None
     ]
     task_successes = sum(1 for row in scored if row["answer_score"] == 1.0)
-    prompt_tokens = sum(int(row["prompt_tokens"]) for row in rows)
-    cached = sum(int(row["cached_tokens"]) for row in rows)
+    observability = summarize_observability(rows)
     return {
         "label": label,
         "requests": len(rows),
@@ -2301,12 +2488,23 @@ def summarize(
         "context_portability_violations": sum(
             1 for row in rows if row["context_portability_violation"]
         ),
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": sum(int(row["completion_tokens"]) for row in rows),
-        "cached_tokens": cached,
-        "cached_prompt_ratio": (
-            round(cached / prompt_tokens, 4) if prompt_tokens else None
+        "router_phase_matches": sum(
+            row.get("router_phase_matches") is True for row in rows
         ),
+        "router_phase_mismatches": sum(
+            bool(row.get("router_phase_mismatch")) for row in rows
+        ),
+        "tool_execution_errors": sum(
+            int(row.get("tool_execution_errors") or 0) for row in rows
+        ),
+        "tool_retry_requests": sum(
+            str(row.get("attempt_kind") or "") == "tool_retry" for row in rows
+        ),
+        "max_history_message_count": max(
+            (int(row.get("history_message_count") or 0) for row in rows),
+            default=0,
+        ),
+        **observability,
         "phase_counts": counts(row["phase"] for row in rows),
         "selected_model_counts": counts(
             row["selected_model"] for row in rows if row["selected_model"]
@@ -2384,6 +2582,8 @@ def required_router_headers(args: argparse.Namespace) -> list[str]:
     required = list(args.require_router_header)
     if args.require_router_diagnostics:
         required.extend(DIAGNOSTIC_ROUTER_HEADERS)
+    if getattr(args, "require_router_phase_match", False):
+        required.append("x-vsr-session-phase")
     return list(dict.fromkeys(required))
 
 
@@ -2421,6 +2621,7 @@ def validate_summary(args: argparse.Namespace, summary: dict[str, Any]) -> list[
             f"{summary['context_portability_violations']} > "
             f"{args.max_context_portability_violations}"
         )
+    failures.extend(validate_router_phase_summary(args, summary))
     missing_headers = summary.get("missing_router_header_counts", {})
     invalid_headers = summary.get("invalid_router_header_counts", {})
     for header in required_router_headers(args):
@@ -2435,6 +2636,18 @@ def validate_summary(args: argparse.Namespace, summary: dict[str, Any]) -> list[
                 f"invalid_router_header {header}: {invalid} successful requests"
             )
     return failures
+
+
+def validate_router_phase_summary(
+    args: argparse.Namespace, summary: dict[str, Any]
+) -> list[str]:
+    mismatches = int(summary.get("router_phase_mismatches", 0))
+    limit = int(getattr(args, "max_router_phase_mismatches", -1))
+    if limit >= 0 and mismatches > limit:
+        return [f"router_phase_mismatches {mismatches} > {limit}"]
+    if getattr(args, "require_router_phase_match", False) and mismatches and limit < 0:
+        return [f"router_phase_mismatches {mismatches} > 0"]
+    return []
 
 
 def counts(values: Any) -> dict[str, int]:
@@ -2509,6 +2722,8 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
 
 def render_markdown(summary: dict[str, Any]) -> str:
     latency = summary["latency_ms"]
+    ttft = summary["ttft_ms"]
+    prefill = summary["prefill_duration_ms"]
     return "\n".join(
         [
             "# Live Agent Task Benchmark",
@@ -2523,9 +2738,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"- model switches: {summary['model_switches']}",
             f"- tool-loop switch violations: {summary['tool_loop_switch_violations']}",
             f"- context portability violations: {summary['context_portability_violations']}",
+            f"- router phase mismatches: {summary['router_phase_mismatches']}",
+            f"- local tool errors/retry requests: {summary['tool_execution_errors']} / {summary['tool_retry_requests']}",
             f"- missing router headers: {summary['missing_router_header_counts']}",
             f"- invalid router headers: {summary['invalid_router_header_counts']}",
             f"- cached prompt ratio: {summary['cached_prompt_ratio']}",
+            f"- TTFT mean/p95 ms: {ttft['mean']} / {ttft['p95']}",
+            f"- prefill duration mean/p95 ms: {prefill['mean']} / {prefill['p95']}",
+            f"- cold/warm evidence: {summary['cache_state_metrics']}",
             f"- validation failures: {summary.get('validation_failures', [])}",
             "",
         ]
