@@ -136,6 +136,8 @@ docs:
 - docs/agent/plans/pl-0032-architecture-scorecard-ratchet.md
 - docs/agent/plans/pl-0033-v0-3-themis-release-closure.md
 - docs/agent/plans/pl-0034-fusion-api.md
+- docs/agent/plans/pl-0035-strix-poc-pii-hardening.md
+- docs/agent/plans/pl-0036-edge-fleet-config-control-plane.md
 - docs/agent/tech-debt/td-006-structural-rule-exceptions.md
 - docs/agent/tech-debt/td-016-fleet-sim-shared-ruff-contract-gap.md
 - docs/agent/tech-debt/td-017-fleet-sim-structure-gate-migration-gap.md
@@ -143,6 +145,15 @@ docs:
 - docs/agent/tech-debt/td-027-fleet-sim-optimizer-and-public-surface-boundary-collapse.md
 - docs/agent/tech-debt/td-042-ffi-embedding-structure-debt.md
 - docs/agent/tech-debt/td-043-semantic-router-go-cyclop-debt.md
+- docs/agent/tech-debt/td-044-onnx-binding-pii-name-registration.md
+- docs/agent/tech-debt/td-045-mmbert32k-pii-detector-zero-entities.md
+- docs/agent/tech-debt/td-046-onnx-binding-concurrent-rocm-session-init-segfault.md
+- docs/agent/tech-debt/td-047-pii-registry-alias-autodownload-missing-mapping.md
+- docs/agent/tech-debt/td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md
+- docs/agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md
+- docs/agent/tech-debt/td-050-global-model-selection-method-ignored.md
+- docs/agent/tech-debt/td-051-router-config-hash-reflects-file-bytes.md
+- docs/agent/tech-debt/td-052-commit-large-ml-models-json-via-git-lfs.md
 local_agent_rules:
 - path: src/vllm-sr/cli/AGENTS.md
   scope: src/vllm-sr/cli/**
@@ -271,6 +282,12 @@ doc_governance:
   - path: docs/agent/plans/pl-0034-fusion-api.md
     steward: router-core
     freshness: update while Fusion API implementation and AMD regression work is active
+  - path: docs/agent/plans/pl-0035-strix-poc-pii-hardening.md
+    steward: router-core
+    freshness: update while Strix PoC PII-path debt is being tracked or fixed
+  - path: docs/agent/plans/pl-0036-edge-fleet-config-control-plane.md
+    steward: router-core
+    freshness: update while edge fleet config control-plane design or delivery is active
   - path: docs/agent/tech-debt/td-006-structural-rule-exceptions.md
     steward: agent-contract
     freshness: update when the TD006 debt record changes materially
@@ -292,6 +309,33 @@ doc_governance:
   - path: docs/agent/tech-debt/td-043-semantic-router-go-cyclop-debt.md
     steward: candle-binding
     freshness: update when the TD043 debt record changes materially
+  - path: docs/agent/tech-debt/td-044-onnx-binding-pii-name-registration.md
+    steward: router-core
+    freshness: update when the TD044 debt record changes materially
+  - path: docs/agent/tech-debt/td-045-mmbert32k-pii-detector-zero-entities.md
+    steward: router-core
+    freshness: update when the TD045 debt record changes materially
+  - path: docs/agent/tech-debt/td-046-onnx-binding-concurrent-rocm-session-init-segfault.md
+    steward: router-core
+    freshness: update when the TD046 debt record changes materially
+  - path: docs/agent/tech-debt/td-047-pii-registry-alias-autodownload-missing-mapping.md
+    steward: router-core
+    freshness: update when the TD047 debt record changes materially
+  - path: docs/agent/tech-debt/td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md
+    steward: fleet-sim
+    freshness: update when the TD048 debt record changes materially
+  - path: docs/agent/tech-debt/td-049-multi-candidate-selection-not-engaged.md
+    steward: router-core
+    freshness: update when the TD049 debt record changes materially
+  - path: docs/agent/tech-debt/td-050-global-model-selection-method-ignored.md
+    steward: router-core
+    freshness: update when the TD050 debt record changes materially
+  - path: docs/agent/tech-debt/td-051-router-config-hash-reflects-file-bytes.md
+    steward: router-core
+    freshness: update when the TD051 debt record changes materially
+  - path: docs/agent/tech-debt/td-052-commit-large-ml-models-json-via-git-lfs.md
+    steward: agent-contract
+    freshness: update when the TD052 debt record changes materially
 skills:
 - tools/agent/skills/config-platform-change/SKILL.md
 - tools/agent/skills/cross-stack-bugfix/SKILL.md

@@ -83,6 +83,21 @@ rules:
       - make vllm-sr-sim-test
     feature_tests: []
     requires_local_smoke: false
+  - name: agentic-context-reports
+    doc_only: false
+    loop_mode: completion
+    execution_plan_policy: long_horizon
+    paths:
+      - deploy/recipes/strix-halo-fleet-2box/perf/*validate_agentic_context_reports.py
+      - deploy/recipes/strix-halo-fleet-2box/README.md
+      - deploy/recipes/strix-halo-fleet-2box/docs/perf-report.md
+      - deploy/recipes/strix-halo-fleet-2box/docs/hardware-limits.md
+      - deploy/recipes/strix-halo-fleet-2box/docs/results/*.md
+      - deploy/recipes/strix-halo-fleet-2box/docs/results/*.json
+    fast_tests:
+      - make validate-agentic-context-reports
+    feature_tests: []
+    requires_local_smoke: false
   - name: memory-integration
     doc_only: false
     loop_mode: completion

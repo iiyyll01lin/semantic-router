@@ -118,6 +118,17 @@ repos:
         pass_filenames: true
         require_serial: true
 
+  # Agentic-context PoC report consistency gate
+  - repo: local
+    hooks:
+      - id: validate-agentic-context-reports
+        name: validate agentic-context reports
+        entry: make validate-agentic-context-reports
+        language: system
+        pass_filenames: false
+        require_serial: true
+        files: ^deploy/recipes/strix-halo-fleet-2box/(perf/(validate_agentic_context_reports|test_validate_agentic_context_reports)\.py|README\.md|docs/(perf-report|hardware-limits)\.md|docs/results/.*\.(md|json))$
+
 
 # Commented out flake8 - only reports issues, doesn't auto-fix
 # -   repo: https://github.com/PyCQA/flake8
