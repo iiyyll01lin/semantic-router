@@ -121,6 +121,44 @@ def stream_ollama(
     }
 
 
+def ollama_native_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Convert OpenAI-style tool history into Ollama native chat messages.
+
+    OpenAI serializes ``function.arguments`` as a JSON string, while Ollama's
+    native ``/api/chat`` endpoint requires the same value to be a JSON object.
+    Keep the caller-owned history unchanged and fail locally on malformed
+    argument JSON instead of sending a backend request that will return 400.
+    """
+    normalized = deepcopy(messages)
+    for message in normalized:
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for call in tool_calls:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function")
+            if not isinstance(function, dict):
+                continue
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                continue
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Ollama tool-call history arguments must contain valid JSON"
+                ) from exc
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    "Ollama tool-call history arguments must decode to an object"
+                )
+            function["arguments"] = parsed
+    return normalized
+
+
 def stream_ollama_chat(
     base: str,
     model: str,
@@ -145,7 +183,7 @@ def stream_ollama_chat(
         options["num_ctx"] = num_ctx
     payload: dict[str, Any] = {
         "model": model,
-        "messages": messages,
+        "messages": ollama_native_messages(messages),
         "stream": True,
         "think": think,
         "keep_alive": keep_alive,

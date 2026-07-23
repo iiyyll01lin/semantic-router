@@ -147,6 +147,59 @@ def test_openai_stream_retains_usage_cache_ttft_and_native_calls():
     assert result["tool_calls"][0]["arguments"] == {"ticker": "AAPL"}
 
 
+def test_ollama_native_messages_converts_openai_argument_strings_without_mutation():
+    _probe, support = load_modules()
+    messages = [
+        {"role": "user", "content": "weather Tokyo"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"location":"Tokyo"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "sunny"},
+    ]
+
+    normalized = support.ollama_native_messages(messages)
+
+    assert normalized[1]["tool_calls"][0]["function"]["arguments"] == {
+        "location": "Tokyo"
+    }
+    assert messages[1]["tool_calls"][0]["function"]["arguments"] == (
+        '{"location":"Tokyo"}'
+    )
+
+
+def test_ollama_native_messages_rejects_malformed_argument_json():
+    _probe, support = load_modules()
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"name": "broken", "arguments": "{"},
+                }
+            ],
+        }
+    ]
+
+    try:
+        support.ollama_native_messages(messages)
+    except ValueError as exc:
+        assert "valid JSON" in str(exc)
+    else:
+        raise AssertionError("malformed Ollama history arguments must fail locally")
+
+
 def test_ollama_stream_retains_authoritative_prefill_metrics(monkeypatch):
     _probe, support = load_modules()
 
