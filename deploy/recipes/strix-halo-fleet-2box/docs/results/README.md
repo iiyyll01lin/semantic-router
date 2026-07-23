@@ -28,3 +28,7 @@ survive reboot/cleanup. They are the raw source behind the narrative in
 - `perf-summary-2box.md` is the two-box fleet run `report-run-2box-20260712-153904`
   (Halo-A + Halo-B), copied byte-for-byte; only `perf-summary.md` from the two-box bundle
   was renamed to `perf-summary-2box.md` to avoid a clash with the summary in `report-data.md`.
+
+## Later additions
+
+- agentic-context-customer-onepager-20260722.md is the one-page customer brief for the 2026-07-23 finalization (demo-002 Ollama direct 64K customer run). Machine-readable companions in this folder: agentic-context-customer-20260722-four-proof-status.json and agentic-context-customer-20260722-evidence-index.json. The same finalization is folded into agentic-prefill-campaign-20260722.md. Raw evidence stays out of git at demo-002 and Halo-A ~/vllm-sr-evidence/agentic-context-customer-20260722 (151-file checksum manifest).

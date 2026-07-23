@@ -81,3 +81,28 @@ prompts or responses into git.
   the full remote campaign manifest is retained alongside it.
 - Large raw JSONL/request evidence remains outside git; this ledger records the
   result families and canonical evidence paths.
+
+## 2026-07-23 finalization: direct capacity 17/17, replay, four-proof
+
+This section closes the campaign with the demo-002 Ollama direct-path customer run (gemma4:26b-a4b-it-q8_0, Q8_0). Raw evidence lives outside git at demo-002:/home/demo-002/vllm-sr-evidence/agentic-context-customer-20260722 and is mirrored to Halo-A at ~/vllm-sr-evidence/agentic-context-customer-20260722 (151-file SHA256SUMS-final.txt; tarball sha256 in archives/ARCHIVE-SHA256.txt). Machine-readable status is committed alongside this ledger as agentic-context-customer-20260722-four-proof-status.json and agentic-context-customer-20260722-evidence-index.json.
+
+| Host | Run family | Role | Planned / recorded result | Transport / correctness result | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| demo-002 | Direct capacity spine/reuse/concurrency (OpenAI /v1) | Acceptance transport / Partial marker | 17/17 cells; 7 fully green, 10 marker-gate-only failures | Transport 17/17 (100 percent) and exact prompt-token usage 17/17 (100 percent); the 10 failures are marker-accuracy under synthetic filler, not serving failures | capacity-direct-openai/summary/direct-spine.json + direct-concurrency.json + direct-reuse.json |
+| demo-002 | Replay v1 three reps | Superseded failure | 0 usable; immediate HTTP 400 | Harness sent OpenAI tool_calls.function.arguments as JSON strings; Ollama native /api/chat rejected them; fixed in commit 0f8b7f2b | replay-direct-rep1..3 |
+| demo-002 | Replay v2 and v3 rep1 | Partial | fixed + branch passed; quality never ran | fixed checkpoints 8K/16K/32K/65152 marker-preserved, 32 tool turns, branch pass; quality 0 rows | replay-direct-v3-rep1/direct/summary/fixed-replay.json + branch-replay.json |
+| demo-002 | Long-horizon quality suite | Blocked | Not completed across three reps | Background runner stopped when its launching SSH session closed; demo-002 lacks loginctl linger | four-proof-status.json quality section |
+| demo-002 | Reliability soak/fault/side-effect | Deferred | Not run | No soak, fault-injection, or idempotency test this round | four-proof-status.json reliability section |
+
+### Four-proof verdict (2026-07-23)
+
+- Capacity: PARTIAL PASS. 64K serving window verified-loaded (ollama ps 100 percent GPU, CONTEXT 65536, 0 restart / 0 OOM, peak VRAM about 30.7 GB). Exact-token spine 2K/8K/16K/32K/64K healthy on all cells.
+- Performance: MEASURED (no agreed SLO). TTFT p50 prefill-bound: 2K 3.8s, 8K 5.9s, 16K 12.6s, 32K 30.4s, 64K 83s. On the Ollama direct path warm equalled cold (no prefix-cache speedup, cached ratio not reported); the 32K 144.3s to 30.8s reuse figure comes only from the sibling VLLM APC run.
+- Quality: NOT ACHIEVED. Tool schema fidelity strong (JSON 100, name 100, args 95.45) and replay integrity passed, but end-to-end agent task success was 25 percent and the three-rep long-horizon quality suite never completed.
+- Reliability: NOT RUN.
+
+### Remaining high-value work
+
+1. Enable loginctl linger (or a detached container) on demo-002 and re-run the three-rep quality suite with the applied Ollama-argument fix.
+2. Build or install the router on demo-002 for a matched router-versus-direct A/B.
+3. One 32K/64K soak plus a fault-recovery run.

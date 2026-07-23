@@ -1,0 +1,127 @@
+{
+  "schema": "agentic-context-window/evidence-index/v1",
+  "generated_at": "2026-07-23T07:05:23.900946+00:00",
+  "root": "/home/demo-002/vllm-sr-evidence/agentic-context-customer-20260722",
+  "capacity": {
+    "direct-spine": {
+      "passed": false,
+      "status_counts": {
+        "failed": 1,
+        "success": 4
+      },
+      "planned": 5,
+      "recorded": 5
+    },
+    "direct-concurrency": {
+      "passed": false,
+      "status_counts": {
+        "failed": 4,
+        "success": 2
+      },
+      "planned": 6,
+      "recorded": 6
+    },
+    "direct-reuse": {
+      "passed": false,
+      "status_counts": {
+        "failed": 5,
+        "success": 1
+      },
+      "planned": 6,
+      "recorded": 6
+    }
+  },
+  "capacity_rollup": {
+    "total": 17,
+    "green": 7,
+    "failed": 10,
+    "transport_100pct": 17,
+    "exact_usage_100pct": 17,
+    "marker_only_failures": 10
+  },
+  "replay": {
+    "v2_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    },
+    "v3_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    }
+  },
+  "limitations": [
+    "replay-v2-aborted-user-scope-20260723.json",
+    "replay-v2-aborted-user-scope-20260723.json.sha256",
+    "replay-v3-aborted-user-scope-20260723.json",
+    "replay-v3-aborted-user-scope-20260723.json.sha256",
+    "user-scope-reduction-20260723.json",
+    "user-scope-reduction-20260723.json.sha256"
+  ],
+  "blockers_present": true,
+  "runs": [
+    {
+      "files": 2,
+      "bytes": 4398,
+      "name": "analysis"
+    },
+    {
+      "files": 2,
+      "bytes": 2588,
+      "name": "blockers"
+    },
+    {
+      "files": 21,
+      "bytes": 5201651,
+      "name": "capacity-direct-openai"
+    },
+    {
+      "files": 6,
+      "bytes": 2227,
+      "name": "limitations"
+    },
+    {
+      "files": 12,
+      "bytes": 14620,
+      "name": "plans"
+    },
+    {
+      "files": 19,
+      "bytes": 685480,
+      "name": "replay-direct-rep1"
+    },
+    {
+      "files": 19,
+      "bytes": 685488,
+      "name": "replay-direct-rep2"
+    },
+    {
+      "files": 19,
+      "bytes": 685481,
+      "name": "replay-direct-rep3"
+    },
+    {
+      "files": 12,
+      "bytes": 888454,
+      "name": "replay-direct-v2-rep1"
+    },
+    {
+      "files": 13,
+      "bytes": 756081,
+      "name": "replay-direct-v3-rep1"
+    },
+    {
+      "files": 6,
+      "bytes": 27596,
+      "name": "runtime"
+    }
+  ],
+  "sibling_bundle": {
+    "path": "/home/demo-002/vllm-sr-evidence/agentic-prefill-20260722",
+    "closure": true,
+    "ablation": true
+  }
+}

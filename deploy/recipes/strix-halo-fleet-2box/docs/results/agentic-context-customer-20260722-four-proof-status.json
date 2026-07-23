@@ -1,0 +1,247 @@
+{
+  "schema": "agentic-context-window/four-proof-status/v1",
+  "generated_at": "2026-07-23T07:05:23.900946+00:00",
+  "host": "demo-002 HP Z2 Mini G1a, Ryzen AI MAX+ PRO 395, Radeon 8060S gfx1151, 64GiB VRAM, ROCm 7.0",
+  "backend": "Ollama 0.32.1 ROCm, gemma4:26b-a4b-it-q8_0 Q8_0 arch-ctx 262144",
+  "serving_window": {
+    "configured": 65536,
+    "loaded_verified": 65536,
+    "num_parallel": 1,
+    "restarts": 0,
+    "oom": false,
+    "ladder": "router-declared 131072/262144 vs backend-configured 65536 vs test-proven 65536"
+  },
+  "proofs": {
+    "capacity": {
+      "status": "PARTIAL_PASS",
+      "cells_total": 17,
+      "cells_all_green": 7,
+      "cells_failed": 10,
+      "transport_100pct": 17,
+      "exact_usage_100pct": 17,
+      "failed_marker_gate_only": 10,
+      "verdict": "Serving window 64K verified. Exact-token spine 2K/8K/16K/32K/64K transport and prompt-token accounting healthy on all cells. Green cells pass every gate. Failed cells fail ONLY the marker-accuracy gate under synthetic-filler stress, a probe artifact not a serving failure."
+    },
+    "performance": {
+      "status": "MEASURED_NO_AGREED_SLO",
+      "spine": [
+        {
+          "ctx": 2048,
+          "cold_ttft_ms": {
+            "mean": 3470.8579,
+            "p50": 3809.1309,
+            "p95": 4702.3196,
+            "max": 4801.5627
+          },
+          "warm_ttft_ms": {
+            "mean": 2122.5861,
+            "p50": 1789.1643,
+            "p95": 2711.0874,
+            "max": 2813.5233
+          },
+          "cold_decode_tps": {
+            "mean": 39.1223,
+            "p50": 39.1722,
+            "p95": 39.2596,
+            "max": 39.2693
+          },
+          "warm_decode_tps": {
+            "mean": 36.2916,
+            "p50": 38.7355,
+            "p95": 38.869,
+            "max": 38.8839
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 8192,
+          "cold_ttft_ms": {
+            "mean": 6226.583,
+            "p50": 5886.5319,
+            "p95": 6811.4277,
+            "max": 6914.1939
+          },
+          "warm_ttft_ms": {
+            "mean": 5893.9712,
+            "p50": 5886.2737,
+            "p95": 5911.3342,
+            "max": 5914.1187
+          },
+          "cold_decode_tps": {
+            "mean": 38.2358,
+            "p50": 38.2239,
+            "p95": 38.3958,
+            "max": 38.4149
+          },
+          "warm_decode_tps": {
+            "mean": 38.0658,
+            "p50": 38.0382,
+            "p95": 38.1615,
+            "max": 38.1752
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 16384,
+          "cold_ttft_ms": {
+            "mean": 12630.1275,
+            "p50": 12624.8144,
+            "p95": 12641.2326,
+            "max": 12643.0568
+          },
+          "warm_ttft_ms": {
+            "mean": 12587.8758,
+            "p50": 12585.1474,
+            "p95": 12598.6099,
+            "max": 12600.1058
+          },
+          "cold_decode_tps": {
+            "mean": 37.1663,
+            "p50": 37.153,
+            "p95": 37.19,
+            "max": 37.1941
+          },
+          "warm_decode_tps": {
+            "mean": 36.9944,
+            "p50": 36.9909,
+            "p95": 37.0431,
+            "max": 37.0489
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 32768,
+          "cold_ttft_ms": {
+            "mean": 30404.3025,
+            "p50": 30378.7375,
+            "p95": 30448.5554,
+            "max": 30456.3129
+          },
+          "warm_ttft_ms": {
+            "mean": 30389.1316,
+            "p50": 30337.4316,
+            "p95": 30504.6465,
+            "max": 30523.2259
+          },
+          "cold_decode_tps": {
+            "mean": 35.1224,
+            "p50": 35.2821,
+            "p95": 35.3676,
+            "max": 35.3771
+          },
+          "warm_decode_tps": {
+            "mean": 35.3991,
+            "p50": 35.3366,
+            "p95": 35.5384,
+            "max": 35.5608
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 65152,
+          "cold_ttft_ms": {
+            "mean": 83140.1827,
+            "p50": 83177.386,
+            "p95": 83226.5878,
+            "max": 83232.0546
+          },
+          "warm_ttft_ms": {
+            "mean": 83217.1818,
+            "p50": 83205.3736,
+            "p95": 83247.2998,
+            "max": 83251.9583
+          },
+          "cold_decode_tps": {
+            "mean": 32.371,
+            "p50": 32.1967,
+            "p95": 32.7481,
+            "max": 32.8094
+          },
+          "warm_decode_tps": {
+            "mean": 32.4148,
+            "p50": 32.5638,
+            "p95": 32.7764,
+            "max": 32.8
+          },
+          "warm_cached_prompt_ratio": null
+        }
+      ],
+      "vllm_apc_crossref": "output256 APC 32K c4 cold 144.3s to warm 30.8s"
+    },
+    "quality": {
+      "status": "NOT_ACHIEVED",
+      "tool_schema_fidelity": "native tool test JSON 100 name 100 args 95.45",
+      "end_to_end_agent_success": "VLLM real-agent smoke 16/16 transport, task success 25pct",
+      "replay_integrity": "PASS fixed 8K/16K/32K/65152 marker-preserved tool_turns 32 branch PASS",
+      "quality_suite": "NOT RUN, 44-trial suite never executed, runner stopped when SSH session closed, demo-002 lacks linger"
+    },
+    "reliability": {
+      "status": "NOT_RUN",
+      "soak": "none",
+      "fault_recovery": "none",
+      "side_effects": "none",
+      "incidental": "Ollama 0 restart 0 oom across campaign"
+    }
+  },
+  "run_orchestration_limitation": {
+    "root_cause": "demo-002 user has no loginctl linger; systemd --user and nohup torn down when launching SSH session ends",
+    "observed": "replay v2 and v3 Stopped by user manager right after branch phase, quality never started",
+    "fix": "enable-linger for demo-002 or run in detached container/tmux"
+  },
+  "blockers_ref": "blockers/pre-hardware-blockers.json",
+  "limitations_ref": [
+    "replay-v2-aborted-user-scope-20260723.json",
+    "replay-v2-aborted-user-scope-20260723.json.sha256",
+    "replay-v3-aborted-user-scope-20260723.json",
+    "replay-v3-aborted-user-scope-20260723.json.sha256",
+    "user-scope-reduction-20260723.json",
+    "user-scope-reduction-20260723.json.sha256"
+  ],
+  "vllm_crossref": {
+    "closure": true,
+    "ablation": true
+  },
+  "replay": {
+    "v2_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    },
+    "v3_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    }
+  },
+  "capacity_phases": {
+    "direct-spine": {
+      "passed": false,
+      "status_counts": {
+        "failed": 1,
+        "success": 4
+      },
+      "planned": 5,
+      "recorded": 5
+    },
+    "direct-concurrency": {
+      "passed": false,
+      "status_counts": {
+        "failed": 4,
+        "success": 2
+      },
+      "planned": 6,
+      "recorded": 6
+    },
+    "direct-reuse": {
+      "passed": false,
+      "status_counts": {
+        "failed": 5,
+        "success": 1
+      },
+      "planned": 6,
+      "recorded": 6
+    }
+  }
+}
