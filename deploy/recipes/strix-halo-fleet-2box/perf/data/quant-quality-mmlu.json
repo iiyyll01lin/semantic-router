@@ -1,0 +1,685 @@
+[
+  {
+    "question": "When the class listened to a list of words, half the group was directed to listen for sounds while the other half was asked to gauge the emotional impact of the words. The group that gauged the emotional impact remembered many more words. This is evidence that better retention results with attention to",
+    "options": [
+      "auditory processing",
+      "surface processing",
+      "phonetic features",
+      "shallow processing",
+      "structural processing",
+      "semantic features",
+      "echoic features",
+      "acoustic features",
+      "visual processing",
+      "deep processing"
+    ],
+    "answer": "F",
+    "category": "psychology"
+  },
+  {
+    "question": "Consider the paper Native Client: A Sandbox for Portable, Untrusted x86 Native Code by Yee et al. Ben Bitdiddle notes that NaCl uses Intel x86 segmentation to ensure that the sandboxed module does not read or write memory outside its own data area, and does not execute instructions outside its own code. Ben thinks that with these restrictions alone, executing the sandboxed module must be safe; that is, he thinks validation is not needed. Ben is wrong. Circle the types of x86 machine instructions that the validator always forbids in sandboxed code. Please ignore trampoline and springboard code.",
+    "options": [
+      "all instructions that modify segment state",
+      "all loads or stores to addresses that are not 0 mod 32",
+      "all indirect loads or stores (via an address in a register or variable)",
+      "all indirect jumps (via an address in a register or variable)"
+    ],
+    "answer": "A",
+    "category": "computer science"
+  },
+  {
+    "question": "Air (k = 1.4, M_W = 29) flows at a velocity of 224 fps under a pressureof 14.7psia. If the temperature of the air is 17°C, atwhat Mach number does the flow take place ?",
+    "options": [
+      "0.3",
+      "0.4",
+      "1.2 (supersonic condition)",
+      "0.1",
+      "0.8",
+      "0.2",
+      "0.5",
+      "1.0 (sonic condition)",
+      "0.6",
+      "0.7"
+    ],
+    "answer": "F",
+    "category": "engineering"
+  },
+  {
+    "question": "Which of these rock guitarists designed a colorful line of men's neckties?",
+    "options": [
+      "Jeff Beck",
+      "Brian May",
+      "Eddie Van Halen",
+      "John Mayer",
+      "Pete Townshend",
+      "Jerry Garcia",
+      "Jimmy Page",
+      "Keith Richards",
+      "Carlos Santana",
+      "Eric Clapton"
+    ],
+    "answer": "F",
+    "category": "other"
+  },
+  {
+    "question": "What is wrong with the following statement? \"In many desert plants the roots grow very deep because they are searching out for deep underground water to supply the plant.\" Explain your answer.",
+    "options": [
+      "The statement is incorrect as desert plants primarily rely on dew and mist for their water supply, not deep underground water.",
+      "The roots grow deep not to find water but to anchor the plant in the shifting desert sands.",
+      "Desert plants have a special type of root system",
+      "The roots of desert plants do not grow deep but spread out near the surface to collect as much water as possible from rain.",
+      "Desert plants do not actually need much water, so their roots do not grow deep in search of it.",
+      "The statement is oversimplified and teleological, implying goal-directed behavior in plants which is not possible. The True reason for desert plants having long roots is natural selection.",
+      "Desert plants have a sensory system to detect water",
+      "Desert plants have a mechanism to store water in their roots",
+      "Desert plants have deep roots because they grow towards a water source due to their innate intelligence.",
+      "The statement is wrong because desert plants absorb moisture from the air through their leaves, not their roots."
+    ],
+    "answer": "F",
+    "category": "biology"
+  },
+  {
+    "question": "Consider the initial value problem\n$$\ny^{\\prime \\prime}+\\gamma y^{\\prime}+y=k \\delta(t-1), \\quad y(0)=0, \\quad y^{\\prime}(0)=0\n$$\nwhere $k$ is the magnitude of an impulse at $t=1$ and $\\gamma$ is the damping coefficient (or resistance).\nLet $\\gamma=\\frac{1}{2}$. Find the value of $k$ for which the response has a peak value of 2 ; call this value $k_1$.",
+    "options": [
+      "3.1415",
+      "3.9022",
+      "2.8108",
+      "2.0000",
+      "3.5672",
+      "2.3456",
+      "4.0000",
+      "2.7182",
+      "1.7890",
+      "1.6180"
+    ],
+    "answer": "C",
+    "category": "math"
+  },
+  {
+    "question": "Mr. Langham decides to take a loan from his bank for $60 at a nominal rate of 6%. If he agrees to repay the loan in equal installments over a period of 15 months, how much will each of the monthly payments be?",
+    "options": [
+      "$4.60",
+      "$4.30",
+      "$4.70",
+      "$4.50",
+      "$3.80",
+      "$4.00",
+      "$4.10",
+      "$64.50",
+      "$5.00",
+      "$60"
+    ],
+    "answer": "B",
+    "category": "business"
+  },
+  {
+    "question": "Which of the following countries is actively trying to preserve the purity of their native language from contamination by English or other languages?",
+    "options": [
+      "Brazil",
+      "Australia",
+      "Japan",
+      "United States",
+      "India",
+      "South Africa"
+    ],
+    "answer": "C",
+    "category": "other"
+  },
+  {
+    "question": "This question refers to the following information.\nWhile some theorists in the Middle Ages argued that the jihad was a defensive war… most authorities held that the obligation of jihad did not lapse until all the world was brought under the sway of Islam. The Bahr [al-Fava'id, or \"Sea of Precious Virtues,\" written in the 1150s or 1160s] insists that the first duty of a Muslim ruler is to prosecute the jihad and bring about the victory of Islam, and if he does not do so and he makes peace with the infidel, that ruler would be better dead than alive, for he would be corrupting the world.\nRobert Irwin, \"Islam and the Crusades,\" 1995\nIt is strange how the Christians round Mount Lebanon, when they see any Muslim hermits, bring them food and treat them kindly, saying that these men are dedicated to the Great and Glorious God and that they should therefore share with them. Likewise, not one Christian merchant was stopped or hindered in Muslim territories.\nIbn Jubayr, Muslim scholar, traveling to Mecca and Jerusalem, ca. 1185\nThese two passages are best understood in the context of which of the following?",
+    "options": [
+      "The attempt of a religious group to proselytize to those following another faith",
+      "The religious motivations behind the Crusades",
+      "The suppression of minority religions in a dominant religious society",
+      "The influence of religion on interaction between cultures",
+      "The evolution of religious rituals and customs over time",
+      "The syncretic fusion of different religious traditions",
+      "The political manipulation of religious beliefs",
+      "The spread of Islam through peaceful means"
+    ],
+    "answer": "D",
+    "category": "history"
+  },
+  {
+    "question": "Workers' acceptance of change is characteristic of what type of culture?",
+    "options": [
+      "Process culture",
+      "Hierarchical culture",
+      "Power culture",
+      "Competitive culture",
+      "Collaborative culture",
+      "Individualistic culture",
+      "Task culture"
+    ],
+    "answer": "E",
+    "category": "business"
+  },
+  {
+    "question": "The element (4, 2) of Z_12 x Z_8 has order",
+    "options": [
+      "2",
+      "9",
+      "4",
+      "5",
+      "8",
+      "7",
+      "12",
+      "6",
+      "3",
+      "10"
+    ],
+    "answer": "G",
+    "category": "math"
+  },
+  {
+    "question": "A 2-year-old boy is brought to the emergency department by his babysitter because of a 30-minute history of respiratory distress. The babysitter reports that she is 15 years old and has cared for the patient on numerous occasions during the past year. The child's mother, who is a single parent, is currently out of town for business but will return later tonight. The babysitter says, \"He has had a runny nose since I started babysitting yesterday, but this afternoon he awoke from a nap with a barking sound and he was breathing real heavy.\" She does not know the child's prior health history, nor does she know if the boy takes any medications on a regular basis. The child looks tired and sits upright on the babysitter's lap. He is obviously comfortable with his caregiver. Vital signs are temperature 38.7°C (101.7°F), pulse 110/min, respirations 28/min and labored, and blood pressure 85/50 mm Hg. Pulse oximetry on room air shows an oxygen saturation of 89%. Physical examination discloses inspiratory stridor. Neck is supple, tympanic membranes are normal, and there is a profuse nasal discharge. Examination of the pharynx discloses no abnormalities. Auscultation of the chest discloses equal air entry on both sides and no crackles. The remainder of the examination shows no abnormalities. Treatment with 40% oxygen via venturi mask and intravenous fluids is initiated. Despite continued supplemental oxygen and hydration, the child remains tachypneic and stridorous at rest. Oxygen saturation is now 93%. In addition to administering racemic epinephrine by nebulizer, which of the following is the most appropriate next step?",
+    "options": [
+      "Intravenous aminophylline therapy",
+      "Intravenous antibiotic therapy",
+      "Intubation",
+      "Oral dexamethasone therapy"
+    ],
+    "answer": "D",
+    "category": "health"
+  },
+  {
+    "question": "This question refers to the following information.\nRead the list of complaints below.\nArticle 3: Frenchmen should regard as laws of the kingdom those alone which have been prepared by the national assembly and sanctioned by the king.\nArticle 11: Personal liberty, proprietary rights and the security of citizens shall be established in a clear, precise and irrevocable manner. All lettres de cachet shall be abolished forever, subject to certain modifications which the States General may see fit to impose.\nArticle 12: And to remove forever the possibility of injury to the personal and proprietary rights of Frenchmen, the jury system shall be introduced in all criminal cases, and in civil cases for the determination of fact, in all the courts of the realm.\nArticle 17: All distinctions in penalties shall be abolished; and crimes committed by citizens of the different orders shall be punished irrespectively, according to the same forms of law and in the same manner. The States General shall seek to bring it about that the effects of transgression shall be confined to the individual and shall not be reflected upon the relatives of the transgressor, themselves innocent of all participation.\nArticle 21: No tax shall be legal unless accepted by the representatives of the people and sanctioned by the king.\n—Cahiers of the Third Estate of Versailles, 1789\nWhich of the following was NOT one of the problems in France that caused the French Revolution referenced in the document above?",
+    "options": [
+      "Financial problems caused by debts and low revenues.",
+      "The legal system of France was not equitable.",
+      "Lack of religious freedom in France.",
+      "There was a lot of social and political inequality in France in 1789.",
+      "The French monarchy was too weak.",
+      "Overpopulation and lack of resources.",
+      "Low literacy rates among the French population.",
+      "France was at war with multiple other nations.",
+      "The proliferation of Enlightenment ideals.",
+      "The French army was too powerful."
+    ],
+    "answer": "A",
+    "category": "history"
+  },
+  {
+    "question": "Sheets of brass and steel, each of thickness 1 cm, are placed in contact. The outer surface of the brass is kept at 100°C and the outer surface of the steel is kept at 0°C. What is the temperature of the common interface? The thermal conductivities of brass and steel are in the ratio of 2 : 1.",
+    "options": [
+      "90°C",
+      "55°C",
+      "33.3°C",
+      "66.7°C",
+      "75°C",
+      "60°C",
+      "100°C",
+      "50°C",
+      "80°C",
+      "20°C"
+    ],
+    "answer": "D",
+    "category": "physics"
+  },
+  {
+    "question": "A state has recently enacted a statute making it a misdemeanor for any person to smoke a cigarette, cigar, or pipe in any restaurant, bar, cafe, or other establishment within the state. A defendant was tried in state court for violating the anti-smoking statute. The prosecution's evidence consisted of testimony regarding the defendant's cigarette smoking at a restaurant. During the prosecution's case-in-chief, they called a witness who testified to a prior conviction of the defendant that had been excluded by the judge in a pretrial hearing. The judge immediately granted a mistrial and excused the jury. The state prosecutor appealed the ruling under a statute that permitted prosecutorial appeals in such circumstances. The state won the appeal, but the prosecutor decided not to re-prosecute the defendant. However, the city attorney from the city in which the restaurant was located then sought to prosecute the defendant for the same incident under the city's anti-smoking ordinance, which was identical to the state statute. The city attorney planned to call as her only witness a man who testified at the defendant's first trial. The defendant moved to dismiss on the grounds that the prosecution of the city charge would violate his rights against double jeopardy. The court should",
+    "options": [
+      "deny the motion, because the judge granted a mistrial.",
+      "grant the motion, because it is the same incident being prosecuted.",
+      "grant the motion, because the city attorney is using the same witness.",
+      "grant the motion, because the law and the evidence will be identical at the second trial.",
+      "deny the motion, because the city's anti-smoking ordinance is separate from the state statute.",
+      "grant the motion, because jeopardy attached in the first prosecution.",
+      "deny the motion, because the city has its own jurisdiction.",
+      "grant the motion, because the defendant was not re-prosecuted by the state.",
+      "deny the motion, because the city and the state are separate sovereigns."
+    ],
+    "answer": "A",
+    "category": "law"
+  },
+  {
+    "question": "The first point of entry of water at the roots of a monocot plant is through the cytoplasm of cells of the",
+    "options": [
+      "parenchyma",
+      "phloem",
+      "endoderm",
+      "pericycle",
+      "cortex",
+      "epidermis",
+      "root cap",
+      "Casparian strip",
+      "xylem",
+      "root hair cells"
+    ],
+    "answer": "C",
+    "category": "biology"
+  },
+  {
+    "question": "Air at 150 1bf / in^2, 150°F and a velocity of 300 ft/sec is expandedin a gas turbine and leaves at 50 1bf/in^2, 40°F and 200 ft/sec. Assuming no heat losses and air to be an ideal gaswith constant specific heats, calculate the reversible workper pound of air done, and the actual work done by the turbine.",
+    "options": [
+      "Reversible work: 42.2 Btu/1bm, Actual work: 27.4 Btu/1bm",
+      "Reversible work: 15.0 Btu/lbm, Actual work: 20.0 Btu/lbm",
+      "Reversible work: 30.5 Btu/lbm, Actual work: 15.3 Btu/lbm",
+      "Reversible work: 18.7 Btu/lbm, Actual work: 25.2 Btu/lbm",
+      "Reversible work: 50.0 Btu/lbm, Actual work: 32.5 Btu/lbm",
+      "Reversible work: 26.4 Btu/1bm, Actual work: 42.2 Btu/1bm",
+      "Reversible work: 14.8 Btu/1bm, Actual work: 1.0 Btu/1bm",
+      "Reversible work: 27.4 Btu/1bm, Actual work: 42.2 Btu/1bm",
+      "Reversible work: 22.5 Btu/lbm, Actual work: 35.0 Btu/lbm",
+      "Reversible work: 35.0 Btu/lbm, Actual work: 22.0 Btu/lbm"
+    ],
+    "answer": "A",
+    "category": "engineering"
+  },
+  {
+    "question": "This question refers to the following information.\nRead the following letter.\nIt happened . . . that a Spaniard saw an Indian . . . eating a piece of flesh taken from the body of an Indian who had been killed. . . . I had the culprit burned, explaining that the cause was his having killed that Indian and eaten him[,] which was prohibited by Your Majesty, and by me in Your Royal name. I further made the chief understand that all the people . . . must abstain from this custom. . . . I came . . . to protect their lives as well as their property, and to teach them that they were to adore but one God[,] . . . that they must turn from their idols, and the rites they had practiced until then, for these were lies and deceptions which the devil . . . had invented. . . . I, likewise, had come to teach them that Your Majesty, by the will of Divine Providence, rules the universe, and that they also must submit themselves to the imperial yoke, and do all that we who are Your Majesty's ministers here might order them.\n—Hernan Cortez, Fifth Letter to Holy Roman Emperor Charles V, 1521\nWhich of the following was NOT a result of the European conquest of the Americas realized by the end of the seventeenth century?",
+    "options": [
+      "Europeans established overseas colonies on the coasts of the Americas and throughout the continent of Africa.",
+      "Europeans established colonies throughout Asia and the Pacific Islands.",
+      "Europeans created vast global trade networks that allowed them to gain large accumulations of wealth.",
+      "European conquest led to the extinction of the majority of plant and animal species in the Americas.",
+      "Europeans expanded the African slave trade in response to the establishment of a plantation economy in the Americas and to demographic catastrophes among indigenous peoples.",
+      "The European conquest resulted in a globally unified political system under European rule.",
+      "The conquest resulted in a decrease in Europe's population.",
+      "Europe's colonial expansion led to a global exchange of goods, flora, fauna, cultural practices, and diseases.",
+      "The indigenous people of the Americas were able to retain their territories and political power.",
+      "Europeans were able to completely eliminate all native cultures and languages in the Americas."
+    ],
+    "answer": "A",
+    "category": "history"
+  },
+  {
+    "question": "Babbling ordinarily begins at about 4 to 5 months of age and initially includes:",
+    "options": [
+      "phonemes from the child’s native language only.",
+      "Phonemes from the language most frequently spoken around the child.",
+      "Phonetic sounds specific to the child's geographical location.",
+      "Phonemes from the parents' native language only.",
+      "morphemes that the child has heard most frequently.",
+      "Phonetic sounds that are easiest for the child to produce.",
+      "morphemes from all languages.",
+      "Morphemes from the child's native language only.",
+      "Words that the child has heard most frequently.",
+      "phonemes from all languages."
+    ],
+    "answer": "J",
+    "category": "psychology"
+  },
+  {
+    "question": "So, how long have you been beating your wife?",
+    "options": [
+      "Attacking the Person (ad hominem)",
+      "False Dilemma",
+      "Prejudicial Language",
+      "Appeal to Force"
+    ],
+    "answer": "C",
+    "category": "philosophy"
+  },
+  {
+    "question": "A certain gas obeys the van der Waals equation with $a=0.50 \\mathrm{~m}^6 \\mathrm{~Pa}$ $\\mathrm{mol}^{-2}$. Its volume is found to be $5.00 \\times 10^{-4} \\mathrm{~m}^3 \\mathrm{~mol}^{-1}$ at $273 \\mathrm{~K}$ and $3.0 \\mathrm{MPa}$. From this information calculate the van der Waals constant $b$. What is the compression factor for this gas at the prevailing temperature and pressure?",
+    "options": [
+      "0.70",
+      "0.55",
+      "0.82",
+      "0.72",
+      "0.50",
+      "0.66",
+      "0.60",
+      "0.75",
+      "0.90",
+      "0.40"
+    ],
+    "answer": "F",
+    "category": "chemistry"
+  },
+  {
+    "question": "In the current year Vinton exchanged unimproved land for an apartment building. The land had a basis of $300000 and a fair market value (FMV) of $420000 and was encumbered by a $100000 mortgage. The apartment building had an FMV of $550000 and was encumbered by a $230000 mortgage. Each party assumed the other's mortgage. What is Vinton's basis in the office building?",
+    "options": [
+      "$320,000",
+      "$420,000",
+      "$300,000",
+      "$250,000",
+      "$200,000",
+      "$350,000",
+      "$500,000",
+      "$430,000",
+      "$600,000",
+      "550000"
+    ],
+    "answer": "H",
+    "category": "other"
+  },
+  {
+    "question": "You are planning to carpet a room 14'6\" by 11'3\". The price is $11.95 per sq. yd. Assuming that available widths are 15' and 12'. which is more economical? What is the cost?",
+    "options": [
+      "15' width is more economical, $199.99",
+      "12' width is more economical, $275.95",
+      "12' width is more economical, $250.00",
+      "12' width is more economical, $199.99",
+      "15' width is more economical, $300.00",
+      "15' width is more economical, $250.00",
+      "15' width is more economical, $275.95",
+      "12' width is more economical, $224.06",
+      "15' width is more economical, $224.06",
+      "12' width is more economical, $300.00"
+    ],
+    "answer": "I",
+    "category": "business"
+  },
+  {
+    "question": "If a machine costs initially $1,000,000, lasts for 10 years, and has a scrap value of $100,000 at the end of its life-time, how much depreciation should be taken into account each year in the current accounts? And how is this shown in the capital account?",
+    "options": [
+      "$70,000 per year",
+      "$50,000 per year",
+      "$60,000 per year",
+      "$100,000 per year",
+      "$110,000 per year",
+      "$80,000 per year",
+      "$120,000 per year",
+      "$90,000 per year",
+      "$75,000 per year",
+      "$85,000 per year"
+    ],
+    "answer": "H",
+    "category": "economics"
+  },
+  {
+    "question": " Which bodhisattva is known for conducting the souls of dead children to salvation?",
+    "options": [
+      "Kannon",
+      "Shakyamuni",
+      "Manjusri",
+      "Guan-yin",
+      "Tara",
+      "Avalokiteshvara",
+      "Vajrapani",
+      "Ojizo-sama",
+      "Amitabha",
+      "Maitreya"
+    ],
+    "answer": "H",
+    "category": "philosophy"
+  },
+  {
+    "question": "Which philosopher called the idea of natural rights 'nonsense on stilts'?",
+    "options": [
+      "Socrates",
+      "John Locke",
+      "Immanuel Kant",
+      "Emmanuel Kant",
+      "René Descartes",
+      "Thomas Hobbes",
+      "Alan Gerwith",
+      "Jeremy Bentham",
+      "John Stuart Mill",
+      "Friedrich Nietzsche"
+    ],
+    "answer": "H",
+    "category": "law"
+  },
+  {
+    "question": "Which of the following drugs may be used to enhance gastric motility?",
+    "options": [
+      "Carbemazepine.",
+      "Paracetamol.",
+      "Erythromycin.",
+      "Ceftriaxone.",
+      "Ditropan.",
+      "Aspirin.",
+      "Insulin.",
+      "Prednisone.",
+      "Warfarin.",
+      "Adrenaline."
+    ],
+    "answer": "C",
+    "category": "health"
+  },
+  {
+    "question": "Name three of the five main uses of the hand.",
+    "options": [
+      "Sensory, wave, punch.",
+      "Punch, touch, slap.",
+      "Tap, slap, clap.",
+      "Grip, percussion, sensory.",
+      "Pinch, wave, tickle.",
+      "Clap, stroke, grip.",
+      "Touch, feel, stroke.",
+      "Wave, scratch, tickle.",
+      "Stroke, slap, punch.",
+      "Touch, pinch, grasp."
+    ],
+    "answer": "D",
+    "category": "health"
+  },
+  {
+    "question": "Suppose we have two charges, q_1 = + 4stateCand q_2 = \\rule{1em}{1pt}6 stateC, with an initial separation of r_1 = 3 cm. What is the change in potential energy if we increase the separation to 8 cm?",
+    "options": [
+      "+10 ergs",
+      "+3 ergs",
+      "+2 ergs",
+      "+15 ergs",
+      "-10 ergs",
+      "-5 ergs",
+      "-7 ergs",
+      "+7 ergs",
+      "+12 ergs",
+      "+5 ergs"
+    ],
+    "answer": "J",
+    "category": "physics"
+  },
+  {
+    "question": "When a swimmer leaves cold water on a warm, breezy day, he experiences a cooling effect. Why?",
+    "options": [
+      "The cold water causes a decrease in the swimmer's metabolic rate.",
+      "The swimmer feels cold due to the temperature difference.",
+      "Evaporation of water from the swimmer's skin cools the body down.",
+      "The swimmer feels cold due to the wind chill factor.",
+      "The swimmer's body is adapting to the water temperature after exiting.",
+      "The water removes heat from the swimmer's body.",
+      "The sun's rays are less effective on the swimmer's wet skin.",
+      "The water on the swimmer's body freezes.",
+      "The breeze makes the swimmer feel cold.",
+      "The swimmer's body temperature drops below normal."
+    ],
+    "answer": "F",
+    "category": "chemistry"
+  },
+  {
+    "question": "Consider Convolutional Neural Network D2 which takes input images of size 32x32 with 1 colour channels. The first layer of D2 uses 4 filters of size 5x5, a stride of 2, and zero-padding of width 1. Consider CNN D2 which takes input images of size 32x32 with 1 colour channels. The first layer of D2 uses 4 filters of size 5x5, a stride of 2, and zero-padding of width 1. What is the total number of weights defined for the entire activation output of this first layer? (ie. If you flattened all filters and channels into a single vector)",
+    "options": [
+      "1200",
+      "500",
+      "1300",
+      "1040",
+      "1100",
+      "600",
+      "900",
+      "1000",
+      "700",
+      "800"
+    ],
+    "answer": "G",
+    "category": "computer science"
+  },
+  {
+    "question": "What is a command Economy?",
+    "options": [
+      "A Command Economy is one where resources are allocated based on a voting system among all citizens.",
+      "A Command Economy is one where resources are allocated based on market demand.",
+      "A Command Economy is one where the government only controls key industries, and the rest is market-driven.",
+      "A Command Economy is one where resources are allocated by a decentralized system of local governments with no central authority.",
+      "A Command Economy is one where resources are distributed evenly among all citizens.",
+      "A Command Economy is one in which resources are allocated according to the commands of a central planning authority.",
+      "A Command Economy is one where allocation of resources is determined by tradition and cultural practices.",
+      "A Command Economy is one where resources are allocated based on the wealth of individuals.",
+      "A Command Economy is one in which prices and production levels are determined by non-profit organizations.",
+      "A Command Economy is one where allocation of resources is determined by the competition among private companies."
+    ],
+    "answer": "F",
+    "category": "economics"
+  },
+  {
+    "question": "Solve 13 over 4 = x over 7.",
+    "options": [
+      "22.25",
+      "23.25",
+      "25.25",
+      "23.75",
+      "21.75",
+      "24.75",
+      "20.50",
+      "none of these",
+      "24.25",
+      "22.75"
+    ],
+    "answer": "J",
+    "category": "math"
+  },
+  {
+    "question": "Stagflation is the result of",
+    "options": [
+      "a rightward shift in the aggregate supply curve.",
+      "a leftward shift in the aggregate demand curve.",
+      "a leftward shift in both the aggregate supply and aggregate demand curves.",
+      "a leftward shift in the money supply curve.",
+      "a rightward shift in the aggregate demand curve.",
+      "a leftward shift in the aggregate supply curve.",
+      "a rightward shift in the money supply curve.",
+      "a rightward shift in both the aggregate supply and aggregate demand curves.",
+      "a rightward shift in both the money supply and aggregate demand curves.",
+      "a leftward shift in both the money supply and aggregate demand curves."
+    ],
+    "answer": "F",
+    "category": "economics"
+  },
+  {
+    "question": "Visual perception is a constructive process. Discuss.",
+    "options": [
+      "Visual perceptions are a series of static images captured by the retina.",
+      "Visual perceptions are unchangeable once an image is captured by the retina.",
+      "Visual perceptions are independent of past experiences and expectations and are solely determined by the immediate sensory input.",
+      "Visual perceptions rely entirely on the color and brightness of the object, without any contribution from spatial information.",
+      "Visual perceptions are based solely on the physical properties of the object viewed.",
+      "Visual perceptions are pieced together from individual retinal cells firing in isolation, without any reference to the overall shape or form of the object.",
+      "Visual perceptions are formed by a single eye movement that captures a complete image of the object.",
+      "Visual perceptions are directly projected to the brain without any processing.",
+      "Visual perceptions are the result of auditory signals that are translated into visual images by the brain.",
+      "Visual perceptions are a constructive process that integrates information collected with each separate eye movement to produce a single impression of a solid object, aided by visual memory and perception of movement."
+    ],
+    "answer": "J",
+    "category": "psychology"
+  },
+  {
+    "question": "Should treaties assume a particular form?",
+    "options": [
+      "Treaties do not need to be designated as such, but must always assume a particular form",
+      "Treaties should always be written in legal language, regardless of their form",
+      "Treaties should always assume a particular form, no matter how they are designated",
+      "Treaties should always be designated as such, but do not need to assume a particular form",
+      "Treaties do not have to assume a particular form or designated as such",
+      "Treaties should not be designated as such, and do not need to assume a particular form",
+      "Treaties do not need to be designated or assume a particular form, but must always be ratified by the legislative body",
+      "Treaties have to be designated as such, no matter what form they assume",
+      "Treaties should always be designated as such and assume a particular form",
+      "Treaties can assume any form, but must always be signed by the heads of states"
+    ],
+    "answer": "E",
+    "category": "law"
+  },
+  {
+    "question": "In acid solution the bromate ion, BrO3- can react with other substances, resulting in Br2. Balance the half-reaction for bromate ions forming bromine. The balanced half-reaction has",
+    "options": [
+      "6 electrons on the right",
+      "3 electrons on the right",
+      "10 electrons on the right",
+      "10 electrons on the left",
+      "5 electrons on the right",
+      "3 electrons on the left",
+      "6 electrons on the left",
+      "2 electrons on the left",
+      "5 electrons on the left",
+      "2 electrons on the right"
+    ],
+    "answer": "D",
+    "category": "chemistry"
+  },
+  {
+    "question": "Consider two mercury barometers, one having a cross-sectional area of 1 cm2 and the other 2 cm2. The height of mercury in the narrower tube is",
+    "options": [
+      "two-thirds",
+      "twice",
+      "the same",
+      "half",
+      "four times higher",
+      "depends on the atmospheric pressure",
+      "three times higher",
+      "one-third",
+      "depends on the temperature",
+      "None of these"
+    ],
+    "answer": "C",
+    "category": "physics"
+  },
+  {
+    "question": "According to Epicurus, the wealth required for a good life is:",
+    "options": [
+      "easily procured.",
+      "available only to the educated.",
+      "available only to the rich.",
+      "obtained only through the accumulation of material possessions.",
+      "achievable only through constant labor and struggle.",
+      "attainable for everyone, but only through great effort.",
+      "gained only through inheritance or luck.",
+      "not necessary for a good life.",
+      "available only to the gods.",
+      "requiring a lifetime of pursuit."
+    ],
+    "answer": "A",
+    "category": "philosophy"
+  },
+  {
+    "question": "The following pairs were placed in solution together. Which two could be separated by performing low-speed centrifugation?",
+    "options": [
+      "Golgi apparatus and endoplasmic reticulum",
+      "Lysosomes and endosomes",
+      "Plasma membrane and cytoskeleton",
+      "DNA and mRNA",
+      "Proteins and lipids",
+      "Nuclei and secretory vesicles",
+      "DNA and proteins"
+    ],
+    "answer": "F",
+    "category": "biology"
+  },
+  {
+    "question": "The magnetisation and applied field in ferromagnetic materials are related",
+    "options": [
+      "linearly.",
+      "cubically.",
+      "parabolically.",
+      "logarithmically.",
+      "hyperbolically.",
+      "inversely.",
+      "sinusoidally.",
+      "non linearly.",
+      "exponentially.",
+      "quadratically."
+    ],
+    "answer": "H",
+    "category": "engineering"
+  },
+  {
+    "question": "Statement 1| The kernel density estimator is equivalent to performing kernel regression with the value Yi = 1/n at each point Xi in the original data set. Statement 2| The depth of a learned decision tree can be larger than the number of training examples used to create the tree.",
+    "options": [
+      "Both Statements are context-dependent",
+      "True, True",
+      "Statement 1 is True only for non-parametric Kernels, Statement 2 is False",
+      "Both Statements are partially True",
+      "False, False",
+      "Statement 1 is True only for Gaussian Kernels, Statement 2 is False",
+      "Statement 1 is False, Statement 2 is True only for Binary Decision Trees",
+      "False, True",
+      "True, False",
+      "Statement 1 is False, Statement 2 is True only for Multiclass Decision Trees"
+    ],
+    "answer": "E",
+    "category": "computer science"
+  }
+]

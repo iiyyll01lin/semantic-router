@@ -71,6 +71,10 @@ class RuntimeStackLayout:
         return f"http://localhost:{self.metrics_port}/metrics"
 
     @property
+    def api_url(self) -> str:
+        return f"http://localhost:{self.api_port}"
+
+    @property
     def router_api_service_url(self) -> str:
         return f"http://{self.router_container_name}:8080"
 

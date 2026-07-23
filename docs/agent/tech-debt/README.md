@@ -65,6 +65,21 @@ Every debt entry should include:
 - [TD027 Fleet Sim Optimizer and Public Surface Boundaries Still Collapse Analytical Sizing, DES Verification, and Export Policy](td-027-fleet-sim-optimizer-and-public-surface-boundary-collapse.md)
 - [TD042 FFI Embedding File Carries Pre-Existing Structure-Rules Debt](td-042-ffi-embedding-structure-debt.md)
 - [TD043 candle-binding/semantic-router.go Carries Pre-Existing Cyclomatic Complexity Debt](td-043-semantic-router-go-cyclop-debt.md)
+- [TD052 Commit Large .cache/ml-models JSON via Git-LFS](td-052-commit-large-ml-models-json-via-git-lfs.md)
+
+### PL0035 Strix PoC PII Hardening
+
+- [TD044 onnx-binding PII Token Classifier Registers as bert_token but Inference Looks Up pii](td-053-onnx-binding-pii-name-registration.md)
+- [TD045 mmBERT-32K PII Detector (mmbert32k-pii-detector-merged) Returns Zero Entities](td-045-mmbert32k-pii-detector-zero-entities.md)
+- [TD046 onnx-binding Concurrent ROCm ONNX Session Creation Segfaults on Classifier (Re)Initialization](td-046-onnx-binding-concurrent-rocm-session-init-segfault.md)
+- [TD047 PII Registry Alias Auto-Download Target Is Missing pii_type_mapping.json](td-047-pii-registry-alias-autodownload-missing-mapping.md)
+- [TD048 No First-Class Router-Replay to Fleet-Sim Exporter, and Fleet-Sim GPU Pools Are Hardcoded NVIDIA So Instinct TCO Is Uncalibrated](td-048-router-replay-fleet-sim-exporter-and-uncalibrated-gpu-profile.md)
+- [TD049 Multi-Candidate Decision Did Not Engage the Selection Algorithm at Runtime](td-049-multi-candidate-selection-not-engaged.md)
+- [TD050 Global model_selection.method Is Silently Ignored Unless a Decision Carries a Per-Decision Algorithm Block](td-050-global-model-selection-method-ignored.md)
+
+### PL0036 Edge Fleet Config Control Plane
+
+- [TD051 Router /config/hash Reflects Config File Bytes, Not the Loaded Config](td-051-router-config-hash-reflects-file-bytes.md)
 
 ### PL0035 Router Flow Workflows
 

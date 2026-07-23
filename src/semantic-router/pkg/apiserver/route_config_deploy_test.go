@@ -407,3 +407,107 @@ func TestHandleConfigHashStableForSameContent(t *testing.T) {
 		t.Fatalf("expected identical hashes for unchanged config, got %q vs %q", hashes[0], hashes[1])
 	}
 }
+
+func TestHandleLoadedConfigHashReturnsLoadedSourceAndNoPath(t *testing.T) {
+	apiServer := &ClassificationAPIServer{config: minimalDeployTestConfig("old_route")}
+
+	req := httptest.NewRequest(http.MethodGet, "/config/loaded-hash", nil)
+	rr := httptest.NewRecorder()
+	apiServer.handleLoadedConfigHash(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+
+	hash, ok := resp["hash"]
+	if !ok || len(hash) != 64 {
+		t.Fatalf("expected 64-char hex hash, got %q", hash)
+	}
+	if resp["source"] != "loaded" {
+		t.Fatalf("expected loaded source, got %q", resp["source"])
+	}
+	if _, hasPath := resp["path"]; hasPath {
+		t.Error("response should not expose filesystem path")
+	}
+}
+
+func TestLoadedConfigHashTracksRuntimeConfigNotFileBytes(t *testing.T) {
+	configPath := writeDeployTestBaseConfig(t)
+	apiServer := &ClassificationAPIServer{
+		configPath: configPath,
+		config:     minimalDeployTestConfig("old_route"),
+	}
+
+	initialFileHash := requestConfigHash(t, apiServer)
+	initialLoadedHash := requestLoadedConfigHash(t, apiServer)
+
+	if err := os.WriteFile(configPath, []byte("routing: [invalid"), 0o644); err != nil {
+		t.Fatalf("write invalid file bytes: %v", err)
+	}
+
+	if fileHash := requestConfigHash(t, apiServer); fileHash == initialFileHash {
+		t.Fatal("/config/hash did not change after raw file bytes changed")
+	}
+	if loadedHash := requestLoadedConfigHash(t, apiServer); loadedHash != initialLoadedHash {
+		t.Fatalf("/config/loaded-hash changed for invalid on-disk bytes: %q vs %q", loadedHash, initialLoadedHash)
+	}
+
+	apiServer.config = minimalDeployTestConfig("new_route")
+	if loadedHash := requestLoadedConfigHash(t, apiServer); loadedHash == initialLoadedHash {
+		t.Fatal("/config/loaded-hash did not change after loaded runtime config changed")
+	}
+}
+
+func TestHandleLoadedConfigHashErrorsWithoutLoadedConfig(t *testing.T) {
+	apiServer := &ClassificationAPIServer{}
+
+	req := httptest.NewRequest(http.MethodGet, "/config/loaded-hash", nil)
+	rr := httptest.NewRecorder()
+	apiServer.handleLoadedConfigHash(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func requestConfigHash(t *testing.T, apiServer *ClassificationAPIServer) string {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, "/config/hash", nil)
+	rr := httptest.NewRecorder()
+	apiServer.handleConfigHash(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected /config/hash 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	return responseHash(t, rr.Body.Bytes())
+}
+
+func requestLoadedConfigHash(t *testing.T, apiServer *ClassificationAPIServer) string {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, "/config/loaded-hash", nil)
+	rr := httptest.NewRecorder()
+	apiServer.handleLoadedConfigHash(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected /config/loaded-hash 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	return responseHash(t, rr.Body.Bytes())
+}
+
+func responseHash(t *testing.T, body []byte) string {
+	t.Helper()
+
+	var resp map[string]string
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	if resp["hash"] == "" {
+		t.Fatalf("expected response hash, got %s", string(body))
+	}
+	return resp["hash"]
+}

@@ -1,0 +1,43 @@
+{
+  "aggregate": {
+    "aggregate_decode_tps": 42.24603867371523,
+    "concurrency": 1,
+    "decode_tps_mean": 44.59226470525733,
+    "decode_tps_median": 44.59226470525733,
+    "decode_tps_p95": 44.59226470525733,
+    "ok_runs": 1,
+    "prefill_tps_mean": 9055.088277638857,
+    "runs": 1,
+    "success_rate": 1.0,
+    "total_completion_tokens": 128,
+    "ttft_ms_mean": 158.0873970015091,
+    "ttft_ms_p95": 158.0873970015091,
+    "wall_s": 3.0298698769984185
+  },
+  "api": "ollama",
+  "backend_url": "http://localhost:11434",
+  "label": "p8-c1",
+  "model": "qwen2.5:7b",
+  "runs_detail": [
+    {
+      "api": "ollama",
+      "completion_tokens": 128,
+      "decode_tps": 44.59226470525733,
+      "ok": true,
+      "prefill_tps": 9055.088277638857,
+      "prompt_tokens": 239,
+      "ttft_ms": 158.0873970015091,
+      "wall_s": 3.029831435000233
+    }
+  ],
+  "schema": "tokrate-probe/v1",
+  "shape": {
+    "concurrency": 1,
+    "max_tokens": 128,
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": false
+  }
+}

@@ -74,6 +74,7 @@ Tasks use stable IDs and checkbox status:
 ## Current Debt Plans
 
 - [pl-0032-architecture-scorecard-ratchet.md](pl-0032-architecture-scorecard-ratchet.md)
+- [pl-0039-strix-poc-pii-hardening.md](pl-0039-strix-poc-pii-hardening.md)
 
 ## Current Execution Plans
 
@@ -84,3 +85,5 @@ Tasks use stable IDs and checkbox status:
 - [pl-0036-router-learning-followups.md](pl-0036-router-learning-followups.md)
 - [pl-0037-router-flow-eval-campaign.md](pl-0037-router-flow-eval-campaign.md)
 - [pl-0038-entrypoints-recipes.md](pl-0038-entrypoints-recipes.md)
+- [pl-0039-strix-poc-pii-hardening.md](pl-0039-strix-poc-pii-hardening.md)
+- [pl-0040-edge-fleet-config-control-plane.md](pl-0040-edge-fleet-config-control-plane.md)

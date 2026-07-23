@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/vllm-project/semantic-router/src/semantic-router/pkg/anthropic"
 	"github.com/vllm-project/semantic-router/src/semantic-router/pkg/classification"
 	"github.com/vllm-project/semantic-router/src/semantic-router/pkg/config"
 )
@@ -127,6 +128,71 @@ func TestParseResponseUsage_ZeroTokens(t *testing.T) {
 
 	assert.Equal(t, 0, usage.promptTokens)
 	assert.Equal(t, 0, usage.completionTokens)
+}
+
+// TestCostForResponseUsage_AnthropicCacheTokens drives the full
+// Anthropic->OpenAI normalization + cost path with a cache-bearing usage
+// payload and asserts the cost equals
+//
+//	uncached*PromptPer1M + cached*CachedInputPer1M + completion*CompletionPer1M
+//
+// where the cache-read tokens land in the cached bucket (cheap rate) and the
+// cache-creation tokens stay in the uncached/base bucket. This is the
+// regression guard for the previously-dead cached_input_per_1m rate: before
+// the fix, cache_read_input_tokens were diverted to IRExtensions and never
+// reached usage.prompt_tokens_details.cached_tokens, so they were billed at no
+// rate at all.
+func TestCostForResponseUsage_AnthropicCacheTokens(t *testing.T) {
+	anthropicResp := []byte(`{
+		"id": "msg_cache",
+		"type": "message",
+		"role": "assistant",
+		"model": "claude-opus-4",
+		"content": [{"type":"text","text":"cached reply"}],
+		"stop_reason": "end_turn",
+		"usage": {
+			"input_tokens": 1000,
+			"output_tokens": 200,
+			"cache_read_input_tokens": 500,
+			"cache_creation_input_tokens": 300
+		}
+	}`)
+
+	openAIBody, err := anthropic.ToOpenAIResponseBody(anthropicResp, "claude-opus-4")
+	assert.NoError(t, err)
+
+	usage := parseResponseUsage(openAIBody, "claude-opus-4")
+
+	// prompt_tokens folds input + cache_read + cache_creation (Anthropic's
+	// input_tokens excludes both cache buckets): 1000 + 500 + 300.
+	assert.Equal(t, 1800, usage.promptTokens)
+	// Only cache reads are the cached portion.
+	assert.Equal(t, 500, usage.cachedPromptTokens)
+	assert.True(t, usage.cachedPromptTokensReported)
+	assert.Equal(t, 200, usage.completionTokens)
+
+	pricing := config.ModelPricing{
+		PromptPer1M:      15.0,
+		CachedInputPer1M: 1.5,
+		CompletionPer1M:  75.0,
+		Currency:         "USD",
+	}
+
+	cost := costForResponseUsage(usage, pricing)
+
+	const (
+		cached     = 500              // cache_read_input_tokens
+		uncached   = 1800 - cached    // input_tokens + cache_creation_input_tokens
+		completion = 200
+	)
+	want := (float64(uncached)*pricing.PromptPer1M +
+		float64(cached)*pricing.CachedInputPer1M +
+		float64(completion)*pricing.CompletionPer1M) / 1_000_000.0
+
+	assert.InDelta(t, want, cost, 1e-12)
+	// The cached tokens must contribute a non-zero amount: the cached rate is
+	// no longer dead.
+	assert.Greater(t, cost, 0.0)
 }
 
 // =====================================================================

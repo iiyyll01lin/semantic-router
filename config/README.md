@@ -51,7 +51,7 @@ Candidate iteration fragments must stay bounded to `decision.candidates` or an e
 
 `config/algorithm/` is organized by routing policy:
 
-- `looper/`: multi-model execution policies such as `confidence`, `ratings`, `remom`, and `fusion`
+- `looper/`: multi-model execution policies such as `confidence`, `failover`, `ratings`, `remom`, and `fusion`
 - `selection/`: request-time candidate-selection policies such as `router_dc`, `automix`, `hybrid`, `multi_factor`, and `latency_aware`
 
 Each supported algorithm now has its own tutorial page under `website/docs/tutorials/algorithm/`.

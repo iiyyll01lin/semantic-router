@@ -24,6 +24,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_benchmark_observability import (
+    observation_from_result,
+    parse_openai_stream,
+    summarize_observability,
+)
+from routing_agent_loop_runner import (
+    RoutingLoopHooks,
+)
+from routing_agent_loop_runner import (
+    run_agent_session as run_real_agent_session,
+)
+
 HTTP_OK = 200
 HTTP_REDIRECT_START = 300
 VSR_HEADERS = (
@@ -76,6 +88,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-delay-seconds", type=float, default=0.0)
     parser.add_argument("--idle-pause-seconds", type=float, default=0.0)
     parser.add_argument("--include-previous-response-id", action="store_true")
+    parser.add_argument(
+        "--execution-mode",
+        choices=("scripted", "agent-loop"),
+        default="scripted",
+        help=(
+            "scripted preserves the historical synthetic request shape; agent-loop "
+            "retains actual assistant/tool history and executes native tools locally"
+        ),
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="stream OpenAI responses to measure client-side TTFT",
+    )
+    parser.add_argument("--tool-retry-limit", type=int, default=1)
     parser.add_argument("--metrics-url", default="")
     parser.add_argument("--baseline-base-url", default="")
     parser.add_argument("--baseline-model", default="")
@@ -105,6 +132,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-p95-latency-ms", type=float, default=0.0)
     parser.add_argument("--max-tool-loop-violations", type=int, default=-1)
     parser.add_argument("--max-context-portability-violations", type=int, default=-1)
+    parser.add_argument("--max-router-phase-mismatches", type=int, default=-1)
+    parser.add_argument(
+        "--require-router-phase-match",
+        action="store_true",
+        help="require x-vsr-session-phase to equal each intended workload phase",
+    )
     parser.add_argument("--max-overhead-p95-ms", type=float, default=0.0)
     parser.add_argument("--min-sessions-with-errors", type=int, default=0)
     parser.add_argument("--min-session-recovery-rate", type=float, default=0.0)
@@ -209,14 +242,35 @@ def build_messages(plan: TurnPlan) -> list[dict[str, Any]]:
 
 
 def build_body(args: argparse.Namespace, plan: TurnPlan) -> dict[str, Any]:
+    return build_request_body(
+        args,
+        build_messages(plan),
+        plan.previous_response_id,
+    )
+
+
+def build_request_body(
+    args: argparse.Namespace,
+    messages: list[dict[str, Any]],
+    previous_response_id: str,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: Any = None,
+) -> dict[str, Any]:
     body = {
         "model": args.model,
-        "messages": build_messages(plan),
+        "messages": messages,
         "max_tokens": args.max_tokens,
         "temperature": args.temperature,
     }
-    if args.include_previous_response_id and plan.previous_response_id:
-        body["previous_response_id"] = plan.previous_response_id
+    if getattr(args, "stream", False):
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+    if tools is not None:
+        body["tools"] = tools
+    if tool_choice is not None:
+        body["tool_choice"] = tool_choice
+    if args.include_previous_response_id and previous_response_id:
+        body["previous_response_id"] = previous_response_id
     return body
 
 
@@ -231,13 +285,26 @@ def parse_extra_headers(values: list[str]) -> dict[str, str]:
 
 
 def post_json(
-    url: str, body: dict[str, Any], headers: dict[str, str], timeout: float
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    timeout: float,
+    stream: bool = False,
 ) -> dict[str, Any]:
     data = json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")
     started = time.perf_counter()
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
+            if stream:
+                parsed, ttft_ms = parse_openai_stream(response, started)
+                return stream_response_record(
+                    response.status,
+                    dict(response.headers),
+                    parsed,
+                    started,
+                    ttft_ms,
+                )
             payload = response.read().decode("utf-8", errors="replace")
             return response_record(
                 response.status, dict(response.headers), payload, started
@@ -253,6 +320,7 @@ def post_json(
             "headers": {},
             "json": {},
             "error": str(exc),
+            "ttft_ms": None,
         }
 
 
@@ -269,10 +337,32 @@ def response_record(
         "latency_ms": elapsed_ms,
         "headers": {key.lower(): value for key, value in headers.items()},
         "json": parsed,
+        "ttft_ms": None,
         "error": (
             ""
             if HTTP_OK <= status < HTTP_REDIRECT_START
             else error_message(parsed, payload)
+        ),
+    }
+
+
+def stream_response_record(
+    status: int,
+    headers: dict[str, str],
+    parsed: dict[str, Any],
+    started: float,
+    ttft_ms: float | None,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "latency_ms": (time.perf_counter() - started) * 1000,
+        "headers": {key.lower(): value for key, value in headers.items()},
+        "json": parsed,
+        "ttft_ms": ttft_ms,
+        "error": (
+            ""
+            if HTTP_OK <= status < HTTP_REDIRECT_START
+            else error_message(parsed, json.dumps(parsed))
         ),
     }
 
@@ -289,6 +379,9 @@ def error_message(parsed: dict[str, Any], payload: str) -> str:
 def run_session(
     args: argparse.Namespace, session_idx: int, base_headers: dict[str, str]
 ) -> list[dict[str, Any]]:
+    if getattr(args, "execution_mode", "scripted") == "agent-loop":
+        return run_agent_session(args, session_idx, base_headers)
+
     rows: list[dict[str, Any]] = []
     session_id = f"{args.label}-{args.scenario}-{session_idx:04d}"
     previous_response_id = ""
@@ -310,13 +403,52 @@ def run_session(
         else:
             headers = dict(base_headers)
             headers[args.session_header] = session_id
-            result = post_json(url, build_body(args, plan), headers, args.timeout)
+            result = post_json(
+                url,
+                build_body(args, plan),
+                headers,
+                args.timeout,
+                stream=getattr(args, "stream", False),
+            )
+        result["_previous_response_id_sent"] = bool(
+            args.include_previous_response_id and plan.previous_response_id
+        )
+        result["_cache_state"] = "cold" if turn == 0 else "warm"
+        result["_turn_attempt"] = 0
+        result["_attempt_kind"] = "scripted"
+        result["_final_response"] = True
+        result["_history_message_count"] = len(build_messages(plan))
         row = row_from_result(args, plan, result, previous_selected_model)
         rows.append(row)
         if row["selected_model"]:
             previous_selected_model = row["selected_model"]
         previous_response_id = response_id(result)
     return rows
+
+
+def run_agent_session(
+    args: argparse.Namespace, session_idx: int, base_headers: dict[str, str]
+) -> list[dict[str, Any]]:
+    return run_real_agent_session(
+        args,
+        session_idx,
+        base_headers,
+        routing_loop_hooks(),
+    )
+
+
+def routing_loop_hooks() -> RoutingLoopHooks:
+    return RoutingLoopHooks(
+        plan_type=TurnPlan,
+        phase_for_turn=phase_for_turn,
+        pause_before_turn=pause_before_turn,
+        prompt_for_phase=prompt_for_phase,
+        build_request_body=build_request_body,
+        post_json=post_json,
+        dry_response=dry_run_response,
+        response_id=response_id,
+        row_from_result=row_from_result,
+    )
 
 
 def pause_before_turn(args: argparse.Namespace, phase: str, turn: int) -> None:
@@ -349,8 +481,14 @@ def dry_run_response(plan: TurnPlan) -> dict[str, Any]:
         "json": {
             "id": f"dry_{plan.session_id}_{plan.turn}",
             "model": model,
-            "usage": {},
+            "usage": {
+                "prompt_tokens": 42,
+                "completion_tokens": 4,
+                "prompt_tokens_details": {"cached_tokens": 0},
+                "prefill_duration_ms": 2.0,
+            },
         },
+        "ttft_ms": 0.0,
         "error": "",
     }
 
@@ -365,31 +503,49 @@ def row_from_result(
     headers = result.get("headers") or {}
     selected_model = selected_model_from(result)
     status = int(result.get("status") or 0)
+    success = HTTP_OK <= status < HTTP_REDIRECT_START
+    previous_response_id_sent = result.get("_previous_response_id_sent")
+    if previous_response_id_sent is None:
+        previous_response_id_sent = bool(
+            args.include_previous_response_id and plan.previous_response_id
+        )
     switched = bool(
         previous_selected_model
         and selected_model
         and selected_model != previous_selected_model
     )
+    reported_phase = str(headers.get("x-vsr-session-phase") or "")
+    router_phase_matches = (
+        reported_phase == plan.phase if success and reported_phase else None
+    )
+    observability = observation_from_result(result)
     return {
         "label": args.label,
         "scenario": args.scenario,
         "session_id": plan.session_id,
         "turn": plan.turn,
+        "turn_attempt": int(result.get("_turn_attempt") or 0),
+        "attempt_kind": str(result.get("_attempt_kind") or "scripted"),
+        "final_response": bool(result.get("_final_response", True)),
         "phase": plan.phase,
+        "router_phase": reported_phase,
+        "router_phase_matches": router_phase_matches,
+        "router_phase_mismatch": router_phase_matches is False,
         "status": status,
-        "success": HTTP_OK <= status < HTTP_REDIRECT_START,
+        "success": success,
         "latency_ms": round(float(result.get("latency_ms") or 0), 3),
         "selected_model": selected_model,
         "response_model": response_json.get("model", ""),
         "model_switched": switched,
         "tool_loop_switch_violation": plan.phase == "tool_loop" and switched,
-        "context_portability_violation": bool(plan.previous_response_id) and switched,
-        "previous_response_id_sent": bool(plan.previous_response_id),
+        "context_portability_violation": previous_response_id_sent and switched,
+        "previous_response_id_sent": bool(previous_response_id_sent),
         "response_id": response_json.get("id", ""),
-        "prompt_tokens": usage_value(response_json, "prompt_tokens"),
-        "completion_tokens": usage_value(response_json, "completion_tokens"),
-        "cached_tokens": cached_tokens(response_json),
+        "cache_state": str(result.get("_cache_state") or ""),
+        "history_message_count": int(result.get("_history_message_count") or 0),
+        "tool_executions": result.get("_tool_executions") or [],
         "error": result.get("error", ""),
+        **observability,
         **{header: headers.get(header, "") for header in VSR_HEADERS},
     }
 
@@ -447,9 +603,7 @@ def summarize(
     wall_time_seconds: float | None = None,
 ) -> dict[str, Any]:
     latencies = [float(row["latency_ms"]) for row in rows if row["success"]]
-    prompt_tokens = sum(int(row["prompt_tokens"]) for row in rows)
-    completion_tokens = sum(int(row["completion_tokens"]) for row in rows)
-    cached = sum(int(row["cached_tokens"]) for row in rows)
+    observability = summarize_observability(rows)
     status_counts: dict[str, int] = {}
     for row in rows:
         status_counts[str(row["status"])] = status_counts.get(str(row["status"]), 0) + 1
@@ -479,12 +633,13 @@ def summarize(
         "context_portability_violations": sum(
             bool(row["context_portability_violation"]) for row in rows
         ),
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "cached_tokens": cached,
-        "cached_prompt_ratio": (
-            round(cached / prompt_tokens, 4) if prompt_tokens else None
+        "router_phase_matches": sum(
+            row.get("router_phase_matches") is True for row in rows
         ),
+        "router_phase_mismatches": sum(
+            bool(row.get("router_phase_mismatch")) for row in rows
+        ),
+        **observability,
         "selected_model_counts": counts(
             row["selected_model"] for row in rows if row["selected_model"]
         ),
@@ -594,6 +749,8 @@ def required_router_headers(args: argparse.Namespace) -> list[str]:
     required = list(args.require_router_header)
     if args.require_router_diagnostics:
         required.extend(DIAGNOSTIC_ROUTER_HEADERS)
+    if getattr(args, "require_router_phase_match", False):
+        required.append("x-vsr-session-phase")
     return list(dict.fromkeys(required))
 
 
@@ -689,6 +846,8 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
 
 def render_markdown(summary: dict[str, Any]) -> str:
     latency = summary["latency_ms"]
+    ttft = summary["ttft_ms"]
+    prefill = summary["prefill_duration_ms"]
     return "\n".join(
         [
             "# Live Agentic Routing Benchmark",
@@ -701,10 +860,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"- model switches: {summary['model_switches']}",
             f"- tool-loop switch violations: {summary['tool_loop_switch_violations']}",
             f"- context portability violations: {summary['context_portability_violations']}",
+            f"- router phase mismatches: {summary['router_phase_mismatches']}",
             f"- missing router headers: {summary['missing_router_header_counts']}",
             f"- invalid router headers: {summary['invalid_router_header_counts']}",
             f"- sessions recovered after error: {summary['sessions_recovered_after_error']} / {summary['sessions_with_errors']}",
             f"- cached prompt ratio: {summary['cached_prompt_ratio']}",
+            f"- TTFT mean/p95 ms: {ttft['mean']} / {ttft['p95']}",
+            f"- prefill duration mean/p95 ms: {prefill['mean']} / {prefill['p95']}",
+            f"- cold/warm evidence: {summary['cache_state_metrics']}",
             f"- validation failures: {summary.get('validation_failures', [])}",
             "",
         ]
@@ -855,6 +1018,7 @@ def validate_summary(
             f"context_portability_violations {context_violations} > "
             f"{args.max_context_portability_violations}"
         )
+    failures.extend(validate_router_phase_summary(args, summary))
     sessions_with_errors = int(summary.get("sessions_with_errors", 0))
     if (
         args.min_sessions_with_errors
@@ -893,6 +1057,22 @@ def validate_summary(
                 f"{args.max_overhead_p95_ms}"
             )
     return failures
+
+
+def validate_router_phase_summary(
+    args: argparse.Namespace, summary: dict[str, Any]
+) -> list[str]:
+    phase_mismatches = int(summary.get("router_phase_mismatches", 0))
+    phase_limit = int(getattr(args, "max_router_phase_mismatches", -1))
+    if phase_limit >= 0 and phase_mismatches > phase_limit:
+        return [f"router_phase_mismatches {phase_mismatches} > {phase_limit}"]
+    if (
+        getattr(args, "require_router_phase_match", False)
+        and phase_mismatches
+        and phase_limit < 0
+    ):
+        return [f"router_phase_mismatches {phase_mismatches} > 0"]
+    return []
 
 
 def main() -> int:

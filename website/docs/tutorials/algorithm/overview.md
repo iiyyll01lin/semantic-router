@@ -73,6 +73,7 @@ The repo now keeps one tutorial page per algorithm.
 | Algorithm | Description | Key Feature |
 |-----------|-------------|-------------|
 | **[Confidence](./looper/confidence)** | Small-to-large escalation | Logprob-based confidence evaluation |
+| **[Failover](./looper/failover)** | Ordered cross-provider failover | Re-dispatch to next model on non-2xx/transport error |
 | **[Fusion](./looper/fusion)** | Parallel panel deliberation | Judge analysis + final synthesis |
 | **[Router Flow](./looper/workflows)** | Micro-agent workflows behind one model name | Static role plans or dynamic planner-generated execution |
 | **[Ratings](./looper/ratings)** | Bounded concurrent execution | Concurrency cap + rating aggregation |
@@ -130,6 +131,7 @@ current Router Learning strategy is `routing_sampling`.
 ### Looper Algorithms
 
 - [Confidence](./looper/confidence)
+- [Failover](./looper/failover)
 - [Fusion](./looper/fusion)
 - [Router Flow](./looper/workflows)
 - [Ratings](./looper/ratings)

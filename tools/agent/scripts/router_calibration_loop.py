@@ -11,10 +11,12 @@ from pathlib import Path
 from router_calibration_manifest import load_probe_manifest, resolve_manifest_assets
 from router_calibration_report import render_markdown_summary
 from router_calibration_support import (
+    configure_http_resilience,
     default_report_dir,
     deploy_config,
     evaluate_probes,
     fetch_router_snapshot,
+    preflight_router,
     run_validate,
     wait_for_router_ready,
     write_json,
@@ -31,6 +33,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
+    preflight_router(args.router_url)
     manifest, probes = load_probe_manifest(Path(args.probes))
     report = {
         "manifest": manifest,
@@ -44,6 +47,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_deploy(args: argparse.Namespace) -> int:
+    preflight_router(args.router_url)
     response = deploy_config(
         args.router_url,
         Path(args.yaml),
@@ -89,6 +93,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    preflight_router(args.router_url)
     report_dir = Path(args.report_dir) if args.report_dir else default_report_dir()
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,6 +162,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if post_eval["passed"] else 1
 
 
+def add_resilience_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Max retries when the router drops the connection mid-request",
+    )
+    parser.add_argument(
+        "--retry-backoff",
+        type=float,
+        default=None,
+        help="Base seconds for linear retry backoff on connection drops",
+    )
+
+
 def add_snapshot_subparser(subparsers: argparse._SubParsersAction) -> None:
     snapshot = subparsers.add_parser(
         "snapshot", help="Fetch router config and version state"
@@ -181,6 +201,7 @@ def add_eval_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
     eval_parser.add_argument("--probes", required=True, help="YAML probe manifest path")
     eval_parser.add_argument("--output", help="Optional JSON output path")
+    add_resilience_args(eval_parser)
     eval_parser.set_defaults(func=cmd_eval)
 
 
@@ -210,6 +231,7 @@ def add_deploy_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Polling interval in seconds for GET /ready after deploy",
     )
     deploy.add_argument("--output", help="Optional JSON output path")
+    add_resilience_args(deploy)
     deploy.set_defaults(func=cmd_deploy)
 
 
@@ -259,6 +281,7 @@ def add_run_subparser(subparsers: argparse._SubParsersAction) -> None:
         default=5.0,
         help="Polling interval in seconds for GET /ready after deploy",
     )
+    add_resilience_args(run)
     run.set_defaults(func=cmd_run)
 
 
@@ -278,6 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    configure_http_resilience(
+        getattr(args, "max_retries", None),
+        getattr(args, "retry_backoff", None),
+    )
     try:
         return args.func(args)
     except Exception as exc:

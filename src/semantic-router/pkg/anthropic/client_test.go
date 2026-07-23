@@ -260,6 +260,44 @@ func TestToOpenAIResponseBody_MultipleContentBlocks(t *testing.T) {
 	assert.Equal(t, "First part. Second part.", result.Choices[0].Message.Content)
 }
 
+// TestToOpenAIResponseBody_CacheTokensFoldIntoPromptTotal locks in the cost
+// normalization: Anthropic reports input_tokens EXCLUSIVE of cache reads and
+// writes, so the OpenAI prompt_tokens total must fold all three input buckets
+// together, and cache reads must surface in prompt_tokens_details.cached_tokens
+// (the key the cost reader consumes) so they are not billed at no rate.
+func TestToOpenAIResponseBody_CacheTokensFoldIntoPromptTotal(t *testing.T) {
+	anthropicResp := &anthropic.Message{
+		ID:         "msg_cache",
+		Type:       "message",
+		Role:       "assistant",
+		Content:    []anthropic.ContentBlockUnion{{Type: "text", Text: "cached reply"}},
+		StopReason: anthropic.StopReasonEndTurn,
+		Usage: anthropic.Usage{
+			InputTokens:              1000,
+			OutputTokens:             200,
+			CacheReadInputTokens:     500,
+			CacheCreationInputTokens: 300,
+		},
+	}
+
+	anthropicJSON, err := json.Marshal(anthropicResp)
+	require.NoError(t, err)
+
+	resultJSON, err := ToOpenAIResponseBody(anthropicJSON, "claude-opus-4")
+	require.NoError(t, err)
+
+	var result openai.ChatCompletion
+	err = json.Unmarshal(resultJSON, &result)
+	require.NoError(t, err)
+
+	// prompt_tokens folds input + cache_read + cache_creation: 1000+500+300.
+	assert.Equal(t, int64(1800), result.Usage.PromptTokens)
+	assert.Equal(t, int64(200), result.Usage.CompletionTokens)
+	assert.Equal(t, int64(2000), result.Usage.TotalTokens)
+	// cache reads (only) are marked as the cached portion.
+	assert.Equal(t, int64(500), result.Usage.PromptTokensDetails.CachedTokens)
+}
+
 func TestBuildRequestHeaders(t *testing.T) {
 	headers := BuildRequestHeaders("test-api-key", 1024, "")
 

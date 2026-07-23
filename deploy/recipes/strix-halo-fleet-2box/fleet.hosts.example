@@ -1,0 +1,40 @@
+# fleet.hosts.example — OPTIONAL inventory for N-box scale-out (R7)
+# =============================================================================
+# Copy to `fleet.hosts` (gitignored) to run MORE than the default two boxes.
+#
+#   cp fleet.hosts.example fleet.hosts   # then edit; activate a line by removing '# '
+#
+# Halo-A (this box) is ALWAYS the CCP + the first edge node ("halo-a"); it is
+# implicit and must NOT be listed here. List only the REMOTE edge boxes, one per
+# line. deploy-fleet-2box.sh / run-all-2box.sh / teardown-fleet-2box.sh loop the
+# provisioning, convergence wait, log collection and teardown over every box.
+#
+# WHEN THIS FILE IS ABSENT (or has no active lines) the recipe falls back to the
+# classic 2-box behavior driven by HALO_B_SSH / HALO_B_IP / HALO_B_MODE /
+# HALO_B_REPO — i.e. `bash run-all-2box.sh` with the documented 2-box env works
+# EXACTLY as before. This file only adds boxes; it changes nothing by default.
+#
+# Columns are whitespace-separated. Use "-" to keep any optional field at its
+# default; trailing optional columns may be omitted entirely. '#' starts a
+# comment; blank lines are ignored.
+#
+#   box_id  ssh_target         ip           mode      repo                                        ssh_port  ssh_key
+#   ------  -----------------  -----------  --------  ------------------------------------------  --------  ------------------
+# box_id     REQUIRED  unique id, NOT "halo-a" (reserved for this local box). e.g. halo-b, halo-c
+# ssh_target REQUIRED  user@host control address for SSH/scp
+# ip         optional  address of that box (informational note only); "-" to omit
+# mode       optional  mock | gateway            (default: FLEET_MODE, itself defaulting to mock)
+# repo       optional  semantic-router repo path ON that box (REQUIRED for gateway mode; "-" for mock)
+# ssh_port   optional  SSH port                  (default: value of HALO_B_SSH_PORT, else 22)
+# ssh_key    optional  SSH identity file path    (default: value of HALO_B_SSH_KEY, else ssh-agent/default)
+#
+# Notes:
+#   - Paths and ssh targets must not contain spaces.
+#   - Per-box mode/repo make a mixed fleet trivial (some gateway, some mock).
+#   - VLLM_SR_BIN / the pinned VLLM_SR_ROUTER_IMAGE (versions.env) are applied to
+#     every gateway box; keep vllm-sr layouts consistent or rely on PATH.
+#
+# --- Examples (remove the leading "# " to activate) --------------------------
+# halo-b  ubuntu@192.0.2.20  192.0.2.20  gateway  /home/ubuntu/yy/workspace/semantic-router  -  -
+# halo-c  ubuntu@192.0.2.30  192.0.2.30  gateway  /home/ubuntu/yy/workspace/semantic-router  -  -
+# halo-d  ubuntu@192.0.2.40  192.0.2.40  mock     -                                          2222  ~/.ssh/fleet_ed25519

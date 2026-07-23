@@ -1,0 +1,53 @@
+{
+  "box": "halo-b",
+  "curve": [
+    {
+      "aggregate_decode_tps": 42.23913877431272,
+      "c": 1,
+      "decode_tps_median": 44.67955508936784,
+      "ok_runs": 1,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 163.8110459971358,
+      "ttft_ms_p95": 163.8110459971358
+    },
+    {
+      "aggregate_decode_tps": 43.224966026329014,
+      "c": 2,
+      "decode_tps_median": 44.698621318687785,
+      "ok_runs": 2,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 1609.5250965045125,
+      "ttft_ms_p95": 3054.939956004091
+    },
+    {
+      "aggregate_decode_tps": 43.646629815976986,
+      "c": 4,
+      "decode_tps_median": 44.69855108907507,
+      "ok_runs": 4,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 4525.446794252275,
+      "ttft_ms_p95": 8864.73284800013
+    },
+    {
+      "aggregate_decode_tps": 43.924618510458416,
+      "c": 8,
+      "decode_tps_median": 44.695491891568516,
+      "ok_runs": 8,
+      "success_rate": 1.0,
+      "ttft_ms_mean": 10322.965751374795,
+      "ttft_ms_p95": 20444.436593003047
+    }
+  ],
+  "generated_utc": "2026-07-13T17:03:29Z",
+  "model": "qwen2.5:7b",
+  "ollama_num_parallel": 1,
+  "schema": "concurrency-sweep/v1",
+  "shape": {
+    "max_tokens": 128,
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": false
+  }
+}

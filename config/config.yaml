@@ -714,6 +714,29 @@ routing:
             # the trace unbounded and OOM the router (#1835). 0 = no cap.
             max_tool_trace_steps: 100
 
+    - name: premium_failover_route
+      description: >-
+        Cross-provider failover: dispatch to the premium candidate first and
+        re-dispatch to the local datacenter model on any upstream failure.
+      priority: 175
+      rules:
+        operator: AND
+        conditions:
+          - type: keyword
+            name: urgent_keywords
+      modelRefs:
+        - model: qwen3-32b
+          use_reasoning: true
+          reasoning_description: Premium candidate attempted first.
+          reasoning_effort: high
+        - model: qwen3-8b
+          use_reasoning: false
+          reasoning_description: Local datacenter fallback when the premium model fails.
+      algorithm:
+        type: failover
+        failover:
+          on_error: skip
+
     - name: computer-science-remom-route
       description: ReMoM route for complex computer science prompts.
       priority: 170

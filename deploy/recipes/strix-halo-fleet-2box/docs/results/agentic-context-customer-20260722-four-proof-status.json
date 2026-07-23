@@ -1,0 +1,313 @@
+{
+  "schema": "agentic-context-window/four-proof-status/v2",
+  "generated_at": "2026-07-23T07:05:23.900946+00:00",
+  "normalized_from": "agentic-context-window/four-proof-status/v1",
+  "host": "demo-002 HP Z2 Mini G1a, Ryzen AI MAX+ PRO 395, Radeon 8060S gfx1151, 64GiB VRAM, ROCm 7.0",
+  "backend": "Ollama 0.32.1 ROCm, gemma4:26b-a4b-it-q8_0 Q8_0 arch-ctx 262144",
+  "serving_window": {
+    "router_declared_metadata": [
+      131072,
+      262144
+    ],
+    "configured": 65536,
+    "loaded_verified": 65536,
+    "max_tested_input_tokens": 65152,
+    "max_output_tokens": 256,
+    "reserved_headroom_tokens": 128,
+    "max_tested_required_total_tokens": 65536,
+    "num_parallel": 1,
+    "restarts": 0,
+    "oom": false,
+    "ladder": "router-declared metadata 131072/262144; backend configured and loaded-verified 65536; max tested input 65152; tested total budget 65152 input + 256 output + 128 headroom = 65536"
+  },
+  "proofs": {
+    "capacity": {
+      "status": "PARTIAL_PASS",
+      "cells_total": 17,
+      "cells_all_green": 7,
+      "cells_failed": 10,
+      "transport_100pct": 17,
+      "exact_usage_100pct": 17,
+      "failed_marker_gate_only": 10,
+      "measured_requests": 174,
+      "http_successes": 174,
+      "marker_passes": 150,
+      "verdict": "Backend configuration and live allocation were verified at 65536 tokens. The maximum tested input target was 65152 tokens; with 256 output tokens and 128 reserved headroom, its required total was exactly 65536. All 17 cells and 174 measured requests passed transport and backend-reported prompt-usage checks. Seven cells passed every gate; the other ten failed only the response-marker correctness gate for this synthetic-filler probe."
+    },
+    "performance": {
+      "status": "MEASURED_NO_AGREED_SLO",
+      "spine": [
+        {
+          "ctx": 2048,
+          "cold_ttft_ms": {
+            "mean": 3470.8579,
+            "p50": 3809.1309,
+            "p95": 4702.3196,
+            "max": 4801.5627
+          },
+          "warm_ttft_ms": {
+            "mean": 2122.5861,
+            "p50": 1789.1643,
+            "p95": 2711.0874,
+            "max": 2813.5233
+          },
+          "cold_decode_tps": {
+            "mean": 39.1223,
+            "p50": 39.1722,
+            "p95": 39.2596,
+            "max": 39.2693
+          },
+          "warm_decode_tps": {
+            "mean": 36.2916,
+            "p50": 38.7355,
+            "p95": 38.869,
+            "max": 38.8839
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 8192,
+          "cold_ttft_ms": {
+            "mean": 6226.583,
+            "p50": 5886.5319,
+            "p95": 6811.4277,
+            "max": 6914.1939
+          },
+          "warm_ttft_ms": {
+            "mean": 5893.9712,
+            "p50": 5886.2737,
+            "p95": 5911.3342,
+            "max": 5914.1187
+          },
+          "cold_decode_tps": {
+            "mean": 38.2358,
+            "p50": 38.2239,
+            "p95": 38.3958,
+            "max": 38.4149
+          },
+          "warm_decode_tps": {
+            "mean": 38.0658,
+            "p50": 38.0382,
+            "p95": 38.1615,
+            "max": 38.1752
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 16384,
+          "cold_ttft_ms": {
+            "mean": 12630.1275,
+            "p50": 12624.8144,
+            "p95": 12641.2326,
+            "max": 12643.0568
+          },
+          "warm_ttft_ms": {
+            "mean": 12587.8758,
+            "p50": 12585.1474,
+            "p95": 12598.6099,
+            "max": 12600.1058
+          },
+          "cold_decode_tps": {
+            "mean": 37.1663,
+            "p50": 37.153,
+            "p95": 37.19,
+            "max": 37.1941
+          },
+          "warm_decode_tps": {
+            "mean": 36.9944,
+            "p50": 36.9909,
+            "p95": 37.0431,
+            "max": 37.0489
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 32768,
+          "cold_ttft_ms": {
+            "mean": 30404.3025,
+            "p50": 30378.7375,
+            "p95": 30448.5554,
+            "max": 30456.3129
+          },
+          "warm_ttft_ms": {
+            "mean": 30389.1316,
+            "p50": 30337.4316,
+            "p95": 30504.6465,
+            "max": 30523.2259
+          },
+          "cold_decode_tps": {
+            "mean": 35.1224,
+            "p50": 35.2821,
+            "p95": 35.3676,
+            "max": 35.3771
+          },
+          "warm_decode_tps": {
+            "mean": 35.3991,
+            "p50": 35.3366,
+            "p95": 35.5384,
+            "max": 35.5608
+          },
+          "warm_cached_prompt_ratio": null
+        },
+        {
+          "ctx": 65152,
+          "cold_ttft_ms": {
+            "mean": 83140.1827,
+            "p50": 83177.386,
+            "p95": 83226.5878,
+            "max": 83232.0546
+          },
+          "warm_ttft_ms": {
+            "mean": 83217.1818,
+            "p50": 83205.3736,
+            "p95": 83247.2998,
+            "max": 83251.9583
+          },
+          "cold_decode_tps": {
+            "mean": 32.371,
+            "p50": 32.1967,
+            "p95": 32.7481,
+            "max": 32.8094
+          },
+          "warm_decode_tps": {
+            "mean": 32.4148,
+            "p50": 32.5638,
+            "p95": 32.7764,
+            "max": 32.8
+          },
+          "warm_cached_prompt_ratio": null
+        }
+      ],
+      "ollama_reuse_result": "No prefix-cache acceleration was observed on the direct Ollama path: warm TTFT was approximately cold TTFT and cached_prompt_ratio was not reported.",
+      "vllm_apc_crossref": "Separate sibling VLLM output256 APC run only: 32K c4 cold 144.3s to warm 30.8s; do not attribute this speedup to Ollama."
+    },
+    "quality": {
+      "status": "NOT_ACHIEVED",
+      "native_tool_requests": 22,
+      "native_tool_json_valid": 22,
+      "native_tool_name_correct": 22,
+      "native_tool_args_steps_correct": 21,
+      "native_tool_args_steps_percent": 95.45,
+      "real_agent_transport_successes": 16,
+      "real_agent_requests": 16,
+      "real_agent_task_successes": 1,
+      "real_agent_tasks": 4,
+      "real_agent_task_success_percent": 25.0,
+      "replay_integrity": "PASS for v2 rep1 and v3 rep1 fixed+branch phases: 28 regular plus 4 checkpoint/padding tool turns = 32 total; quality rows = 0.",
+      "quality_suite": "NOT RUN TO COMPLETION. Replay v2/v3 rep1 completed fixed+branch phases before the runners were stopped to enforce the explicit user decision to skip remaining replay. Quality rows were 0 and repetitions 2/3 were not run. No long-horizon quality pass is claimed."
+    },
+    "reliability": {
+      "status": "NOT_RUN",
+      "soak": "none",
+      "fault_recovery": "none",
+      "side_effects": "none",
+      "incidental": "Ollama 0 restart 0 oom across campaign"
+    }
+  },
+  "run_orchestration_limitation": {
+    "recorded_stop_reason": "user explicitly deferred remaining replay and new demo-002 llama.cpp validation",
+    "observed": "replay v2 and v3 rep1 completed fixed+branch phases; quality rows were 0 when the runners were stopped for scope closure",
+    "scope_closure": "The user elected to stop experimenting and finalize preserved evidence; repetitions 2/3 and quality were not run.",
+    "durability_risk": "demo-002 has no loginctl linger; use linger or a detached container for any future unattended rerun"
+  },
+  "evidence_integrity": {
+    "controller_prefill_manifest": {
+      "entries": 217,
+      "manifest_sha256": "d9dd7ecf6ebd1e72bdcacf1bca4f6f6a4690a12307d9182729da06338ee7ebc6",
+      "role": "prefill campaign manifest"
+    },
+    "interim_demo_manifest": {
+      "entries": 41,
+      "manifest_sha256": "57268733bc1734228aaad832124b391fca09547b5f5593191a349f84e0b084fc",
+      "role": "interim demo-002 manifest; not the final tarball"
+    },
+    "final_customer_manifest": {
+      "entries": 151,
+      "manifest_sha256": "bffa040234ed81af022a022bcad3a4a6cc7d3bc0ba7521d82b53b0ef92d5c019",
+      "content_verification": "151/151 OK",
+      "role": "immutable v1 source-evidence manifest; normalized v2 tracked summaries are derived and are not members of this manifest"
+    },
+    "immutable_v1_archives": {
+      "agentic_context_customer_tar_sha256": "d86f9cf206b83a908a2d1eaf11e2047747cbaf89401e2033220979e7d5138a7c",
+      "agentic_prefill_tar_sha256": "68e9811ca088a93c0683804f40b7c5d529967ea828277901fa3f618126d45b73"
+    },
+    "milestone_capacity_mirror": {
+      "entries": 128,
+      "manifest_sha256": "8241bfba5ba85516fe0ab7d507b409b42c4080121bffb03128dfb5c4a6c7b6de",
+      "content_verification": "LC_ALL=C source and controller-mirror manifests are byte-identical"
+    },
+    "milestone_capacity_backup": {
+      "archive": "demo-002-evidence-backup-20260723.tar.gz",
+      "entries": 185,
+      "members": [
+        "demo-002-capacity-matrix",
+        "demo-002-matrix-host-prep",
+        "demo-002-clone-uncommitted",
+        "demo-002-capacity-matrix-MIRROR-PROVENANCE.txt"
+      ],
+      "archive_sha256": "9ab55b53e4639beb0ca7d7787137722125ad56b64cc7839dff9bbde8a290d81e",
+      "manifest_sha256": "67fe363e3f8f60ce9579b15a206b927ec644280c8ff4567a06d0087acd0be7f4",
+      "controller_path": "/home/aup/vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz",
+      "independent_replica": "windows-workspace:evidence-backup/demo-002-evidence-backup-20260723.tar.gz",
+      "independent_replica_verified": true,
+      "deterministic_build": "tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=2026-07-23T00:00:00Z <members> | gzip -n -9; byte-identical across two rebuilds",
+      "content_verification": "185/185 files verified from extraction against the per-file SHA-256 manifest; independent Windows replica SHA-256 matches the controller archive"
+    }
+  },
+  "blockers_ref": "blockers/pre-hardware-blockers.json",
+  "limitations_ref": [
+    "replay-v2-aborted-user-scope-20260723.json",
+    "replay-v2-aborted-user-scope-20260723.json.sha256",
+    "replay-v3-aborted-user-scope-20260723.json",
+    "replay-v3-aborted-user-scope-20260723.json.sha256",
+    "user-scope-reduction-20260723.json",
+    "user-scope-reduction-20260723.json.sha256"
+  ],
+  "vllm_crossref": {
+    "closure": true,
+    "ablation": true
+  },
+  "replay": {
+    "v2_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    },
+    "v3_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    }
+  },
+  "capacity_phases": {
+    "direct-spine": {
+      "passed": false,
+      "status_counts": {
+        "failed": 1,
+        "success": 4
+      },
+      "planned": 5,
+      "recorded": 5
+    },
+    "direct-concurrency": {
+      "passed": false,
+      "status_counts": {
+        "failed": 4,
+        "success": 2
+      },
+      "planned": 6,
+      "recorded": 6
+    },
+    "direct-reuse": {
+      "passed": false,
+      "status_counts": {
+        "failed": 5,
+        "success": 1
+      },
+      "planned": 6,
+      "recorded": 6
+    }
+  }
+}

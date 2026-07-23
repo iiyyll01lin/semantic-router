@@ -212,3 +212,24 @@ perf-help: ## Show performance testing help
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make perf-clean              - Clean performance artifacts"
+
+##@ Agentic Context Report Consistency
+
+# Validate the Strix Halo agentic-context customer PoC reports against their
+# structured evidence (four-proof-status.json / evidence-index.json) and each
+# other. This runs the tracked-report structural validator plus its
+# dependency-free unittest suite. Source-backed crosschecks against preserved
+# hardware evidence remain opt-in via the validator's --selected-summary /
+# --capacity-summary-dir / --milestone-mirror-root / --prefill-evidence-root
+# flags and are NOT required here, so this target stays safe for CI and
+# pre-commit where only tracked repository files are available.
+AGENTIC_REPORT_PERF_DIR := deploy/recipes/strix-halo-fleet-2box/perf
+AGENTIC_REPORT_PY := $(if $(wildcard $(AGENT_PYTHON)),$(AGENT_PYTHON),python3)
+
+.PHONY: validate-agentic-context-reports
+validate-agentic-context-reports: ## Validate agentic-context PoC reports are internally consistent
+	@$(LOG_TARGET)
+	@echo "Validating agentic-context report consistency (tracked reports)..."
+	@$(AGENTIC_REPORT_PY) $(AGENTIC_REPORT_PERF_DIR)/validate_agentic_context_reports.py
+	@echo "Running agentic-context report validator unit tests..."
+	@$(AGENTIC_REPORT_PY) $(AGENTIC_REPORT_PERF_DIR)/test_validate_agentic_context_reports.py -q

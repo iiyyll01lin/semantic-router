@@ -1,0 +1,35 @@
+{
+  "decode_tps_median": 36.51922588184615,
+  "decode_tps_runs": [
+    36.51922588184615
+  ],
+  "decode_window_s": 5.694617986679077,
+  "generated_utc": "2026-07-13T16:57:28Z",
+  "idle_samples": 14,
+  "idle_w_mean": 7.107928571428571,
+  "load_samples": 6,
+  "load_w_max": 102.084,
+  "load_w_mean": 99.90283333333333,
+  "model": "gpt-oss:120b-vram",
+  "runs_detail": [
+    {
+      "decode_tps": 36.51922588184615,
+      "eval_count": 196,
+      "eval_duration_ns": 5367036000,
+      "wall_s": 5.694487916996877
+    }
+  ],
+  "schema": "power-sampler/v1",
+  "shape": {
+    "keep_alive": "30m",
+    "max_tokens": 1400,
+    "num_ctx": 0,
+    "prompt_tokens": 256,
+    "runs": 1,
+    "use_mmap": false
+  },
+  "tok_per_watt_load": 0.36554744908982706,
+  "tok_per_watt_net_idle": 0.39354774893673306,
+  "total_decode_s": 5.367036,
+  "total_decode_tokens": 196
+}

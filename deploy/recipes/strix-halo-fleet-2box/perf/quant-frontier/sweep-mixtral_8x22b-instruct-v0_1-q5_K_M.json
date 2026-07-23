@@ -1,0 +1,45 @@
+{
+  "box": "test001-stxh",
+  "first_unusable_tag": null,
+  "generated_utc": "2026-07-13T16:18:16Z",
+  "max_resident_tag": "mixtral:8x22b-instruct-v0.1-q5_K_M",
+  "max_usable_tag": "mixtral:8x22b-instruct-v0.1-q5_K_M",
+  "memory_map": {
+    "gtt_total_b": 51539607552.0,
+    "gtt_total_gib": 48.0,
+    "sys_total_b": 33270083584,
+    "sys_total_gib": 30.99,
+    "vram_total_b": 103079215104.0,
+    "vram_total_gib": 96.0
+  },
+  "results": [
+    {
+      "decode_tps_median": 7.797427118736728,
+      "gpu_resident_frac": 1.0,
+      "mem_mode": "vram-fit",
+      "ok_runs": 2,
+      "peak_gtt_used_b": 54366208.0,
+      "peak_gtt_used_gib": 0.05,
+      "peak_sys_used_b": 6891466752,
+      "peak_sys_used_gib": 6.42,
+      "peak_vram_used_b": 101564055552.0,
+      "peak_vram_used_gib": 94.59,
+      "reason": "",
+      "tag": "mixtral:8x22b-instruct-v0.1-q5_K_M",
+      "ttft_ms_mean": 180.1949219989183,
+      "verdict": "usable"
+    }
+  ],
+  "schema": "maxmodel-sweep/v1",
+  "shape": {
+    "forced_residency": true,
+    "gtt_spill_gib": 2.0,
+    "max_tokens": 96,
+    "num_ctx": 4096,
+    "num_gpu": 999,
+    "oom_min_tps": 3.0,
+    "prompt_tokens": 256,
+    "runs": 2,
+    "use_mmap": "false"
+  }
+}

@@ -58,6 +58,11 @@ type RouterConfigVersionEntry struct {
 	Filename  string `json:"filename"`
 }
 
+type ConfigHashResponse struct {
+	Hash   string `json:"hash"`
+	Source string `json:"source,omitempty"`
+}
+
 // handleConfigRollback handles POST /config/router/rollback.
 //
 //nolint:cyclop,funlen // Legacy rollback flow still owns validation, backup, and atomic write in one handler.
@@ -272,7 +277,36 @@ func (s *ClassificationAPIServer) handleConfigHash(w http.ResponseWriter, _ *htt
 	}
 
 	hash := sha256.Sum256(data)
-	s.writeJSONResponse(w, http.StatusOK, map[string]string{
-		"hash": hex.EncodeToString(hash[:]),
+	s.writeJSONResponse(w, http.StatusOK, ConfigHashResponse{Hash: hex.EncodeToString(hash[:])})
+}
+
+// handleLoadedConfigHash handles GET /config/loaded-hash and returns a hash of
+// the last successfully loaded runtime config. Unlike /config/hash, this does
+// not reflect unparsed bytes currently on disk.
+func (s *ClassificationAPIServer) handleLoadedConfigHash(w http.ResponseWriter, _ *http.Request) {
+	hash, err := loadedConfigHash(s.currentConfig())
+	if err != nil {
+		s.writeErrorResponse(w, http.StatusInternalServerError, "NO_LOADED_CONFIG", err.Error())
+		return
+	}
+
+	s.writeJSONResponse(w, http.StatusOK, ConfigHashResponse{
+		Hash:   hash,
+		Source: "loaded",
 	})
+}
+
+func loadedConfigHash(cfg *config.RouterConfig) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("router config is not loaded")
+	}
+
+	canonical := config.CanonicalConfigFromRouterConfig(cfg)
+	data, err := yaml.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode loaded config: %w", err)
+	}
+
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:]), nil
 }

@@ -1,0 +1,69 @@
+name: Strix Fleet Config Lint
+
+# R3 + R2: keep the strix-halo-fleet-2box control plane honest in CI.
+#  * R3 — enforce that versions.env.example pins the router image to an immutable
+#         @sha256 digest (kills the `:latest` drift that caused a real outage).
+#  * R2 — parse the committed poc-strix.yaml the fleet distributes, so a schema
+#         regression fails here in seconds instead of ~9 min into a cold start.
+# Runs the same ci-check.sh that deploy-fleet-2box.sh uses as its pre-pull gate.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    paths:
+      - 'deploy/recipes/strix-halo-fleet-2box/**'
+      - 'deploy/recipes/strix-halo-poc/poc-strix.yaml'
+      - 'deploy/recipes/strix-halo-poc/validate_poc_config.py'
+      - '.github/workflows/strix-fleet-config-lint.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deploy/recipes/strix-halo-fleet-2box/**'
+      - 'deploy/recipes/strix-halo-poc/poc-strix.yaml'
+      - 'deploy/recipes/strix-halo-poc/validate_poc_config.py'
+      - '.github/workflows/strix-fleet-config-lint.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fleet-config-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyYAML (for the structural validator fallback)
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Validate config x pinned image (strict)
+        working-directory: deploy/recipes/strix-halo-fleet-2box
+        env:
+          CI_CHECK_STRICT: '1'
+        run: bash ci-check.sh
+
+      - name: Run the recipe offline test suite (run-tests.sh)
+        working-directory: deploy/recipes/strix-halo-fleet-2box
+        run: bash run-tests.sh
+
+      - name: Run the structural validator test
+        run: python deploy/recipes/strix-halo-poc/test_validate_poc_config.py
+
+      # Keep the agentic-context report set self-consistent via the shared
+      # `validate-agentic-context-reports` Make target (single source of truth,
+      # also used by the local pre-commit hook and the agent task-matrix). Runs
+      # the tracked-only path (no ~/vllm-sr-evidence dependency): JSON arithmetic,
+      # reader-facing report snippets, evidence-generation hashes, immutable-backup
+      # metadata, plus the validator unit tests.
+      - name: Validate agentic-context report set (tracked-only)
+        run: make validate-agentic-context-reports

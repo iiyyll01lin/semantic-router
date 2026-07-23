@@ -282,6 +282,15 @@ def container_start_grafana(
             stack_layout,
         )
 
+    admin_user = os.getenv(
+        "GF_SECURITY_ADMIN_USER",
+        os.getenv("DASHBOARD_ADMIN_EMAIL", "admin"),
+    )
+    admin_password = os.getenv(
+        "GF_SECURITY_ADMIN_PASSWORD",
+        os.getenv("DASHBOARD_ADMIN_PASSWORD", "admin"),
+    )
+
     cmd = [
         runtime,
         "run",
@@ -291,9 +300,9 @@ def container_start_grafana(
         "--network",
         network_name,
         "-e",
-        "GF_SECURITY_ADMIN_USER=admin",
+        f"GF_SECURITY_ADMIN_USER={admin_user}",
         "-e",
-        "GF_SECURITY_ADMIN_PASSWORD=admin",
+        f"GF_SECURITY_ADMIN_PASSWORD={admin_password}",
         "-e",
         f"PROMETHEUS_URL={stack_layout.prometheus_container_name}:9090",
         "-v",

@@ -1,0 +1,221 @@
+{
+  "schema": "agentic-context-window/evidence-index/v2",
+  "generated_at": "2026-07-23T07:05:23.900946+00:00",
+  "normalized_from": "agentic-context-window/evidence-index/v1",
+  "source_root": "/home/demo-002/vllm-sr-evidence/agentic-context-customer-20260722",
+  "controller_mirror_root": "/home/aup/vllm-sr-evidence/agentic-context-customer-20260722",
+  "context_budget": {
+    "router_declared_metadata": [
+      131072,
+      262144
+    ],
+    "backend_configured": 65536,
+    "loaded_verified": 65536,
+    "max_tested_input_tokens": 65152,
+    "max_output_tokens": 256,
+    "reserved_headroom_tokens": 128,
+    "max_tested_required_total_tokens": 65536
+  },
+  "capacity": {
+    "direct-spine": {
+      "passed": false,
+      "status_counts": {
+        "failed": 1,
+        "success": 4
+      },
+      "planned": 5,
+      "recorded": 5
+    },
+    "direct-concurrency": {
+      "passed": false,
+      "status_counts": {
+        "failed": 4,
+        "success": 2
+      },
+      "planned": 6,
+      "recorded": 6
+    },
+    "direct-reuse": {
+      "passed": false,
+      "status_counts": {
+        "failed": 5,
+        "success": 1
+      },
+      "planned": 6,
+      "recorded": 6
+    }
+  },
+  "capacity_rollup": {
+    "total": 17,
+    "green": 7,
+    "failed": 10,
+    "transport_100pct": 17,
+    "exact_usage_100pct": 17,
+    "marker_only_failures": 10
+  },
+  "request_rollup": {
+    "measured_requests": 174,
+    "http_successes": 174,
+    "marker_passes": 150,
+    "invalid_json_lines": 0
+  },
+  "proof_statuses": {
+    "capacity": "PARTIAL_PASS",
+    "performance": "MEASURED_NO_AGREED_SLO",
+    "quality": "NOT_ACHIEVED",
+    "reliability": "NOT_RUN"
+  },
+  "replay": {
+    "v2_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    },
+    "v3_rep1": {
+      "fixed_passed": true,
+      "fixed_tool_turns": 32,
+      "branch_passed": true,
+      "quality_rows": 0
+    }
+  },
+  "limitations": [
+    "replay-v2-aborted-user-scope-20260723.json",
+    "replay-v2-aborted-user-scope-20260723.json.sha256",
+    "replay-v3-aborted-user-scope-20260723.json",
+    "replay-v3-aborted-user-scope-20260723.json.sha256",
+    "user-scope-reduction-20260723.json",
+    "user-scope-reduction-20260723.json.sha256"
+  ],
+  "blockers_present": true,
+  "runs": [
+    {
+      "files": 2,
+      "bytes": 4398,
+      "name": "analysis"
+    },
+    {
+      "files": 2,
+      "bytes": 2588,
+      "name": "blockers"
+    },
+    {
+      "files": 21,
+      "bytes": 5201651,
+      "name": "capacity-direct-openai"
+    },
+    {
+      "files": 6,
+      "bytes": 2227,
+      "name": "limitations"
+    },
+    {
+      "files": 12,
+      "bytes": 14620,
+      "name": "plans"
+    },
+    {
+      "files": 19,
+      "bytes": 685480,
+      "name": "replay-direct-rep1"
+    },
+    {
+      "files": 19,
+      "bytes": 685488,
+      "name": "replay-direct-rep2"
+    },
+    {
+      "files": 19,
+      "bytes": 685481,
+      "name": "replay-direct-rep3"
+    },
+    {
+      "files": 12,
+      "bytes": 888454,
+      "name": "replay-direct-v2-rep1"
+    },
+    {
+      "files": 13,
+      "bytes": 756081,
+      "name": "replay-direct-v3-rep1"
+    },
+    {
+      "files": 6,
+      "bytes": 27596,
+      "name": "runtime"
+    }
+  ],
+  "sibling_bundle": {
+    "path": "/home/demo-002/vllm-sr-evidence/agentic-prefill-20260722",
+    "closure": true,
+    "ablation": true
+  },
+  "evidence_generations": {
+    "controller_prefill_manifest": {
+      "entries": 217,
+      "manifest_sha256": "d9dd7ecf6ebd1e72bdcacf1bca4f6f6a4690a12307d9182729da06338ee7ebc6"
+    },
+    "interim_demo_manifest": {
+      "entries": 41,
+      "manifest_sha256": "57268733bc1734228aaad832124b391fca09547b5f5593191a349f84e0b084fc"
+    },
+    "final_customer_manifest": {
+      "entries": 151,
+      "manifest_sha256": "bffa040234ed81af022a022bcad3a4a6cc7d3bc0ba7521d82b53b0ef92d5c019",
+      "content_verification": "151/151 OK",
+      "role": "immutable v1 source-evidence manifest; normalized v2 tracked summaries are derived and are not members of this manifest"
+    },
+    "immutable_v1_archives": {
+      "agentic_context_customer_tar_sha256": "d86f9cf206b83a908a2d1eaf11e2047747cbaf89401e2033220979e7d5138a7c",
+      "agentic_prefill_tar_sha256": "68e9811ca088a93c0683804f40b7c5d529967ea828277901fa3f618126d45b73"
+    },
+    "milestone_capacity_mirror": {
+      "entries": 128,
+      "manifest_sha256": "8241bfba5ba85516fe0ab7d507b409b42c4080121bffb03128dfb5c4a6c7b6de",
+      "content_verification": "LC_ALL=C source and controller-mirror manifests are byte-identical"
+    },
+    "milestone_capacity_backup": {
+      "archive": "demo-002-evidence-backup-20260723.tar.gz",
+      "entries": 185,
+      "members": [
+        "demo-002-capacity-matrix",
+        "demo-002-matrix-host-prep",
+        "demo-002-clone-uncommitted",
+        "demo-002-capacity-matrix-MIRROR-PROVENANCE.txt"
+      ],
+      "archive_sha256": "9ab55b53e4639beb0ca7d7787137722125ad56b64cc7839dff9bbde8a290d81e",
+      "manifest_sha256": "67fe363e3f8f60ce9579b15a206b927ec644280c8ff4567a06d0087acd0be7f4",
+      "controller_path": "/home/aup/vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz",
+      "independent_replica": "windows-workspace:evidence-backup/demo-002-evidence-backup-20260723.tar.gz",
+      "independent_replica_verified": true,
+      "deterministic_build": "tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=2026-07-23T00:00:00Z <members> | gzip -n -9; byte-identical across two rebuilds",
+      "content_verification": "185/185 files verified from extraction against the per-file SHA-256 manifest; independent Windows replica SHA-256 matches the controller archive"
+    }
+  },
+  "campaign_crosschecks": {
+    "demo002_ollama_milestone": {
+      "cells_total": 8,
+      "cells_all_green": 8,
+      "measured_requests": 24,
+      "http_successes": 24,
+      "marker_passes": 24,
+      "evidence": [
+        "/home/aup/vllm-sr-evidence/demo-002-capacity-matrix/20260722T023157Z-milestones/proof/spine/summary/direct-spine.json",
+        "/home/aup/vllm-sr-evidence/demo-002-capacity-matrix/20260722T023157Z-milestones/proof/load/summary/direct-reuse.json",
+        "/home/aup/vllm-sr-evidence/demo-002-capacity-matrix/20260722T023157Z-milestones/proof/load/summary/direct-concurrency.json"
+      ]
+    },
+    "halo_a_llamacpp_out256": {
+      "checkpoint_records": 6,
+      "failed_records": 4,
+      "skipped_records": 2,
+      "measured_requests": 20,
+      "http_successes": 20,
+      "marker_passes": 0,
+      "evidence": [
+        "/home/aup/vllm-sr-evidence/agentic-prefill-20260722/llamacpp-out256-r0-c1.jsonl",
+        "/home/aup/vllm-sr-evidence/agentic-prefill-20260722/llamacpp-out256-r90-c8.jsonl"
+      ]
+    }
+  }
+}

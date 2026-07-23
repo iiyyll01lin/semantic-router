@@ -379,9 +379,9 @@ vllm-sr-dev:
 		echo "  Dockerfile: $(VLLM_SR_DOCKERFILE)"; \
 		echo "  Image: $(VLLM_SR_IMAGE)"; \
 		echo ""; \
-		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_IMAGE) -f $(VLLM_SR_DOCKERFILE) .; \
-		echo ""; \
-		echo "Router image built: $(VLLM_SR_IMAGE)"; \
+		$(CONTAINER_RUNTIME) build $(VLLM_SR_BUILD_ARGS) -t $(VLLM_SR_IMAGE) -f $(VLLM_SR_DOCKERFILE) . && \
+		echo "" && \
+		echo "Router image built: $(VLLM_SR_IMAGE)" && \
 		echo ""; \
 	fi
 	@if [ "$(VLLM_SR_TOPOLOGY_NORMALIZED)" = "split" ]; then \

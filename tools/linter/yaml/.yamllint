@@ -13,6 +13,8 @@ ignore: |
   # Jinja2 template files (contain {% %} and {{ }} syntax)
   **/*.template.yaml
   **/.vllm-sr/**
+  # Generated (git-ignored) rendered fleet configs; lint the tracked sources.
+  **/.vllm-sr-rendered/**
 
 rules:
   braces:

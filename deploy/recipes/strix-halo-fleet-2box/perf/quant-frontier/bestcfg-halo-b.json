@@ -1,0 +1,281 @@
+{
+  "ab_table": [
+    {
+      "baseline": "0.177 tok/s @ 38.3% resident (size_vram/size=0.383, cpu-offload; 24.6/64.2 GiB)",
+      "best": "36.61 tok/s @ 100% resident (size_vram/size=1.0, vram-fit; peak VRAM 61.65 GiB, GTT 0.02, sys 5.45)",
+      "delta": "~207x fresh end-to-end (36.61 vs 0.177); ~6.4x vs \u00a711.1 clean ref (36.8 vs 5.7)",
+      "lever": "Residency: forced -vram (num_gpu=999, use_mmap=false) vs auto layer-estimate",
+      "measured": "FRESH end-to-end (both sides today; p8 + stack co-resident)",
+      "why": "Ollama auto-estimate sizes GPU layers to the 31 GiB OS system RAM, not the 96 GiB VRAM carveout, so a 64 GiB MoE is 62% CPU-offloaded; offloaded weights exceed system RAM and page from the 98%-full disk -> thrash. Forcing full residency pins 100% in the carveout."
+    },
+    {
+      "baseline": "43.92 tok/s agg @ c8 (flat ~43 across c1..8); TTFT p95 20444 ms @ c8",
+      "best": "121.10 tok/s agg @ c8 (knee, TTFT p95 826 ms); ceiling 128.66 @ c16; scales 42->69->104->121->129",
+      "delta": "~2.76x throughput @ c8; ~2.9x ceiling (128.66 vs 43.92); ~25x better TTFT p95 @ c8",
+      "lever": "Concurrency: OLLAMA_NUM_PARALLEL=8 vs default 1 (7B workhorse qwen2.5:7b)",
+      "measured": "FRESH end-to-end (real container toggle p1<->p8, both today)",
+      "why": "One decode slot (p1) serializes -> aggregate stays flat while TTFT grows with the queue. 8 slots scale throughput to the LPDDR5X bandwidth plateau; knee at c8."
+    },
+    {
+      "baseline": "miss ~1.2-1.56 s (full embed+classify+route+decode)",
+      "best": "exact-repeat hit ~1-2 ms; semantic-0.92 hit ~0.7-0.9 s",
+      "delta": ">100x on repeats/paraphrases",
+      "lever": "Semantic cache: 0.92 + exact-repeat vs none",
+      "measured": "REUSED \u00a77.1/\u00a77.5; live config confirmed stores.semantic_cache enabled:true (not mutated)",
+      "why": "A hit skips the upstream LLM leg; an exact-repeat pre-routing cache skips embed+classify+routing entirely."
+    },
+    {
+      "baseline": "TTFT ~142 ms",
+      "best": "TTFT ~28 ms",
+      "delta": "~5x lower TTFT",
+      "lever": "Server: llama.cpp(rocm) vs ollama",
+      "measured": "REUSED \u00a710",
+      "why": "llama.cpp(rocm) is the fastest / lowest-TTFT server measured on gfx1151."
+    },
+    {
+      "baseline": "dense Q8 70B 3.0 tok/s",
+      "best": "gpt-oss:120b MoE 36.5 tok/s",
+      "delta": "~12x decode at similar/larger footprint",
+      "lever": "Architecture: MoE vs dense for big models",
+      "measured": "REUSED \u00a72/\u00a74",
+      "why": "MoE reads only the active experts per token, so bandwidth-bound decode is far faster than a same-size dense model."
+    },
+    {
+      "baseline": "3.0 tok/s",
+      "best": "5.1 tok/s, ~30 GiB smaller",
+      "delta": "~1.7x decode, ~30 GiB VRAM saved, quality flat",
+      "lever": "Quant: dense Q4_K_M vs Q8_0",
+      "measured": "REUSED \u00a74",
+      "why": "Fewer bytes/token -> faster bandwidth-bound decode; MMLU-Pro flat within the 42Q noise."
+    },
+    {
+      "baseline": "dense 70B-Q4 0.0381 tok/s/W (5.07 @ 133 W, \u00a712); naive gpt-oss default ~0.007 tok/s/W (0.177 @ ~24 W, derived)",
+      "best": "0.3655 tok/s/W (36.52 tok/s @ 99.9 W; fresh)",
+      "delta": "~10x vs dense-70B-Q4; ~50x vs naive default",
+      "lever": "Per-watt: resident MoE vs inefficient big-model config",
+      "measured": "best FRESH + \u00a712 ref + derived baseline",
+      "why": "Socket pins ~100-133 W under load; efficiency tracks throughput, so the 100%-resident MoE wins ~10x per token. A CPU-offloaded model stalls the pipeline and wastes energy."
+    }
+  ],
+  "box": "halo-b",
+  "config_restore": {
+    "ollama_num_parallel": "recreated container -> =8 for BEST, then RESTORED to original (env unset -> server default OLLAMA_NUM_PARALLEL:1); env + restart policy + network + devices + volume verified identical to pre-run inspect; 15 models intact (named volume 'ollama').",
+    "vllm_sr_cache": "NOT changed (read-only inspection only) -> nothing to restore."
+  },
+  "configs": {
+    "baseline_naive_default": {
+      "big_model": "gpt-oss:120b",
+      "num_ctx": 4096,
+      "ollama_num_parallel": 1,
+      "residency": "server auto layer-estimate (NO num_gpu / use_mmap override)",
+      "semantic_cache": "off (no route-local cache plugin on the tested decision)"
+    },
+    "best": {
+      "big_model": "gpt-oss:120b-vram",
+      "num_ctx": 4096,
+      "ollama_num_parallel": 8,
+      "residency": "forced: num_gpu=999, use_mmap=false (100% VRAM-resident)",
+      "semantic_cache": "0.92 similarity + exact-repeat short-circuit (stores.semantic_cache enabled:true, memory)"
+    }
+  },
+  "environment": {
+    "disk": "98% full (25 GiB free) -- only pre-present models used, nothing pulled",
+    "gpu": "Ryzen AI Max+ 395 (gfx1151); 96 GiB VRAM carveout, 30.99 GiB OS system RAM, 48 GiB GTT",
+    "gpu_discipline": "strictly sequential, one model loaded at a time (sole worker)",
+    "stack": "vllm-sr 9 containers + ollama co-resident; router /config/hash UP on :8080 during every rung"
+  },
+  "fresh_end_to_end_2026_07_13": {
+    "a_residency_decode": {
+      "baseline": {
+        "decode_tps": 0.1771,
+        "gpu_resident_frac": 0.383,
+        "mem_mode": "cpu-offload",
+        "model": "gpt-oss:120b",
+        "note": "~61.7% CPU-offload; offloaded weights exceed the 31 GiB OS system RAM so they page from the 98%-full disk -> mmap thrash",
+        "prefill_tps": 15.96,
+        "residency_pct": 38.3,
+        "source": "bestcfg-residency-baseline-gpt-oss-120b.json"
+      },
+      "best": {
+        "decode_tps": 36.609,
+        "gpu_resident_frac": 1.0,
+        "mem_mode": "vram-fit",
+        "model": "gpt-oss:120b-vram",
+        "peak_gtt_gib": 0.02,
+        "peak_sys_gib": 5.45,
+        "peak_vram_gib": 61.65,
+        "residency_pct": 100.0,
+        "source": "bestcfg-residency-best-gpt-oss-120b-vram.json (maxmodel-sweep, p8+stack co-resident)",
+        "verdict": "usable"
+      },
+      "delta": "36.61 vs 0.177 tok/s = ~207x fresh end-to-end (baseline thrashes under 98%-full disk); residency 100% vs 38.3%; ~6.4x vs the \u00a711.1 clean-run reference (36.8 vs 5.7)"
+    },
+    "b_concurrency": {
+      "baseline_at_c8": {
+        "aggregate_decode_tps": 43.924618510458416,
+        "ttft_p95_ms": 20444.436593003047
+      },
+      "baseline_p1_curve": [
+        {
+          "aggregate_decode_tps": 42.23913877431272,
+          "c": 1,
+          "decode_tps_median": 44.67955508936784,
+          "ok_runs": 1,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 163.8110459971358,
+          "ttft_ms_p95": 163.8110459971358
+        },
+        {
+          "aggregate_decode_tps": 43.224966026329014,
+          "c": 2,
+          "decode_tps_median": 44.698621318687785,
+          "ok_runs": 2,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 1609.5250965045125,
+          "ttft_ms_p95": 3054.939956004091
+        },
+        {
+          "aggregate_decode_tps": 43.646629815976986,
+          "c": 4,
+          "decode_tps_median": 44.69855108907507,
+          "ok_runs": 4,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 4525.446794252275,
+          "ttft_ms_p95": 8864.73284800013
+        },
+        {
+          "aggregate_decode_tps": 43.924618510458416,
+          "c": 8,
+          "decode_tps_median": 44.695491891568516,
+          "ok_runs": 8,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 10322.965751374795,
+          "ttft_ms_p95": 20444.436593003047
+        }
+      ],
+      "best_ceiling": {
+        "aggregate_decode_tps": 128.664517097345,
+        "c": 16,
+        "ttft_p95_ms": 8079.420800000662
+      },
+      "best_knee": {
+        "aggregate_decode_tps": 121.09590324622624,
+        "c": 8,
+        "ttft_p95_ms": 826.0516169975745
+      },
+      "best_p8_curve": [
+        {
+          "aggregate_decode_tps": 42.24603867371523,
+          "c": 1,
+          "decode_tps_median": 44.59226470525733,
+          "ok_runs": 1,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 158.0873970015091,
+          "ttft_ms_p95": 158.0873970015091
+        },
+        {
+          "aggregate_decode_tps": 69.03499975981343,
+          "c": 2,
+          "decode_tps_median": 37.48631579632165,
+          "ok_runs": 2,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 276.15321700068307,
+          "ttft_ms_p95": 384.89886000024853
+        },
+        {
+          "aggregate_decode_tps": 103.78157747160236,
+          "c": 4,
+          "decode_tps_median": 28.444065190697003,
+          "ok_runs": 4,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 368.0268560001423,
+          "ttft_ms_p95": 431.063558004098
+        },
+        {
+          "aggregate_decode_tps": 121.09590324622624,
+          "c": 8,
+          "decode_tps_median": 16.323236829683385,
+          "ok_runs": 8,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 564.6156343746043,
+          "ttft_ms_p95": 826.0516169975745
+        },
+        {
+          "aggregate_decode_tps": 128.664517097345,
+          "c": 16,
+          "decode_tps_median": 16.507198359231456,
+          "ok_runs": 16,
+          "success_rate": 1.0,
+          "ttft_ms_mean": 4160.762507500749,
+          "ttft_ms_p95": 8079.420800000662
+        }
+      ],
+      "delta": "agg @ c8 121.10 vs 43.92 = ~2.8x; ceiling 128.66 (p8,c16) vs 43.92 (p1,c8) = ~2.9x; TTFT p95 @ c8 826 ms vs 20444 ms = ~25x better",
+      "toggle": "real container recreate: OLLAMA_NUM_PARALLEL unset(=1) -> =8 -> restored to unset(=1)"
+    },
+    "d_per_watt": {
+      "baseline_derived": {
+        "decode_tps": 0.1771,
+        "model": "gpt-oss:120b",
+        "note": "derived from fresh baseline decode / spot socket-power reading during the CPU-offloaded decode; a full power_sampler run was skipped (0.18 tok/s => >10 min/run thrash).",
+        "socket_w_observed": 24.0,
+        "tok_per_watt_load": 0.0074
+      },
+      "best": {
+        "decode_tps": 36.519,
+        "idle_w": 7.11,
+        "load_w": 99.9,
+        "model": "gpt-oss:120b-vram",
+        "source": "bestcfg-pw-best-gpt-oss-120b-vram.json (power_sampler, fresh)",
+        "tok_per_watt_load": 0.3655,
+        "tok_per_watt_net_idle": 0.3935
+      },
+      "reference_baseline": {
+        "model": "llama3.1:70b-instruct-q4_K_M",
+        "source": "pw-llama3_1-70b-instruct-q4_K_M.json / \u00a712 (5.07 @ 133 W)",
+        "tok_per_watt_load": 0.0381
+      }
+    }
+  },
+  "generated_utc": "2026-07-13T17:03:29Z",
+  "host": "test001-stxh",
+  "notes": [
+    "All FRESH numbers measured on Halo-B (test001-stxh) on 2026-07-13, GPU strictly sequential, full vllm-sr stack co-resident.",
+    "Full BEST config validated end-to-end: gpt-oss:120b-vram holds 36.61 tok/s @ 100% residency AND qwen2.5:7b p8 holds ~121-129 tok/s WITH OLLAMA_NUM_PARALLEL=8 set and the 9-container stack co-resident -- no regression vs per-lever runs.",
+    "Baseline gpt-oss:120b default decode is highly variable with memory pressure: 0.177 tok/s this run (98%-full disk -> offload pages from disk) vs 3.06 tok/s prior clean run vs 5.7 tok/s \u00a711.1 reference; residency ~0.38-0.41 either way."
+  ],
+  "reused_deltas": {
+    "cache_ttft": {
+      "exact_repeat_hit_ms": "~1-2",
+      "live_config_check": "stores.semantic_cache enabled:true (memory, max_entries 1000, ttl 3600s); route-local plugin coverage varies -- NOT mutated this run",
+      "miss_ms": "~1200-1560",
+      "semantic_0_92_hit_ms": "~700-900",
+      "source": "perf-report \u00a77.1/\u00a77.5"
+    },
+    "dense_q4_vs_q8": {
+      "q4_k_m_tps": 5.1,
+      "q8_0_tps": 3.0,
+      "quality": "flat within 42Q MMLU-Pro noise",
+      "source": "hardware-limits \u00a74",
+      "vram_saved_gib": "~30"
+    },
+    "moe_vs_dense": {
+      "dense_q8_70b_tps": 3.0,
+      "gpt_oss_120b_moe_tps": 36.5,
+      "source": "hardware-limits \u00a72/\u00a74"
+    },
+    "residency_ref": {
+      "auto_offload_tps": 5.7,
+      "forced_vram_tps": 36.8,
+      "source": "hardware-limits \u00a73/\u00a711.1"
+    },
+    "server_latency": {
+      "llamacpp_ttft_ms": 28,
+      "ollama_ttft_ms": 142,
+      "source": "perf-report \u00a710"
+    }
+  },
+  "schema": "bestcfg-ab/v2",
+  "supersedes": "bestcfg-ab/v1 (2026-07-13T16:26Z) -- this run adds the real OLLAMA_NUM_PARALLEL container toggle (p1<->p8) and fresh residency/per-watt.",
+  "title": "BEST vs BASELINE end-to-end A/B (Halo-B, 96 GiB carveout, headless, full vllm-sr stack co-resident) -- full BEST config validated with ALL levers ON together on 2026-07-13"
+}

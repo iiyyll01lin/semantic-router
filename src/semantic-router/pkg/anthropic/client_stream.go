@@ -515,7 +515,8 @@ func buildOpenAIStreamFinishChunk(
 	finishReason string,
 	usage anthropic.MessageDeltaUsage,
 ) ([]byte, error) {
-	if finishReason == "" && usage.InputTokens == 0 && usage.OutputTokens == 0 {
+	if finishReason == "" && usage.InputTokens == 0 && usage.OutputTokens == 0 &&
+		usage.CacheReadInputTokens == 0 && usage.CacheCreationInputTokens == 0 {
 		return nil, nil
 	}
 
@@ -534,12 +535,14 @@ func buildOpenAIStreamFinishChunk(
 		Model:   model,
 		Choices: []openai.ChatCompletionChunkChoice{choice},
 	}
-	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
-		chunk.Usage = openai.CompletionUsage{
-			PromptTokens:     usage.InputTokens,
-			CompletionTokens: usage.OutputTokens,
-			TotalTokens:      usage.InputTokens + usage.OutputTokens,
-		}
+	if usage.InputTokens > 0 || usage.OutputTokens > 0 ||
+		usage.CacheReadInputTokens > 0 || usage.CacheCreationInputTokens > 0 {
+		chunk.Usage = openAIUsageFromAnthropicTokens(
+			usage.InputTokens,
+			usage.OutputTokens,
+			usage.CacheReadInputTokens,
+			usage.CacheCreationInputTokens,
+		)
 	}
 	return json.Marshal(chunk)
 }

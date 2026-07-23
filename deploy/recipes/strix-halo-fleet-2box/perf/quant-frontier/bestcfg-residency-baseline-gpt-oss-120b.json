@@ -1,0 +1,22 @@
+{
+  "box": "halo-b",
+  "config": "BASELINE (naive default): gpt-oss:120b, auto layer-estimate (no num_gpu/use_mmap), num_ctx=4096",
+  "decode_tps": 0.1771,
+  "eval_count": 96,
+  "eval_duration_ms": 542020.48,
+  "generated_utc": "2026-07-13T16:52:10Z",
+  "gpu_resident_frac": 0.383,
+  "lever": "a-residency",
+  "mem_mode": "cpu-offload",
+  "model": "gpt-oss:120b",
+  "prefill_tps": 15.96,
+  "processor_note": "~61.7% CPU-offload; offloaded weights exceed the 31 GiB OS system RAM so they page from the 98%-full disk -> mmap thrash",
+  "reference_context": "prior clean-run baseline 3.06 tok/s @ frac 0.408 (2026-07-13); \u00a711.1 reference 5.7 tok/s. This fresh run thrashes harder under 98%-full disk.",
+  "residency_pct": 38.3,
+  "schema": "bestcfg-residency/v1",
+  "size_b": 68963606198,
+  "size_gib": 64.23,
+  "size_vram_b": 26407379926,
+  "size_vram_gib": 24.59,
+  "source": "decode from ollama server print_timing (eval time 542020.48 ms/96 tok); residency from /api/ps live"
+}
