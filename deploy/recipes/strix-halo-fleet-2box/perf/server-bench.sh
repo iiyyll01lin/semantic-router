@@ -13,7 +13,7 @@
 #   ollama    - the recipe's own server (llama.cpp-based, ROCm)   [always local]
 #   llamacpp  - llama.cpp llama-server (ROCm, OpenAI API)
 #   lemonade  - AMD Lemonade Server (OpenAI API)
-#   vllm      - vLLM ROCm (gfx1151 support is EXPERIMENTAL)
+#   vllm      - official vLLM ROCm (gfx1151 requires ROCm >= 7.0.2)
 #
 # APPLES-TO-APPLES CAVEAT: the servers load DIFFERENT model artifacts/quantizations
 # of the same base model. Each server's quant is recorded in the report's `quant`
@@ -31,6 +31,18 @@
 #   <SRV>_UP_CMD      command to start it (idempotent)        (per-server default)
 #   <SRV>_READY_URL   health URL to poll                      (per-server default)
 #   <SRV>_TEARDOWN    1 => stop the container afterward       (default 1; ollama 0)
+#
+# vLLM-specific env:
+#   VLLM_IMAGE         official image ref (default immutable v0.25.1 manifest)
+#   VLLM_CONTAINER     isolated container name                 (default vllm-gfx1151-bench)
+#   VLLM_BIND_IP/PORT  host listener                           (default 127.0.0.1:18002)
+#   VLLM_NETWORK       isolated Docker network                 (default vllm-gfx1151-bench)
+#                        set to $NETWORK for the optional router path
+#   VLLM_HF_CACHE      host Hugging Face cache
+#   VLLM_DTYPE/VLLM_ATTENTION_BACKEND                         (default bfloat16/ROCM_ATTN)
+#   VLLM_GPU_MEMORY_UTILIZATION/VLLM_MAX_MODEL_LEN             (default 0.75/8192)
+#   VLLM_READY_TRIES    2-second polls allowed for cold pulls  (default 600)
+#   VLLM_EXTRA_DOCKER_ARGS/VLLM_EXTRA_ARGS                     additional overrides
 #
 # Shared env:
 #   ROUTER_URL/ROUTER_CONFIG_URL/GATEWAY_CONFIG  router listener/config/file
@@ -105,11 +117,23 @@ COMMON_MODEL_HINT="${COMMON_MODEL_HINT:-qwen2.5-7b}"
 : "${LEMONADE_READY_URL:=http://localhost:13305/api/v1/models}" ; : "${LEMONADE_TEARDOWN:=1}"
 
 : "${VLLM_ENABLE:=1}"      ; : "${VLLM_API:=openai}"
-: "${VLLM_DIRECT_URL:=http://localhost:8002/v1}" ; : "${VLLM_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
-: "${VLLM_ROUTER_NET:=vllm:8000}" ; : "${VLLM_QUANT:=fp16 (or awq)}"
-: "${VLLM_IMAGE:=rocm/vllm-dev:main}"
-: "${VLLM_UP_CMD:=docker run -d --name vllm --network ${NETWORK} --restart unless-stopped -p 8002:8000 --device=/dev/kfd --device=/dev/dri --group-add=video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --shm-size 8g -e HSA_OVERRIDE_GFX_VERSION=11.5.1 ${VLLM_IMAGE} vllm serve ${VLLM_MODEL} --host 0.0.0.0 --port 8000}"
-: "${VLLM_READY_URL:=http://localhost:8002/v1/models}" ; : "${VLLM_TEARDOWN:=1}"
+: "${VLLM_CONTAINER:=vllm-gfx1151-bench}" ; : "${VLLM_BIND_IP:=127.0.0.1}"
+: "${VLLM_PORT:=18002}"
+: "${VLLM_NETWORK:=vllm-gfx1151-bench}"
+: "${VLLM_DIRECT_URL:=http://localhost:${VLLM_PORT}/v1}" ; : "${VLLM_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
+: "${VLLM_ROUTER_NET:=${VLLM_CONTAINER}:8000}" ; : "${VLLM_QUANT:=BF16}"
+# v0.25.1 amd64 manifest, verified pullable from Docker Hub on 2026-07-22.
+# Override VLLM_IMAGE with an exact nightly tag/digest when testing newer kernels.
+: "${VLLM_IMAGE:=vllm/vllm-openai-rocm@sha256:84459732ca98b40fe2f5338a3f050be6d522504e47a484a5180d58fb75956f86}"
+: "${VLLM_HF_CACHE:=${HOME}/.cache/huggingface}"
+: "${VLLM_DTYPE:=bfloat16}" ; : "${VLLM_ATTENTION_BACKEND:=ROCM_ATTN}"
+: "${VLLM_GPU_MEMORY_UTILIZATION:=0.75}" ; : "${VLLM_MAX_MODEL_LEN:=8192}"
+: "${VLLM_READY_TRIES:=600}"
+: "${VLLM_EXTRA_DOCKER_ARGS:=}" ; : "${VLLM_EXTRA_ARGS:=}"
+# ROCM_ATTN is the conservative Radeon backend. Do not enable AITER by default:
+# gfx1151 W4A16/MoE optimized kernels are still model/version dependent.
+: "${VLLM_UP_CMD:=docker network inspect ${VLLM_NETWORK} >/dev/null 2>&1 || docker network create ${VLLM_NETWORK}; docker run -d --name ${VLLM_CONTAINER} --network ${VLLM_NETWORK} -p ${VLLM_BIND_IP}:${VLLM_PORT}:8000 -v ${VLLM_HF_CACHE}:/root/.cache/huggingface --device=/dev/kfd --device=/dev/dri --group-add=video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --ipc=host ${VLLM_EXTRA_DOCKER_ARGS} --entrypoint vllm ${VLLM_IMAGE} serve ${VLLM_MODEL} --host 0.0.0.0 --port 8000 --dtype ${VLLM_DTYPE} --attention-backend ${VLLM_ATTENTION_BACKEND} --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION} --max-model-len ${VLLM_MAX_MODEL_LEN} ${VLLM_EXTRA_ARGS}}"
+: "${VLLM_READY_URL:=http://localhost:${VLLM_PORT}/v1/models}" ; : "${VLLM_TEARDOWN:=1}"
 
 WORK="$(mktemp -d "${FLEET_STATE_DIR}/server-XXXXXX")"
 trap 'rm -rf "${WORK}"' EXIT
@@ -129,27 +153,27 @@ fi
 svar() { local name="$1_$2"; echo "${!name}"; }   # svar OLLAMA API -> $OLLAMA_API
 
 # Map a server key to its container name (for logs + teardown of skipped servers).
-container_of() { case "$1" in llamacpp) echo llama-server;; vllm) echo vllm;; lemonade) echo lemonade;; *) echo "$1";; esac; }
+container_of() { case "$1" in llamacpp) echo llama-server;; vllm) echo "${VLLM_CONTAINER}";; lemonade) echo lemonade;; *) echo "$1";; esac; }
 
 wait_url() { local url="$1" tries="${2:-90}" i; for ((i=0;i<tries;i++)); do curl -fsS "${url}" >/dev/null 2>&1 && return 0; sleep 2; done; return 1; }
 
 # measure_direct SRV -> writes ${WORK}/<srv>.json + <srv>-res.json
 measure_direct() {
-  local srv="$1" lc; lc="$(echo "${srv}" | tr 'A-Z' 'a-z')"
-  local nd="${WORK}/${lc}.ndjson" pid="${WORK}/${lc}.pid"
-  "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" start --out "${nd}" --pidfile "${pid}" --interval 1 >/dev/null 2>&1 || true
+  local srv="$1" lc; lc="$(echo "${srv}" | tr '[:upper:]' '[:lower:]')"
+  local trace="${WORK}/${lc}.ndjson" pid="${WORK}/${lc}.pid"
+  "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" start --out "${trace}" --pidfile "${pid}" --interval 1 >/dev/null 2>&1 || true
   "${PY_BIN}" "${SCRIPT_DIR}/tokrate_probe.py" \
     --backend-url "$(svar "${srv}" DIRECT_URL)" --api "$(svar "${srv}" API)" \
     --model "$(svar "${srv}" MODEL)" --max-tokens "${MAX_TOKENS}" --prompt-tokens "${PROMPT_TOKENS}" \
     --runs "${RUNS}" --concurrency "${CONCURRENCY}" --label "${lc}-direct" \
     --out "${WORK}/${lc}.json" >/dev/null 2>&1 || true
-  "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" stop --pidfile "${pid}" --in "${nd}" \
+  "${PY_BIN}" "${SCRIPT_DIR}/resource_sampler.py" stop --pidfile "${pid}" --in "${trace}" \
     --out "${WORK}/${lc}-res.json" >/dev/null 2>&1 || true
 }
 
 # measure_router SRV : repoint ROUTER_ALIAS at this server, hot-reload, probe. Best-effort.
 measure_router() {
-  local srv="$1" lc; lc="$(echo "${srv}" | tr 'A-Z' 'a-z')"
+  local srv="$1" lc; lc="$(echo "${srv}" | tr '[:upper:]' '[:lower:]')"
   [[ "${SERVER_BENCH_ROUTER}" == "1" ]] || return 0
   [[ -f "${GATEWAY_CONFIG}" ]] || { echo "    (router path skipped: no ${GATEWAY_CONFIG})"; return 0; }
   cp -f "${GATEWAY_CONFIG}" "${WORK}/${lc}-config.bak"
@@ -171,7 +195,7 @@ measure_router() {
 
 # --- run each server ------------------------------------------------------- #
 for srv_lc in ${SERVERS}; do
-  SRV="$(echo "${srv_lc}" | tr 'a-z' 'A-Z')"
+  SRV="$(echo "${srv_lc}" | tr '[:lower:]' '[:upper:]')"
   lc="${srv_lc}"
   meta="${WORK}/${lc}.meta.json"
   if [[ "$(svar "${SRV}" ENABLE)" != "1" ]]; then
@@ -181,7 +205,7 @@ for srv_lc in ${SERVERS}; do
   # --name` does not fail with a name conflict (ollama is persistent -- never touched).
   case "${lc}" in
     llamacpp) docker rm -f llama-server >/dev/null 2>&1 || true ;;
-    vllm)     docker rm -f vllm >/dev/null 2>&1 || true ;;
+    vllm)     docker rm -f "${VLLM_CONTAINER}" >/dev/null 2>&1 || true ;;
   esac
   echo "==> [server-bench] ${lc}: bring up"
   if ! eval "$(svar "${SRV}" UP_CMD)" >"${WORK}/${lc}-up.log" 2>&1; then
@@ -190,7 +214,9 @@ for srv_lc in ${SERVERS}; do
     echo "{\"server\":\"${lc}\",\"status\":\"skipped\",\"reason\":\"bring-up failed\",\"quant\":\"$(svar "${SRV}" QUANT)\"}" >"${meta}"
     continue
   fi
-  if ! wait_url "$(svar "${SRV}" READY_URL)" 120; then
+  ready_tries=120
+  [[ "${lc}" == "vllm" ]] && ready_tries="${VLLM_READY_TRIES}"
+  if ! wait_url "$(svar "${SRV}" READY_URL)" "${ready_tries}"; then
     echo "    SKIP ${lc}: never became ready at $(svar "${SRV}" READY_URL) (see server-logs/${lc}-*.log)"
     cname="$(container_of "${lc}")"
     cp -f "${WORK}/${lc}-up.log" "${LOG_DIR}/${lc}-up.log" 2>/dev/null || true
@@ -209,7 +235,7 @@ for srv_lc in ${SERVERS}; do
     # container name is the server's own; ollama is never torn down (TEARDOWN=0).
     case "${lc}" in
       llamacpp) docker rm -f llama-server >/dev/null 2>&1 || true ;;
-      vllm)     docker rm -f vllm >/dev/null 2>&1 || true ;;
+      vllm)     docker rm -f "${VLLM_CONTAINER}" >/dev/null 2>&1 || true ;;
       lemonade) pkill -f "lemonade-server(-dev)? serve" >/dev/null 2>&1 || true ;;
     esac
   fi
