@@ -222,3 +222,6 @@ candle-binding/target-cpu/
 
 # Source PowerPoint asset (reference material, not a tracked doc)
 docs/Enterprise AI at AMD TSMC.pptx
+
+# Local multi-task scratch (never commit)
+yy-tmp/
