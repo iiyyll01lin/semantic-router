@@ -18,6 +18,7 @@ PREFILL_ROOT = Path.home() / "vllm-sr-evidence/agentic-prefill-20260722"
 BACKUP_ARCHIVE = (
     Path.home() / "vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz"
 )
+PREFILL_MANIFEST = PREFILL_ROOT / "campaign-checksums.sha256"
 
 
 def load_sources():
@@ -223,6 +224,12 @@ class ReportConsistencyTests(unittest.TestCase):
     )
     def test_preserved_backup_archive_passes(self):
         self.assertEqual(validator.validate_backup_archive(BACKUP_ARCHIVE), [])
+
+    @unittest.skipUnless(
+        PREFILL_MANIFEST.exists(), "controller prefill manifest unavailable"
+    )
+    def test_preserved_prefill_manifest_passes(self):
+        self.assertEqual(validator.validate_prefill_manifest(PREFILL_MANIFEST), [])
 
     @unittest.skipUnless(
         EVIDENCE_ROOT.exists(), "preserved evidence mirror unavailable"

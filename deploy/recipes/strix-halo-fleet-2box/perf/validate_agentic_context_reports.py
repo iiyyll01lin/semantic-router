@@ -5,6 +5,20 @@ The tracked JSON files are the machine-readable source of truth.  This validator
 checks their arithmetic and then verifies that every reader-facing report uses
 matching units and scope.  It intentionally permits older, explicitly dated
 Halo-A/Halo-B measurements while rejecting stale blanket claims about gfx1151.
+
+Updating the pinned ``EXPECTED_*`` constants
+--------------------------------------------
+The ``EXPECTED_*`` constants are a deliberate snapshot of verified facts, so a
+legitimate evidence change is a two-step, reviewed edit -- never edit a constant
+just to make the gate pass:
+
+1. Prove the new value from source: re-run the optional raw-evidence checks
+   (``--capacity-summary-dir``, ``--milestone-mirror-root``,
+   ``--prefill-evidence-root``, ``--prefill-manifest``, ``--backup-archive``)
+   against the preserved corpus, then update the matching ``EXPECTED_*`` entry.
+2. In the same commit, update the tracked four-proof / evidence-index JSON and
+   every reader-facing report snippet in ``validate_markdown``, then re-run
+   ``make validate-agentic-context-reports`` until it passes.
 """
 
 from __future__ import annotations
@@ -817,6 +831,63 @@ def validate_backup_archive(archive_path: Path) -> list[str]:
     return errors
 
 
+def validate_prefill_manifest(manifest_path: Path) -> list[str]:
+    """Re-derive the 217-entry controller prefill manifest from raw evidence.
+
+    ``campaign-checksums.sha256`` is the recorded ``controller_prefill_manifest``.
+    This verifies (1) the manifest file's own SHA-256 matches the recorded
+    generation hash, (2) it lists exactly the expected number of entries, and
+    (3) every listed path still hashes to its recorded digest, proving the raw
+    prefill corpus is byte-intact.  The manifest uses absolute paths, resolved
+    as-is, so this is a controller-local (opt-in) check.
+    """
+    expected_entries, expected_digest = EXPECTED_GENERATIONS[
+        "controller_prefill_manifest"
+    ]
+    errors: list[str] = []
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+    except OSError as exc:
+        return [str(exc)]
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    _expect(
+        errors,
+        manifest_digest == expected_digest,
+        f"prefill manifest hash drifted: {manifest_digest}",
+    )
+    rows: list[tuple[str, str]] = []
+    for line_number, line in enumerate(manifest_bytes.decode("utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        digest, sep, entry_path = line.partition("  ")
+        if not sep or len(digest) != 64:
+            errors.append(f"prefill manifest:{line_number}: malformed entry")
+            continue
+        rows.append((digest, entry_path))
+    _expect(
+        errors,
+        len(rows) == expected_entries,
+        f"prefill manifest entries: {len(rows)} != {expected_entries}",
+    )
+    verified = 0
+    for digest, entry_path in rows:
+        try:
+            actual = hashlib.sha256(Path(entry_path).read_bytes()).hexdigest()
+        except OSError as exc:
+            errors.append(f"prefill manifest missing file: {exc}")
+            continue
+        if actual != digest:
+            errors.append(f"prefill manifest content drift: {entry_path}")
+        else:
+            verified += 1
+    _expect(
+        errors,
+        verified == expected_entries,
+        f"prefill manifest verified {verified}/{expected_entries} files",
+    )
+    return errors
+
+
 def validate_markdown(texts: dict[str, str]) -> list[str]:
     """Return reader-facing report consistency errors."""
     errors: list[str] = []
@@ -985,6 +1056,11 @@ def main() -> int:
         type=Path,
         help="optional immutable demo-002 evidence backup tar.gz to re-derive",
     )
+    parser.add_argument(
+        "--prefill-manifest",
+        type=Path,
+        help="optional controller prefill campaign-checksums.sha256 to re-verify",
+    )
     args = parser.parse_args()
     errors = validate_report_set(args.base.resolve())
     if args.selected_summary:
@@ -1000,6 +1076,8 @@ def main() -> int:
         errors.extend(validate_llamacpp_out256(args.prefill_evidence_root.resolve()))
     if args.backup_archive:
         errors.extend(validate_backup_archive(args.backup_archive.resolve()))
+    if args.prefill_manifest:
+        errors.extend(validate_prefill_manifest(args.prefill_manifest.resolve()))
     if errors:
         print(
             f"FAIL: {len(errors)} agentic-context report consistency error(s)",
