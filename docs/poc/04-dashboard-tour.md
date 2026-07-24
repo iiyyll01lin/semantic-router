@@ -33,6 +33,8 @@ The navigation structure was verified against source: [LayoutNavSupport.ts](../.
 > 這是一條可照著走的現場 demo 腳本：依序開啟下列畫面，每一螢幕對應 [02-poc-plan.md](02-poc-plan.md) 第 8 節 demo 腳本與 [REHEARSAL.md](../../deploy/recipes/strix-halo-poc/REHEARSAL.md) Gate F/G 的一個證據點。各畫面的逐步點擊與話術見下方「POC Demo 深入導覽」。
 > This is a copy-along live demo script: open the screens below in order; each maps to one evidence point in section 8 of [02-poc-plan.md](02-poc-plan.md) and gates F/G of [REHEARSAL.md](../../deploy/recipes/strix-halo-poc/REHEARSAL.md). Click-by-click steps and talking points for each screen are in "POC Demo Deep Dive" below.
 
+> 給銷售的精簡版動線（含逐幕話術、agentic 主軸、退路與誠實邊界）見 [08-sales-demo-runbook.md](08-sales-demo-runbook.md)。/ For the sales-cut of this flow (per-act talk track, agentic centerpiece, fallbacks, and honest boundary) see [08-sales-demo-runbook.md](08-sales-demo-runbook.md).
+
 1. **Status（`/status`）** — 開場健康檢查：確認 router、Envoy、dashboard 與 5 個 tier 模型都就緒。/ Opening health check: confirm router, Envoy, dashboard, and all 5 tier models are ready.
 2. **Dashboard（`/dashboard`）** — 一眼看懂規模：decisions / signals / models / plugins 的數量與一張迷你路由流程圖。/ Scale at a glance: counts of decisions/signals/models/plugins plus a mini routing flow diagram.
 3. **Config — Models / Decisions / Signals（`/config`）** — 攤開 PoC 設定：5 個 tier 與其 pricing、14 條決策（含優先序 300 的 `security_guard`）、`pii` 與 `jailbreak` 等訊號。/ Open the PoC config: the 5 tiers with their pricing, the 14 decisions (including the priority-300 `security_guard`), and the `pii` / `jailbreak` signals.
