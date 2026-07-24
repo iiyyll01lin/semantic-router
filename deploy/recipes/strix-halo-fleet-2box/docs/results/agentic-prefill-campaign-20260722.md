@@ -114,6 +114,15 @@ prompts or responses into git.
   hash-verified replica on a separate host/filesystem so the new mirror is no
   longer single-copy. `perf/validate_agentic_context_reports.py --backup-archive`
   re-derives both hashes from the archive contents.
+- **Ongoing integrity checks.** `perf/check-evidence-archives.sh` re-derives the
+  immutable backup archive and the 217-entry controller prefill manifest
+  (`agentic-prefill-20260722/campaign-checksums.sha256`, hash
+  `d9dd7ecf6ebd1e72bdcacf1bca4f6f6a4690a12307d9182729da06338ee7ebc6`) from their
+  raw bytes and fails on any drift. Schedule it weekly with the reference
+  `perf/systemd/vllm-sr-evidence-check.{service,timer}` units (`systemctl --user`,
+  no root required). For off-box durability, additionally copy the archive to
+  independent object storage; the controller disk plus the single hash-verified
+  replica are otherwise the only two copies.
 - Large raw JSONL/request evidence remains outside git; this ledger records the
   result families and canonical evidence paths.
 

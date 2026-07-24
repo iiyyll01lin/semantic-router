@@ -1,0 +1,10 @@
+[Unit]
+Description=Strix Halo agentic-context evidence integrity check
+Documentation=file:%h/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/docs/results/README.md
+
+[Service]
+Type=oneshot
+# Adjust the path if the recipe lives elsewhere. %h expands to the user's home.
+ExecStart=%h/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/perf/check-evidence-archives.sh
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Strix Halo agentic-context evidence integrity check
+Documentation=file:%h/yy/workspace/semantic-router/deploy/recipes/strix-halo-fleet-2box/docs/results/README.md
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

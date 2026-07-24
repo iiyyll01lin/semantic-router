@@ -47,15 +47,17 @@ python3 perf/validate_agentic_context_reports.py \
   --capacity-summary-dir ~/vllm-sr-evidence/agentic-context-customer-20260722/capacity-direct-openai/summary \
   --milestone-mirror-root ~/vllm-sr-evidence/demo-002-capacity-matrix \
   --prefill-evidence-root ~/vllm-sr-evidence/agentic-prefill-20260722 \
-  --backup-archive ~/vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz
+  --backup-archive ~/vllm-sr-evidence/archives/demo-002-evidence-backup-20260723.tar.gz \
+  --prefill-manifest ~/vllm-sr-evidence/agentic-prefill-20260722/campaign-checksums.sha256
 python3 perf/test_validate_agentic_context_reports.py
 ```
 
 Without the optional external paths, the gate still checks the tracked report
 set. With them, it also re-derives request, marker, and usage totals from the
 preserved source summaries, including the 8-cell/24-request milestone and the
-six-checkpoint/20-request llama.cpp output-256 run, and re-hashes the immutable
-demo-002 evidence backup archive plus its per-file manifest. It rejects
+six-checkpoint/20-request llama.cpp output-256 run, re-hashes the immutable
+demo-002 evidence backup archive plus its per-file manifest, and re-verifies the
+217-entry controller prefill manifest against the raw corpus. It rejects
 context-window, cell/request/marker, proof-status, cache-attribution,
 stale-vLLM, evidence-path, evidence-generation, and immutable-backup drift.
 
@@ -63,3 +65,11 @@ The tracked-only path (no `~/vllm-sr-evidence`) and the CI-safe unit tests also
 run automatically in the **Strix Fleet Config Lint** GitHub workflow
 (`.github/workflows/strix-fleet-config-lint.yml`), so committed report drift
 fails in CI without needing any controller evidence mounted.
+
+**Evidence durability.** On the controller, `perf/check-evidence-archives.sh`
+re-derives the immutable backup archive and the 217-entry prefill manifest from
+their raw bytes and fails on drift; schedule it weekly with the reference
+`perf/systemd/vllm-sr-evidence-check.{service,timer}` units
+(`systemctl --user enable --now vllm-sr-evidence-check.timer`, no root). Keep at
+least the controller copy plus one independent replica, and add off-box object
+storage for a durable third copy.
