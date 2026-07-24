@@ -129,6 +129,16 @@ repos:
         require_serial: true
         files: ^deploy/recipes/strix-halo-fleet-2box/(perf/(validate_agentic_context_reports|test_validate_agentic_context_reports)\.py|README\.md|docs/(perf-report|hardware-limits)\.md|docs/results/.*\.(md|json))$
 
+  # DCO sign-off enforcement (commit-msg stage).
+  # Enable once per clone: pre-commit install --hook-type commit-msg
+  - repo: local
+    hooks:
+      - id: dco-sign-off
+        name: DCO sign-off check
+        entry: "bash -c 'grep -qiE \"^Signed-off-by: .+ <.+@.+>\" \"$1\" || { echo \"ERROR: missing DCO Signed-off-by trailer; use git commit --signoff\" >&2; exit 1; }' dco-sign-off"
+        language: system
+        stages: [commit-msg]
+
 
 # Commented out flake8 - only reports issues, doesn't auto-fix
 # -   repo: https://github.com/PyCQA/flake8
